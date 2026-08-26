@@ -1,0 +1,35 @@
+# Entorno virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Modelos y pesos descargados (pesan GB, se reinstalan con un comando)
+models/
+*.onnx
+*.gguf
+*.bin
+*.pt
+
+# Audio capturado durante pruebas
+*.wav
+*.mp3
+recordings/
+
+# Configuracion local con claves o rutas propias de la maquina
+.env
+config.local.yaml
+
+# VSCode: se versiona la configuracion compartida, no la personal
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Sistema
+Thumbs.db
+desktop.ini

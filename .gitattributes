@@ -1,0 +1,19 @@
+# Normaliza los finales de linea: LF dentro del repositorio, siempre.
+# Sin esto, editar el mismo fichero en Windows (CRLF) y en Linux (LF) genera
+# diffs completos donde no ha cambiado ni una linea de codigo real.
+* text=auto eol=lf
+
+# Los scripts de shell DEBEN llevar LF: con CRLF, Linux falla al ejecutarlos
+# con un error enganoso ("bad interpreter").
+*.sh text eol=lf
+
+# Los .bat y .ps1 solo corren en Windows y quieren CRLF.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binarios: que git no intente convertir nada.
+*.onnx binary
+*.gguf binary
+*.wav binary
+*.mp3 binary
+*.png binary

@@ -18,6 +18,12 @@ python -m doombot
 Ese último comando dice qué perfil ha elegido y por qué. Es lo primero que
 conviene ejecutar al sentarse en un equipo distinto.
 
+Para hablar con el modelo del perfil activo:
+
+```powershell
+python -m doombot "¿qué hora es un buen momento para hacer commit?"
+```
+
 Para trabajar también la parte de voz: `pip install -e ".[dev,voice]"`.
 
 Requiere **Python 3.12** exacto. Ni 3.13 ni 3.14: el stack de audio e IA no
@@ -56,10 +62,30 @@ Para forzar uno en pruebas: `DOOMBOT_PROFILE=workstation` en `.env`.
 Ver [docs/estructura.md](docs/estructura.md) para qué hace cada carpeta y por
 qué está donde está.
 
+## Backends
+
+La lógica habla con los contratos de `backends/base.py`, nunca con un motor
+concreto:
+
+| Contrato | Qué promete | Implementación |
+|---|---|---|
+| `TextGenerator` | `generate`, `stream`, `model_name` | `OllamaGenerator` |
+| `Transcriber` | `transcribe` | pendiente |
+| `Embedder` | `embed`, `dimensions` | pendiente |
+
+Son `Protocol`, no clases base: una implementación no hereda ni importa nada,
+le basta con tener los métodos. `OllamaGenerator` sirve igual para el Ollama
+local que para el del sobremesa por red — solo cambia `DOOMBOT_OLLAMA_HOST`.
+
 ## Desarrollo
 
 ```powershell
-pytest          # los tests no necesitan GPU ni micrófono
+pytest                      # todo
+pytest -m "not hardware"    # solo lo que no necesita Ollama ni GPU
 ruff check .
 ruff format .
 ```
+
+Los tests marcados `hardware` necesitan un Ollama arrancado. El resto corre en
+cualquier equipo: los backends aceptan un cliente HTTP por parámetro, así que
+se prueban con uno falso.

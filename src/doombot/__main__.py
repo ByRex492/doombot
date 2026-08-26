@@ -1,11 +1,11 @@
-"""Punto de entrada. Sin argumentos, informa del equipo donde esta corriendo.
+"""Punto de entrada.
 
-    python -m doombot
-    doombot            (tras instalar con pip install -e .)
+    python -m doombot            diagnostico del equipo
+    python -m doombot "pregunta" se la lanza al modelo del perfil activo
 
-Este diagnostico es lo primero que conviene ejecutar al sentarse en una
-maquina distinta: dice que perfil ha elegido y por que, que es la pregunta
-que surge cuando el asistente se comporta distinto de lo esperado.
+El diagnostico es lo primero que conviene ejecutar al sentarse en una maquina
+distinta: dice que perfil ha elegido y por que, que es la pregunta que surge
+cuando el asistente se comporta distinto de lo esperado.
 """
 
 from __future__ import annotations
@@ -13,11 +13,18 @@ from __future__ import annotations
 import sys
 
 from doombot import __version__, profiles
+from doombot.backends.base import BackendError
+from doombot.backends.ollama import OllamaGenerator
 from doombot.config import settings
 from doombot.paths import PROJECT_ROOT, data_dir
 
+SYSTEM = (
+    "Eres D.O.O.M., un asistente local. Respondes en español, "
+    "de forma breve y directa, sin preambulos."
+)
 
-def main() -> int:
+
+def diagnostico() -> int:
     cfg = settings()
 
     try:
@@ -40,7 +47,44 @@ def main() -> int:
     )
     print(f"  voz        {perfil.stt_model}  {perfil.stt_device}/{perfil.stt_compute}")
     print(f"  ollama     {cfg.ollama_host}{'  (remoto)' if cfg.is_remote_ollama else ''}")
+
+    gen = OllamaGenerator.from_profile(perfil, cfg)
+    if gen.is_available():
+        instalados = gen.installed_models()
+        tiene = any(m.split(":")[0] == perfil.llm_model.split(":")[0] for m in instalados)
+        print(f"  estado     responde, {len(instalados)} modelos instalados")
+        if not tiene:
+            print(f"             falta {perfil.llm_model}: ollama pull {perfil.llm_model}")
+    else:
+        print("  estado     sin respuesta (¿Ollama arrancado?)")
     return 0
+
+
+def preguntar(texto: str) -> int:
+    """Lanza una pregunta al modelo del perfil activo, en streaming.
+
+    Se usa ``stream`` y no ``generate`` para ver salir el texto segun se
+    genera: es la misma via que usara la voz, y sirve para notar de inmediato
+    si el modelo se ha quedado repartido entre CPU y GPU.
+    """
+    try:
+        gen = OllamaGenerator.from_profile(profiles.current())
+        for trozo in gen.stream(texto, system=SYSTEM):
+            print(trozo, end="", flush=True)
+        print()
+    except BackendError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 1
+    except (RuntimeError, OSError) as e:
+        print(f"{e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) > 1:
+        return preguntar(" ".join(sys.argv[1:]))
+    return diagnostico()
 
 
 if __name__ == "__main__":

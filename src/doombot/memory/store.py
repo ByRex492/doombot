@@ -11,20 +11,23 @@ vector de la pregunta con los almacenados y devolver los mas parecidos.
 Sobre la eleccion de SQLite plano y similitud calculada en Python, en vez de
 una extension vectorial como sqlite-vec: evita una dependencia binaria que
 habria que distribuir para cada equipo, y aguanta de sobra el volumen que este
-proyecto va a manejar. Pero tiene un techo, medido en el portatil:
+proyecto va a manejar. Pero tiene un techo, medido en el portatil con recall()
+de verdad, leyendo los vectores de la base:
 
     recuerdos   comparar   total por busqueda
-          100        6 ms        84 ms
-        1.000       56 ms       134 ms
-        2.000      111 ms       189 ms
-        5.000      282 ms       360 ms
-       10.000      574 ms       652 ms
+          100       10 ms        97 ms
+        1.000       81 ms       166 ms
+        5.000      316 ms       416 ms
+       20.000    1.233 ms     1.365 ms
 
-El total incluye ~78 ms fijos de vectorizar la pregunta, que no dependen del
-tamano. La comparacion crece de forma lineal, unos 0,056 ms por recuerdo.
+El total incluye ~76 ms fijos de vectorizar la pregunta, que no dependen del
+tamano. La comparacion crece de forma lineal y se estabiliza en unos 62 ms por
+cada mil recuerdos; ahi entra tambien leer los BLOB y desempaquetarlos, que no
+es gratis: medir solo la aritmetica del coseno da cifras entre un 12% y un 45%
+mas optimistas de lo que cuesta en realidad.
 
 Para voz el presupuesto razonable ronda los 200 ms: por encima, la pausa antes
-de responder se nota. Eso situa el limite practico cerca de los **2.000
+de responder se nota. Eso situa el limite practico cerca de los **1.500
 recuerdos**. A partir de ahi toca sqlite-vec, o numpy para vectorizar la
 comparacion, y la migracion afecta solo al interior de recall().
 """

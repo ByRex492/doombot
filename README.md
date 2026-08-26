@@ -132,9 +132,13 @@ Ninguna palabra de la pregunta aparece en el recuerdo. Es lo que hace el
 `Embedder`: compara vectores, no texto.
 
 Vive en SQLite dentro de la carpeta de datos del usuario, **fuera del
-repositorio** — `python -m doombot` dice dónde. La similitud se calcula en
-Python: con unos miles de recuerdos cuesta milisegundos, y evita una
-dependencia binaria por equipo.
+repositorio** — `python -m doombot` dice dónde. Cada recuerdo ocupa unos 2 KB.
+
+La similitud se calcula en Python, sin dependencias binarias por equipo. Tiene
+un techo medido: una búsqueda cuesta ~76 ms fijos de vectorizar la pregunta más
+unos 62 ms por cada mil recuerdos guardados. Con el presupuesto de ~200 ms que
+necesita la voz, el límite práctico ronda los **1.500 recuerdos**; a partir de
+ahí tocará `sqlite-vec` o numpy.
 
 El umbral por defecto es **0,35**, medido: los aciertos claros puntúan entre
 0,51 y 0,67 y el ruido se queda bajo 0,26. Por debajo de ese umbral no se

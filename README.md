@@ -24,6 +24,39 @@ Para hablar con el modelo del perfil activo:
 python -m doombot "¿qué hora es un buen momento para hacer commit?"
 ```
 
+### El entorno virtual tiene que estar activo
+
+`doombot` se instala **dentro del `.venv`**, no en el Python del sistema. Si
+sale esto:
+
+```
+No module named doombot
+```
+
+es que el terminal está usando el Python global. Actívalo, una vez por
+terminal:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Se nota porque el prompt pasa a empezar por `(.venv)`. Si PowerShell lo
+bloquea con *running scripts is disabled*:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+En los terminales que abre VSCode se activa solo. Y para lanzarlo sin activar
+nada:
+
+```powershell
+.\.venv\Scripts\python.exe -m doombot "hola"
+```
+
+Ojo con el nombre: la carpeta del portátil es `doombot-local`, pero el módulo
+de Python es `doombot`. `python -m doombot`, siempre.
+
 Para trabajar también la parte de voz: `pip install -e ".[dev,voice]"`.
 
 Requiere **Python 3.12** exacto. Ni 3.13 ni 3.14: el stack de audio e IA no

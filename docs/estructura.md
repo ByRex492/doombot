@@ -15,6 +15,7 @@ doombot/
 │   ├── paths.py         Todas las rutas, derivadas en ejecución
 │   ├── config.py        Lo que cambia de un equipo a otro
 │   ├── profiles.py      Detección de hardware y elección de perfil
+│   ├── identity.py      Qué dice saber hacer, según lo que hay instalado
 │   ├── backends/        Contratos e implementaciones intercambiables
 │   ├── memory/          Qué recuerda D.O.O.M
 │   ├── phrases/         Frases textuales y órdenes
@@ -52,6 +53,20 @@ lógica sin GPU delante.
 | algo medido del hardware | `profiles.toml` | son datos, y se revisan sin leer código |
 | una interfaz | `backends/base.py` | para poder sustituir el motor |
 | estado que genera D.O.O.M | fuera del repo | ver `paths.data_dir()` |
+| una capacidad nueva | `identity.py` | el prompt deja de negarla solo |
+
+## El prompt se escribe solo
+
+`identity.py` construye el system prompt a partir de las capacidades
+realmente presentes: mira si `memory/`, `phrases/` y `voice/` exponen algo, y
+declara únicamente lo que existe.
+
+No es cosmético. Con un prompt fijo, el modelo respondía *"Abrí el navegador"*
+a una orden que no puede ejecutar, y *"Te recordaré comprar pan"* sin existir
+memoria alguna. Eso impide desarrollar: si promete recordar tanto con memoria
+como sin ella, al construirla no hay forma de saber si funciona.
+
+Al implementar una capa, el prompt deja de negarla sin que nadie lo toque.
 
 ## Lo que nunca entra al repositorio
 

@@ -1,0 +1,24 @@
+{
+  // Ajustes DEL PROYECTO. Solo cosas que valen igual en cualquier equipo:
+  // nada de rutas absolutas ni nombres de usuario. Lo personal (tema, fuente)
+  // va en los ajustes de usuario y lo sincroniza Settings Sync.
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+  "python.analysis.typeCheckingMode": "standard",
+  "python.analysis.extraPaths": ["./src"],
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": { "source.organizeImports": "explicit" }
+  },
+
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // todo-tree encuentra ripgrep por PATH. NO poner aqui una ruta absoluta:
+  // los usuarios son distintos en cada maquina y romperia en la otra.
+  "todo-tree.general.tags": ["TODO", "FIXME", "D-", "HACK"]
+}

@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "D.O.O.M: diagnostico del equipo",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "doombot",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}

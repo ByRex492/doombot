@@ -1,0 +1,22 @@
+# Normaliza los finales de linea al entrar en el repositorio.
+# Sin esto, dos equipos con distinta configuracion de core.autocrlf producen
+# diffs enteros de ficheros donde solo cambio una linea. Es el fichero que
+# mas trabajo ahorra en un proyecto que se edita desde varios sitios.
+* text=auto eol=lf
+
+# PowerShell y CMD se quedan en CRLF: son especificos de Windows y algunos
+# hosts antiguos no interpretan bien un .ps1 con finales unix.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binarios: que git no intente convertir nada.
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.wav  binary
+*.mp3  binary
+*.onnx binary
+*.bin  binary
+*.db   binary

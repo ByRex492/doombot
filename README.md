@@ -1,0 +1,65 @@
+# D.O.O.M
+
+Asistente de voz local. Se desarrolla desde dos equipos, y el proyecto está
+construido para no notar en cuál de los dos está corriendo.
+
+## Empezar en una máquina nueva
+
+```powershell
+git clone https://github.com/ByRex492/doombot.git
+cd doombot
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+Copy-Item .env.example .env
+python -m doombot
+```
+
+Ese último comando dice qué perfil ha elegido y por qué. Es lo primero que
+conviene ejecutar al sentarse en un equipo distinto.
+
+Para trabajar también la parte de voz: `pip install -e ".[dev,voice]"`.
+
+Requiere **Python 3.12** exacto. Ni 3.13 ni 3.14: el stack de audio e IA no
+publica wheels para esas versiones.
+
+## Cómo evita atarse a un equipo
+
+Hay tres reglas, y las tres están cubiertas por tests:
+
+| Regla | Dónde vive | Qué la comprueba |
+|---|---|---|
+| Ninguna ruta absoluta en el código | `paths.py` deriva todas las rutas | `test_sin_rutas_absolutas_escritas_a_mano` |
+| El hardware se detecta, no se escribe | `profiles.py` + `profiles.toml` | `test_seleccion_por_vram` |
+| Lo local no se versiona | `.env` (plantilla en `.env.example`) | `test_env_no_esta_versionado` |
+
+Los datos que genera D.O.O.M —memoria, registros, modelos— viven **fuera del
+repositorio**, en la carpeta de datos del usuario. `python -m doombot` dice
+dónde.
+
+## Perfiles
+
+`profiles.toml` guarda las combinaciones de modelo y voz medidas en cada tipo
+de máquina. Se elige por VRAM disponible, no por nombre de equipo: un hostname
+cambia y una tarjeta se sustituye.
+
+| Perfil | VRAM | Modelo | Voz |
+|---|---|---|---|
+| `workstation` | ≥ 8 GB | `gemma4:12b` | `small` en CUDA |
+| `laptop` | ≥ 2 GB | `llama3.2:3b`, `num_gpu 99` | `small` en CPU |
+| `cpu_only` | sin GPU | `qwen3:1.7b` | `base` en CPU |
+
+Para forzar uno en pruebas: `DOOMBOT_PROFILE=workstation` en `.env`.
+
+## Estructura
+
+Ver [docs/estructura.md](docs/estructura.md) para qué hace cada carpeta y por
+qué está donde está.
+
+## Desarrollo
+
+```powershell
+pytest          # los tests no necesitan GPU ni micrófono
+ruff check .
+ruff format .
+```

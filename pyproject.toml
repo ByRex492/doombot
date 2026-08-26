@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doombot"
+version = "0.1.0"
+description = "Asistente de voz local D.O.O.M"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+
+# El rango de Python es estrecho a proposito. Las librerias de audio e IA
+# (onnxruntime, ctranslate2, torch) no publican wheels para 3.13+ todavia, y
+# compilar desde fuente en Windows falla a menudo. Fijarlo aqui hace que el
+# error salga al instalar, con un mensaje claro, en vez de a mitad del stack.
+dependencies = [
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# Se instala solo donde haga falta: el equipo que solo edita y documenta no
+# necesita descargar el stack de audio entero.
+voice = [
+    "faster-whisper>=1.2",
+    "sounddevice>=0.4",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+doombot = "doombot.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+doombot = ["py.typed"]
+
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "PTH"]
+# PTH obliga a usar pathlib en vez de os.path: es la regla que impide que se
+# cuelen rutas construidas a mano, que es de donde salen las dependencias
+# accidentales de un equipo concreto.
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+markers = [
+    "hardware: necesita GPU, microfono o un Ollama en marcha; se salta en CI",
+]

@@ -45,3 +45,29 @@ def test_sin_rutas_absolutas_escritas_a_mano():
             if any(s in linea for s in sospechosas):
                 fallos.append(f"{py.relative_to(paths.PROJECT_ROOT)}:{linea_n}")
     assert not fallos, "Rutas absolutas encontradas: " + ", ".join(fallos)
+
+
+def test_ningun_test_deja_carpetas_temporales_huerfanas():
+    """Las carpetas de tempfile no se limpian: una por ejecucion de la bateria.
+
+    Se detectaron 45 MB acumulados en %TEMP% por este motivo. El fixture
+    tmp_path de pytest borra las suyas conservando solo las tres ultimas.
+
+    Se analiza el arbol sintactico y no el texto, porque buscar la cadena
+    encontraria tambien esta misma explicacion.
+    """
+    import ast
+
+    prohibidas = {"mkdtemp", "mktemp"}
+    sospechosas = []
+    for py in (paths.PROJECT_ROOT / "tests").rglob("test_*.py"):
+        arbol = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        for nodo in ast.walk(arbol):
+            if isinstance(nodo, ast.Call):
+                f = nodo.func
+                nombre = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+                if nombre in prohibidas:
+                    sospechosas.append(f"{py.name}:{nodo.lineno}")
+    assert not sospechosas, "Usa el fixture tmp_path de pytest, que si se limpia: " + ", ".join(
+        sospechosas
+    )

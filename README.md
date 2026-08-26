@@ -125,7 +125,7 @@ from doombot.memory import Memory
 
 with Memory(FastEmbedder.from_config()) as m:
     m.remember("El portatil lleva una GTX 1050 con 3 GB de VRAM")
-    m.recall("cuanta memoria grafica tengo?")   # lo encuentra
+    m.recall("cuanta memoria grafica tengo?")  # lo encuentra
 ```
 
 Ninguna palabra de la pregunta aparece en el recuerdo. Es lo que hace el

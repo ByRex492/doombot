@@ -249,15 +249,18 @@ def test_ahora_doom_dice_que_sabe_recordar():
 
 # ============================================================ con el modelo real
 @pytest.mark.hardware
-def test_recupera_por_significado_no_por_palabras():
-    """LA prueba. Ninguna palabra de la pregunta esta en el recuerdo."""
+def test_recupera_por_significado_no_por_palabras(tmp_path):
+    """LA prueba. Ninguna palabra de la pregunta esta en el recuerdo.
+
+    Usa el fixture tmp_path y no tempfile.mkdtemp(): el segundo no se limpia
+    nunca, y dejaba una carpeta huerfana en %TEMP% por cada ejecucion de la
+    bateria. pytest borra las suyas conservando solo las tres ultimas.
+    """
     pytest.importorskip("fastembed")
-    import tempfile
-    from pathlib import Path
 
     from doombot.backends.embeddings import FastEmbedder
 
-    ruta = Path(tempfile.mkdtemp()) / "real.db"
+    ruta = tmp_path / "real.db"
     with Memory(FastEmbedder.from_config(), ruta) as m:
         m.remember_many(
             [

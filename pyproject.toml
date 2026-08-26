@@ -22,6 +22,7 @@ dependencies = [
 # necesita descargar el stack de audio entero.
 voice = [
     "faster-whisper>=1.2",
+    "fastembed>=0.8",
     "sounddevice>=0.4",
 ]
 dev = [

@@ -18,6 +18,20 @@ from doombot.paths import PROFILES_FILE
 
 
 @dataclass(frozen=True)
+class EmbeddingConfig:
+    """Modelo de embeddings. Global, no por perfil.
+
+    A diferencia del modelo de lenguaje, este tiene que ser el mismo en todos
+    los equipos: produce vectores que se almacenan y se comparan entre si, y
+    dos modelos distintos generan espacios distintos. Ver el comentario de la
+    seccion [embeddings] en profiles.toml.
+    """
+
+    model: str
+    dimensions: int
+
+
+@dataclass(frozen=True)
 class Profile:
     """Un perfil resuelto, ya listo para pasar a los backends."""
 
@@ -108,3 +122,12 @@ def current(fichero: Path | None = None) -> Profile:
         stt_device=d["stt_device"],
         stt_compute=d["stt_compute"],
     )
+
+
+def embedding_config(fichero: Path | None = None) -> EmbeddingConfig:
+    """Configuracion de embeddings, comun a todos los equipos."""
+    ruta = fichero or PROFILES_FILE
+    with ruta.open("rb") as f:
+        datos = tomllib.load(f)
+    d = datos["embeddings"]
+    return EmbeddingConfig(model=d["model"], dimensions=d["dimensions"])

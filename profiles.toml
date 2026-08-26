@@ -60,3 +60,26 @@ llm_keep_alive = "5m"
 stt_model   = "base"
 stt_device  = "cpu"
 stt_compute = "int8"
+
+# ==============================================================================
+# Embeddings: FUERA de los perfiles, y a proposito.
+# ==============================================================================
+# El modelo de lenguaje y el de voz cambian de una maquina a otra sin
+# consecuencias: producen texto, y el texto es intercambiable.
+#
+# Los embeddings no. Son vectores que se GUARDAN y luego se comparan entre si.
+# Dos modelos distintos producen espacios distintos, asi que un vector del
+# sobremesa y uno del portatil no se pueden comparar aunque tengan el mismo
+# numero de componentes: la similitud entre ellos no significa nada.
+#
+# Por eso el modelo de embeddings es el mismo en todos los equipos. Y por eso
+# 'dimensions' se declara aqui: la memoria lo guarda junto a los vectores,
+# de modo que cambiar de modelo se detecta en vez de corromper las busquedas
+# en silencio.
+#
+# No hay coste en fijarlo: son 384 dimensiones y 0,22 GB en CPU, que cualquiera
+# de las dos maquinas mueve sin despeinarse, y no toca la VRAM.
+
+[embeddings]
+model = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+dimensions = 384

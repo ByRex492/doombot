@@ -16,12 +16,13 @@ from doombot import __version__, profiles
 from doombot.backends.base import BackendError
 from doombot.backends.ollama import OllamaGenerator
 from doombot.config import settings
+from doombot.identity import resumen, system_prompt
 from doombot.paths import PROJECT_ROOT, data_dir
 
-SYSTEM = (
-    "Eres D.O.O.M., un asistente local. Respondes en español, "
-    "de forma breve y directa, sin preambulos."
-)
+# El prompt se construye a partir de lo que esta instalacion sabe hacer de
+# verdad. Ver doombot/identity.py: con uno fijo, el modelo afirmaba haber
+# abierto programas y prometia recordar cosas sin haber memoria alguna.
+SYSTEM = system_prompt()
 
 
 def diagnostico() -> int:
@@ -57,6 +58,9 @@ def diagnostico() -> int:
             print(f"             falta {perfil.llm_model}: ollama pull {perfil.llm_model}")
     else:
         print("  estado     sin respuesta (¿Ollama arrancado?)")
+
+    print()
+    print(f"  sabe hacer {resumen()}")
     return 0
 
 

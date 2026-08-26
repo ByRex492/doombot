@@ -174,6 +174,15 @@ class WhisperTranscriber:
         con un FileNotFoundError que no dice nada de la causa.
         """
         msg = str(e)
+        # Audio ilegible. El error que llega es de la capa de decodificacion y
+        # dice cosas como "[Errno 1094995529] Invalid data found", que no
+        # sugiere que el problema sea el fichero.
+        if "invalid data" in msg.lower() or "1094995529" in msg:
+            return BackendError(
+                "El audio no se pudo decodificar: no parece un fichero de sonido valido, "
+                "o esta corrupto. Se admite WAV, MP3, FLAC, OGG y M4A.\n"
+                f"Detalle: {msg}"
+            )
         if isinstance(e, FileNotFoundError) or "DLL" in msg or "ctranslate2" in msg.lower():
             return BackendError(
                 "ctranslate2 no pudo cargar sus DLL. Suele faltar el Visual C++ "

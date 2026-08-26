@@ -188,3 +188,19 @@ def test_transcripcion_real(tmp_path):
     # El RTF ya no incluye la carga del modelo, asi que vale desde la primera
     # llamada. En el portatil se midio 0,15 con small en CPU.
     assert r.rtf < 1.0, f"demasiado lento para voz: RTF {r.rtf:.2f}"
+
+
+def test_audio_corrupto_lo_dice_en_castellano(tmp_path):
+    """El error de la capa de decodificacion no sugiere que falle el fichero."""
+    f = tmp_path / "no-es-audio.wav"
+    f.write_bytes(b"esto no es audio")
+
+    def loader(*a, **k):
+        class M:
+            def transcribe(self, *a, **k):
+                raise RuntimeError("[Errno 1094995529] Invalid data found when processing input")
+
+        return M()
+
+    with pytest.raises(BackendError, match="no parece un fichero de sonido"):
+        WhisperTranscriber(loader=loader).transcribe(f)

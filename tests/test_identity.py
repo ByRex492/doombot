@@ -78,3 +78,14 @@ def test_resumen_nombra_todas_las_capacidades():
     r = identity.resumen()
     for c in identity.capabilities():
         assert c.name in r
+
+
+def test_el_prompt_prohibe_inventar_datos():
+    """ "No puedo hacer eso" y "no se eso" son distintas: hacen falta las dos.
+
+    Con solo la primera, ante "donde esta alojado el codigo?" el modelo
+    respondia inventando carpetas concretas del disco.
+    """
+    p = identity.system_prompt().lower()
+    assert "si no sabes algo, dilo" in p
+    assert "no inventes datos concretos" in p

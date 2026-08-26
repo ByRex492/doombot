@@ -115,6 +115,15 @@ def system_prompt() -> str:
         "Nunca afirmes haber hecho algo que no has hecho, ni prometas recordar "
         "nada si no puedes guardarlo."
     )
+
+    # "No puedo hacer eso" y "no se eso" son cosas distintas, y hace falta
+    # decir las dos. Con solo la primera, ante "donde esta alojado el codigo?"
+    # el modelo respondia inventando carpetas concretas del disco en vez de
+    # reconocer que no tenia ni idea.
+    partes.append(
+        "Si no sabes algo, dilo. No inventes datos concretos —rutas, nombres, "
+        "cifras, fechas— para rellenar una respuesta."
+    )
     return " ".join(partes)
 
 

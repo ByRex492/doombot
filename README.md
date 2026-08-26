@@ -115,6 +115,33 @@ perezosa, así que construirlo para leer su configuración no cuesta la carga.
 Medido en el portátil con `small` en CPU: **RTF 0,28**, cuatro veces más
 rápido que tiempo real.
 
+## Memoria
+
+Guarda cosas y las recupera **por significado, no por palabras**:
+
+```python
+from doombot.backends.embeddings import FastEmbedder
+from doombot.memory import Memory
+
+with Memory(FastEmbedder.from_config()) as m:
+    m.remember("El portatil lleva una GTX 1050 con 3 GB de VRAM")
+    m.recall("cuanta memoria grafica tengo?")   # lo encuentra
+```
+
+Ninguna palabra de la pregunta aparece en el recuerdo. Es lo que hace el
+`Embedder`: compara vectores, no texto.
+
+Vive en SQLite dentro de la carpeta de datos del usuario, **fuera del
+repositorio** — `python -m doombot` dice dónde. La similitud se calcula en
+Python: con unos miles de recuerdos cuesta milisegundos, y evita una
+dependencia binaria por equipo.
+
+El umbral por defecto es **0,35**, medido: los aciertos claros puntúan entre
+0,51 y 0,67 y el ruido se queda bajo 0,26. Por debajo de ese umbral no se
+devuelve nada, y es deliberado — **es preferible no recordar nada que recordar
+algo que no viene a cuento**, porque un modelo pequeño construye sobre el
+contexto que le des aunque no responda a la pregunta.
+
 ## Desarrollo
 
 ```powershell

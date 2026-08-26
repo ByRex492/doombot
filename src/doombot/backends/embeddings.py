@@ -79,6 +79,15 @@ class FastEmbedder:
     def dimensions(self) -> int:
         return self._dimensions
 
+    @property
+    def model_name(self) -> str:
+        """Nombre del modelo. Fuera del contrato minimo, pero lo usa la memoria.
+
+        Dos modelos distintos pueden producir vectores del mismo tamano, asi
+        que comprobar solo las dimensiones no basta para detectar un cambio.
+        """
+        return self._model_name
+
     def embed(self, textos: list[str]) -> list[list[float]]:
         """Vectoriza una lista de textos, en el mismo orden.
 

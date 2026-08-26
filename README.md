@@ -146,6 +146,33 @@ devuelve nada, y es deliberado — **es preferible no recordar nada que recordar
 algo que no viene a cuento**, porque un modelo pequeño construye sobre el
 contexto que le des aunque no responda a la pregunta.
 
+## Órdenes
+
+La capa refleja: rápida, determinista y **sin modelo de por medio**. Cuando
+dices "para", D.O.O.M tiene que callar al instante — no pasar la frase por un
+3B a 29 tok/s y esperar a ver qué opina.
+
+```python
+from doombot.phrases import default_matcher
+
+m = default_matcher()
+m.match("¡DOOM! Activa el modo silencioso.")   # Match(command='silence')
+m.match("recuerda que el pan esta caro")       # argument='el pan esta caro'
+m.match("que tiempo hace mañana?")             # None — no es una orden
+```
+
+Devolver `None` es lo normal: casi nada de lo que se dice son órdenes, sino
+cosas que pasar al modelo.
+
+Lo que llega no es texto limpio, sino lo que devuelve Whisper, así que todo
+pasa por `normalize` (minúsculas, sin tildes ni signos, incluidos `¡` y `¿`) y
+la búsqueda admite tres grados: exacta, contenida en una frase más larga, y
+tolerante a erratas del dictado. Verificado dictando las diez órdenes por
+micrófono: **10/10**, incluyendo casos donde Whisper transcribió "¡Dum!" por
+"Doom" y se comió una letra.
+
+Mil reconocimientos tardan menos de un segundo.
+
 ## Desarrollo
 
 ```powershell

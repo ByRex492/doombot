@@ -103,12 +103,17 @@ concreto:
 | Contrato | Qué promete | Implementación |
 |---|---|---|
 | `TextGenerator` | `generate`, `stream`, `model_name` | `OllamaGenerator` |
-| `Transcriber` | `transcribe` | pendiente |
+| `Transcriber` | `transcribe` | `WhisperTranscriber` |
 | `Embedder` | `embed`, `dimensions` | pendiente |
 
 Son `Protocol`, no clases base: una implementación no hereda ni importa nada,
 le basta con tener los métodos. `OllamaGenerator` sirve igual para el Ollama
 local que para el del sobremesa por red — solo cambia `DOOMBOT_OLLAMA_HOST`.
+
+`WhisperTranscriber` necesita el extra `voice`. Carga el modelo de forma
+perezosa, así que construirlo para leer su configuración no cuesta la carga.
+Medido en el portátil con `small` en CPU: **RTF 0,28**, cuatro veces más
+rápido que tiempo real.
 
 ## Desarrollo
 

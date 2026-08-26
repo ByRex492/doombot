@@ -112,3 +112,76 @@ algo funcionando de extremo a extremo.
   coste de sustituir cualquier pieza más adelante.
 - **Open Interpreter (Capa 4).** Si se adopta como estaba previsto o se construye una capa
   propia de *tool calling*. A verificar su estado de mantenimiento al llegar a esa capa.
+
+---
+
+## D-007 — Capa 1 validada: la GPU se usa de verdad
+
+**Medición en caliente, con `gemma4:12b` cargado:**
+
+| Medida | Valor |
+|---|---|
+| VRAM antes de cargar | 2.323 MiB |
+| VRAM después | 10.298 MiB |
+| Consumido por el modelo | ~7,8 GB |
+| `ollama ps` → PROCESSOR | **100% GPU** |
+
+El incremento de VRAM coincide con el tamaño del modelo y no hay ni una capa en CPU. Queda
+descartado el fallo silencioso (Ollama funcionando sobre CPU, unas veinte veces más lento).
+
+---
+
+## D-008 — Usar `/api/chat`, nunca `/api/generate`
+
+**Síntoma.** `/api/generate` con `gemma4:12b` agotaba el límite de tokens devolviendo una
+respuesta **vacía** (`done_reason: length`, 250 tokens generados, 0 caracteres de texto).
+
+**Causa.** `/api/generate` recibe un prompt en crudo; `/api/chat` recibe mensajes con roles y
+aplica la plantilla de conversación propia del modelo.
+
+**Decisión.** Todo el cerebro habla con `/api/chat`. Además es el único endpoint que soporta
+historial de conversación y *tool calling*, ambos necesarios más adelante.
+
+---
+
+## D-009 — Modelo elegido: `gemma4:12b`
+
+**Benchmark en caliente** (ambos modelos residentes, mismo prompt en español):
+
+| Modelo | Velocidad | Respuesta completa |
+|---|---|---|
+| gemma4:12b | 46,2 tok/s | 1,35 s |
+| qwen3:8b | 71,2 tok/s | 1,02 s |
+
+**Decisión.** `gemma4:12b`, pese a ser un 54% más lento.
+
+**Por qué la velocidad no decide.** El habla consume 3-5 tokens por segundo de audio. A 46 tok/s
+el modelo genera texto diez veces más rápido de lo que el TTS puede pronunciarlo: la voz nunca
+espera. Superado ese umbral, la velocidad extra es invisible para el usuario y manda la calidad.
+
+**Por qué Gemma en calidad.** Su español suena hablado ("funciona perfecto en zonas sin señal
+o en el campo sin que te quedes colgado") frente al registro de manual de Qwen ("No requiere
+datos móviles ni conexión constante"). Para algo que se escucha, esa diferencia lo es todo.
+Además acepta imágenes, lo que abre vías en la Capa 4.
+
+---
+
+## D-010 — Dos ajustes obligatorios de Ollama
+
+**`keep_alive` permanente.** Por defecto Ollama descarga el modelo de VRAM tras 5 minutos de
+inactividad, y recargarlo cuesta **23 segundos** medidos. En un asistente de uso esporádico eso
+significa media hora de espera repartida en el día. Se fija `keep_alive: -1`.
+
+**Un solo modelo residente.** Con `gemma4:12b` y `qwen3:8b` cargados a la vez la VRAM llega a
+15.349 de 16.311 MiB. No caben dos modelos más Whisper y Kokoro. Se fija
+`OLLAMA_MAX_LOADED_MODELS=1`.
+
+---
+
+## D-011 — Linux queda fuera del alcance
+
+**Decisión.** El proyecto es solo Windows. El segundo equipo de trabajo es un portátil Windows.
+
+**Consecuencia.** Decae el argumento de portabilidad que respaldaba la capa de contratos: ya no
+hay que escribir dos implementaciones de la Capa 4. El `.gitattributes` con normalización de
+finales de línea se mantiene, porque no estorba y protege ante cambios de criterio.

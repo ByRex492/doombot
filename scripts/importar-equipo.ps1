@@ -25,6 +25,36 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $Origen)) { throw "No existe la carpeta de origen: $Origen" }
 
+# --- Utilidades de PATH -----------------------------------------------------
+# Un proceso hereda el PATH al arrancar y NO se entera de los cambios
+# posteriores. Sin esto, 'git' o 'code' recien instalados por winget no son
+# invocables en esta misma sesion, y el script fallaria justo despues de
+# haberlos instalado correctamente. Se relee del registro, que es donde los
+# instaladores dejan el valor nuevo.
+function Update-Path {
+    $maquina = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $usuario = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = (@($maquina, $usuario) | Where-Object { $_ }) -join ';'
+}
+
+# Busca un comando refrescando el PATH antes, y opcionalmente anadiendo rutas
+# conocidas de instalacion por si el instalador no toco el PATH del sistema.
+function Resolve-Comando {
+    param(
+        [Parameter(Mandatory)] [string]   $Nombre,
+        [string[]] $RutasCandidatas = @()
+    )
+    Update-Path
+    if (Get-Command $Nombre -ErrorAction SilentlyContinue) { return $true }
+    foreach ($ruta in $RutasCandidatas) {
+        if (Test-Path $ruta) {
+            $env:Path = "$env:Path;$ruta"
+            if (Get-Command $Nombre -ErrorAction SilentlyContinue) { return $true }
+        }
+    }
+    return $false
+}
+
 # --- 0. Comprobacion previa -------------------------------------------------
 Write-Host "=== Equipo destino ===" -ForegroundColor Cyan
 $gpu = (Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join ', '
@@ -56,25 +86,55 @@ if (-not $SaltarHerramientas) {
         winget install --id $p --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
     }
 
+    # Los instaladores ya han escrito el PATH nuevo en el registro, pero esta
+    # sesion sigue con el antiguo. Sin este refresco, 'py' y 'git' no existen.
+    Update-Path
+
     # Python 3.12 explicito (decision D-001: el stack de audio/IA no tiene
     # wheels para 3.14 y compilar en Windows falla con frecuencia).
-    Write-Host "  -> Python 3.12 (via py manager)"
-    py install 3.12 2>&1 | Out-Null
+    # Verificado: 'py install 3.12' resuelve a Python 3.12.10.
+    if (Resolve-Comando -Nombre 'py' -RutasCandidatas @("$env:LOCALAPPDATA\Programs\Python\Launcher")) {
+        Write-Host "  -> Python 3.12 (via py manager)"
+        py install 3.12 --yes 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "     Fallo 'py install 3.12'. Instalalo a mano desde python.org" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "  -> 'py' no disponible aun. Cierra y reabre PowerShell y" -ForegroundColor Red
+        Write-Host "     relanza con -SaltarHerramientas, o instala 3.12 a mano." -ForegroundColor Red
+    }
+
+    if (-not (Resolve-Comando -Nombre 'git')) {
+        throw "git no es invocable tras instalarlo. Cierra y reabre PowerShell y relanza el script."
+    }
 }
 
 # --- 2. VSCode en la misma version ------------------------------------------
 Write-Host "[2/4] VSCode..." -ForegroundColor Yellow
 $version = (Get-Content "$Origen\vscode-version.txt" | Select-Object -First 1).Trim()
-if (-not (Get-Command code -ErrorAction SilentlyContinue)) {
+# Rutas donde queda 'code.cmd' segun el tipo de instalacion (User o System).
+$rutasCode = @(
+    "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin",
+    "$env:ProgramFiles\Microsoft VS Code\bin",
+    "${env:ProgramFiles(x86)}\Microsoft VS Code\bin"
+)
+
+if (Resolve-Comando -Nombre 'code' -RutasCandidatas $rutasCode) {
+    Write-Host "  Ya instalado: $((code --version | Select-Object -First 1)) (origen: $version)"
+} else {
     $url = "https://update.code.visualstudio.com/$version/win32-x64-user/stable"
     $exe = "$env:TEMP\VSCodeUserSetup-$version.exe"
     Write-Host "  Descargando VSCode $version ..."
     Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
     Write-Host "  Instalando (silencioso)..."
     Start-Process $exe -ArgumentList '/VERYSILENT','/MERGETASKS=!runcode,addtopath' -Wait
-    $env:Path += ";$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin"
-} else {
-    Write-Host "  Ya instalado: $((code --version | Select-Object -First 1)) (origen: $version)"
+
+    # El instalador acaba de escribir el PATH, pero esta sesion no lo ve.
+    # Se refresca y, si aun asi no aparece, se anaden las rutas conocidas.
+    if (-not (Resolve-Comando -Nombre 'code' -RutasCandidatas $rutasCode)) {
+        throw "VSCode se instalo pero 'code' no es invocable. Cierra y reabre PowerShell y relanza con -SaltarHerramientas."
+    }
+    Write-Host "  Instalado: $((code --version | Select-Object -First 1))"
 }
 
 # --- 3. Extensiones ---------------------------------------------------------

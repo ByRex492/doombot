@@ -96,6 +96,13 @@ arrastraría drivers NVIDIA, NVIDIA App, Logitech G HUB y el JRE 8. El script de
 importación instala una lista curada: Git, Python Install Manager (+ 3.12),
 Ollama, ripgrep y 7-Zip.
 
+El Python 3.12 se instala con `py install 3.12`, del gestor nuevo. **Verificado**
+con `--dry-run` en este equipo: resuelve a **Python 3.12.10** y sale con código 0.
+
+El script refresca el PATH desde el registro entre fases. Sin eso, `git` o `code`
+recién instalados no son invocables en la misma sesión de PowerShell, porque un
+proceso hereda el PATH al arrancar y no ve los cambios posteriores.
+
 Si el portátil es lo bastante antiguo como para no traer `winget`, hace falta
 instalar *App Installer* desde Microsoft Store, o bajar los instaladores a mano.
 

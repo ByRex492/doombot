@@ -99,6 +99,34 @@ class Match:
         return True
 
 
+def _partir_original(original: str, k: int) -> str:
+    """Lo que queda del texto ORIGINAL tras las k primeras palabras normalizadas.
+
+    No se puede cortar por posicion de caracter: normalize() cambia longitudes
+    —quita signos, colapsa espacios— y "3.12" pasa a ser dos palabras donde
+    habia una. Se recorre palabra a palabra contando cuantas normalizadas
+    produce cada una hasta llegar a k.
+    """
+    palabras = original.split()
+    contadas = 0
+    for i, palabra in enumerate(palabras):
+        n = normalize(palabra)
+        contadas += len(n.split())
+        if contadas >= k:
+            return _limpiar_bordes(" ".join(palabras[i + 1 :]))
+    return ""
+
+
+# Signos que solo son ruido en los extremos. El punto de "3.12" o la coma de
+# una enumeracion se conservan: van dentro, y ahi si dicen algo.
+_BORDES = " .,;:!?¡¿\"'"
+
+
+def _limpiar_bordes(texto: str) -> str:
+    """Quita la puntuacion de cierre que anade el dictado, no la interna."""
+    return texto.strip(_BORDES).strip()
+
+
 class PhraseMatcher:
     """Reconoce ordenes en texto hablado.
 
@@ -136,20 +164,26 @@ class PhraseMatcher:
         if not limpio:
             return None
 
+        # El original viaja junto al normalizado porque el argumento de las
+        # ordenes con prefijo se recorta del PRIMERO. Normalizar sirve para
+        # comparar, no para almacenar: guardar el argumento ya normalizado
+        # destruye los nombres propios sin vuelta atras —"GitHub" se convierte
+        # en "github", "Python" en "python"— y ata los recuerdos a la
+        # normalizacion vigente el dia que se guardaron.
         for intento in (self._exacto, self._contiene, self._difuso):
-            if (m := intento(limpio)) is not None:
+            if (m := intento(limpio, texto)) is not None:
                 return m
         return None
 
     # -- los tres grados -----------------------------------------------------
-    def _exacto(self, texto: str) -> Match | None:
+    def _exacto(self, texto: str, original: str) -> Match | None:
         for c in self._commands:
             for f in c.phrases:
                 if texto == normalize(f):
                     return Match(c.name, f, 1.0, "exact")
         return None
 
-    def _contiene(self, texto: str) -> Match | None:
+    def _contiene(self, texto: str, original: str) -> Match | None:
         """La orden dentro de una frase mas larga.
 
         Cubre el caso mas comun del dictado: "doom activa el modo silencioso"
@@ -176,13 +210,14 @@ class PhraseMatcher:
         if mejor is None:
             return None
         largo, c, f = mejor
-        arg = texto[largo:].strip() if c.prefix else ""
+        # El argumento sale del ORIGINAL, con sus tildes y sus mayusculas.
+        arg = _partir_original(original, len(normalize(f).split())) if c.prefix else ""
         # Cuanto mas ocupe la orden dentro de la frase, mas claro esta que era
         # una orden y no una mencion de pasada.
         confianza = min(1.0, 0.6 + 0.4 * (largo / max(len(texto), 1)))
         return Match(c.name, f, round(confianza, 3), "contains", arg)
 
-    def _difuso(self, texto: str) -> Match | None:
+    def _difuso(self, texto: str, original: str) -> Match | None:
         """Tolera las erratas del dictado.
 
         Solo se aplica a frases de longitud parecida: comparar una orden de
@@ -192,7 +227,7 @@ class PhraseMatcher:
         if not self._fuzzy:
             return None
 
-        if (m := self._difuso_prefijo(texto)) is not None:
+        if (m := self._difuso_prefijo(texto, original)) is not None:
             return m
 
         mejor: tuple[float, Command, str] | None = None
@@ -212,7 +247,7 @@ class PhraseMatcher:
         s, c, f = mejor
         return Match(c.name, f, round(s, 3), "fuzzy")
 
-    def _difuso_prefijo(self, texto: str) -> Match | None:
+    def _difuso_prefijo(self, texto: str, original: str) -> Match | None:
         """Ordenes con argumento cuando el prefijo llega con erratas.
 
         Comparar la frase entera no vale: el argumento es variable y diluye
@@ -241,7 +276,7 @@ class PhraseMatcher:
         if mejor is None:
             return None
         s, c, f, k = mejor
-        return Match(c.name, f, round(s, 3), "fuzzy", " ".join(palabras[k:]))
+        return Match(c.name, f, round(s, 3), "fuzzy", _partir_original(original, k))
 
     def __repr__(self) -> str:
         return f"PhraseMatcher({len(self._commands)} ordenes)"

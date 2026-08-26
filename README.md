@@ -156,9 +156,9 @@ dices "para", D.O.O.M tiene que callar al instante — no pasar la frase por un
 from doombot.phrases import default_matcher
 
 m = default_matcher()
-m.match("¡DOOM! Activa el modo silencioso.")   # Match(command='silence')
-m.match("recuerda que el pan esta caro")       # argument='el pan esta caro'
-m.match("que tiempo hace mañana?")             # None — no es una orden
+m.match("¡DOOM! Activa el modo silencioso.")  # Match(command='silence')
+m.match("recuerda que el pan esta caro")  # argument='el pan esta caro'
+m.match("que tiempo hace mañana?")  # None — no es una orden
 ```
 
 Devolver `None` es lo normal: casi nada de lo que se dice son órdenes, sino

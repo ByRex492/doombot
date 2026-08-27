@@ -48,8 +48,11 @@
     width:min(78vmin,640px); aspect-ratio:1;
   }
   #stage canvas{ position:absolute; inset:0; width:100%; height:100%; }
-  #bloomB{ filter: blur(46px) saturate(1.5); opacity:.75; }
-  #bloomA{ filter: blur(14px) saturate(1.25); opacity:.85; }
+  /* `screen` hace que el resplandor SUME luz en lugar de superponer una
+     imagen semitransparente. Sin esto el bloom apaga la escena en vez de
+     encenderla, que es justo el error que hacia ver el HUD apagado. */
+  #bloomB{ filter: blur(46px) saturate(1.7); opacity:1; mix-blend-mode:screen; }
+  #bloomA{ filter: blur(14px) saturate(1.35); opacity:1; mix-blend-mode:screen; }
   #fx    { filter: none; }
 
   /* Texto: en HTML, no en canvas. Mas nitido y mas facil de retocar. */
@@ -295,11 +298,17 @@ function amplitudMicro(){
    En produccion esto desaparece: Python medira el audio de Kokoro y
    empujara la amplitud real por DOOM.amplitude().
    --------------------------------------------------------------------- */
-let pulso = 0;
+let pulso = 0, nBoundary = 0;
 function amplitudTTS(t, dt){
   pulso = Math.max(0, pulso - dt*2.6);
-  const silabas = 0.50 + 0.50*Math.sin(2*Math.PI*4.6*t);
-  return clamp((0.30 + 0.70*pulso) * (0.55 + 0.45*silabas), 0, 1);
+  // Envolvente silabica continua: es la base, y siempre esta. Comprobado
+  // que las voces SAPI de Windows NO emiten 'boundary' en Chrome, asi que
+  // depender de ese evento dejaba el orbe practicamente quieto al hablar.
+  const silabas = 0.50 + 0.50*Math.sin(2*Math.PI*4.6*t + 1.3*Math.sin(2*Math.PI*0.77*t));
+  const micro   = 0.90 + 0.10*Math.sin(2*Math.PI*15*t);
+  const base    = (0.30 + 0.58*silabas) * micro;
+  // Si la voz si emite 'boundary', cada palabra acentua el pico.
+  return clamp(base * (0.78 + 0.32*pulso), 0, 1);
 }
 
 /* =================================================================
@@ -491,10 +500,10 @@ function dibujar(t){
   /* ---- nucleo ---- */
   const Rc = R*(0.72 + 0.16*amp*m.react);
   g = cx.createRadialGradient(cxp, cyp - Rc*0.24, Rc*0.04, cxp, cyp, Rc);
-  g.addColorStop(0,    col(Math.min(m.lum+20,76), 1.00*Math.min(G,1.1), Math.min(m.sat+10,100)));
-  g.addColorStop(0.30, col(Math.min(m.lum+4,66),  0.72*G, Math.min(m.sat+10,100)));
-  g.addColorStop(0.70, col(m.lum-10, 0.30*G));
-  g.addColorStop(1,    col(m.lum-16, 0));
+  g.addColorStop(0,    col(Math.min(m.lum+10,68), 1.00*Math.min(G,1.1), Math.min(m.sat+16,100)));
+  g.addColorStop(0.28, col(Math.min(m.lum-4,58),  0.78*G, Math.min(m.sat+16,100)));
+  g.addColorStop(0.68, col(m.lum-18, 0.34*G, Math.min(m.sat+10,100)));
+  g.addColorStop(1,    col(m.lum-24, 0));
   cx.fillStyle = g; cx.beginPath(); cx.arc(cxp,cyp,Rc,0,Math.PI*2); cx.fill();
 
   /* ---- particulas ---- */
@@ -583,8 +592,9 @@ sP.oninput = function(){ generarParticulas(+sP.value); sincroSliders(); };
 function actualizarStats(){
   document.getElementById('stats').innerHTML =
     'fps ' + fps.toFixed(0) + '  &middot;  amp ' + amp.toFixed(2) + '<br>' +
-    'estado ' + actual + '<br><br>' +
-    '<kbd>1</kbd>-<kbd>5</kbd> estado &middot; <kbd>D</kbd> ciclo &middot; <kbd>H</kbd> panel';
+    'estado ' + actual + ' &middot; fuente ' + fuente + '<br><br>' +
+    '<kbd>1</kbd>-<kbd>5</kbd> estado &middot; <kbd>D</kbd> ciclo &middot; <kbd>H</kbd> panel<br>' +
+    '<kbd>espacio</kbd> hablarle &middot; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> decir';
 }
 
 /* --- ciclo de demostracion: la conversacion completa --- */
@@ -687,7 +697,7 @@ function decir(texto){
     fuente = 'tts'; pulso = 1; pintarBotones();
     ponerTexto(texto.trim());
   };
-  u.onboundary = function(){ pulso = 1; };   // un pico por palabra
+  u.onboundary = function(){ pulso = 1; nBoundary++; };   // un pico por palabra, si la voz los emite
   u.onend = function(){
     transicionar('dormido');
     fuente = 'silencio'; pintarBotones();
@@ -743,6 +753,7 @@ function clamp(v,a,b){ return v < a ? a : (v > b ? b : v); }
 redimensionar();
 generarParticulas(+sP.value);
 sincroSliders();
+sincroRate();
 pintarBotones();
 requestAnimationFrame(frame);
 setTimeout(lanzarDemo, 500);

@@ -21,6 +21,7 @@ doombot/
 │   ├── memory/          Qué recuerda D.O.O.M
 │   ├── phrases/         Frases textuales y órdenes
 │   └── voice/           Audio, palabra de activación, síntesis
+│       └── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
 └── tests/
 ```
 
@@ -75,3 +76,28 @@ Al implementar una capa, el prompt deja de negarla sin que nadie lo toque.
 datos de la memoria, los modelos descargados y las grabaciones. El
 `.gitignore` los cubre; `paths.data_dir()` se asegura de que ni siquiera caigan
 dentro de la carpeta del proyecto.
+
+## La captura de audio
+
+`voice/capture.py` es la única pieza que toca hardware directamente. Dos
+decisiones suyas responden a problemas que no se ven hasta que fallan:
+
+**El micrófono se elige por nombre, no por índice.** El sobremesa expone más de
+veinte entradas —Oculus, Steam, VB-Cable, Realtek, A50— repartidas entre cuatro
+APIs de Windows, y los índices de PortAudio se desplazan al enchufar o quitar un
+USB. Un índice guardado en `.env` acaba apuntando a otro micrófono; un fragmento
+del nombre sobrevive. Se configura en `DOOMBOT_AUDIO_INPUT`.
+
+**El umbral de silencio se calibra en cada grabación.** Una constante funciona en
+la habitación donde se escribió y falla en cualquier otra: con un ventilador
+cerca no detecta silencio nunca, y en una sala callada corta a media frase. Se
+mide el ruido de fondo durante los primeros 0,3 s y el umbral sale de ahí, con
+un suelo mínimo para que un crujido no cuente como voz.
+
+Además, `Recording` es un gestor de contexto que **borra el fichero al salir**, y
+`limpiar_audio_antiguo()` barre lo que deje un cierre brusco. Una grabación solo
+interesa hasta que se transcribe, y sin borrado explícito la carpeta de datos
+crece sin techo.
+
+Todo lo grabado va a `data_dir()/audio`, nunca dentro del repositorio: es lo que
+se ha dicho en voz alta delante del ordenador.

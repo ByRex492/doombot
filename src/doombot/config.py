@@ -47,6 +47,13 @@ def load_env(fichero: Path | None = None, *, override: bool = False) -> dict[str
 class Settings:
     ollama_host: str
     log_level: str
+    audio_input: str = ""
+    """Fragmento del nombre del microfono, o cadena vacia para el del sistema.
+
+    Es un nombre y no un indice a proposito: los indices de PortAudio se
+    desplazan al enchufar o quitar un USB, asi que uno guardado aqui acaba
+    apuntando a otro microfono. Ver ``voice.capture.Microphone``.
+    """
 
     @property
     def is_remote_ollama(self) -> bool:
@@ -65,4 +72,5 @@ def settings() -> Settings:
     return Settings(
         ollama_host=os.environ.get("DOOMBOT_OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/"),
         log_level=os.environ.get("DOOMBOT_LOG_LEVEL", "INFO").upper(),
+        audio_input=os.environ.get("DOOMBOT_AUDIO_INPUT", "").strip(),
     )

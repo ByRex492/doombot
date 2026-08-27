@@ -3,6 +3,8 @@
     python -m doombot            diagnostico del equipo
     python -m doombot chat       modo interactivo, con memoria y ordenes
     python -m doombot "pregunta" se la lanza al modelo del perfil activo
+    python -m doombot micro         lista los microfonos disponibles
+    python -m doombot micro probar  graba con el configurado, mide y transcribe
 
 El diagnostico es lo primero que conviene ejecutar al sentarse en una maquina
 distinta: dice que perfil ha elegido y por que, que es la pregunta que surge
@@ -89,8 +91,66 @@ def preguntar(texto: str) -> int:
     return 0
 
 
+def microfono(probar: bool = False) -> int:
+    """Lista los microfonos, o graba con el configurado y lo transcribe.
+
+    Existe porque el fallo mas comun de la capa de voz no esta en el modelo sino
+    en el dispositivo: se graba del microfono equivocado, o de uno silenciado, y
+    el sintoma es una transcripcion vacia que parece un fallo de Whisper.
+    """
+    from doombot.voice.capture import Microphone, listar_microfonos
+
+    cfg = settings()
+    try:
+        if not probar:
+            print("Microfonos disponibles:")
+            for d in listar_microfonos():
+                print(f"  {d}")
+            print()
+            print(f"  configurado  {cfg.audio_input or '(predeterminado del sistema)'}")
+            print("  cambiar      DOOMBOT_AUDIO_INPUT en .env, con parte del nombre")
+            return 0
+
+        mic = Microphone.from_settings(cfg)
+        print(f"Microfono: {mic.device_name}")
+        print("Habla cuando quieras. Se detiene solo al detectar silencio.")
+        print()
+
+        ancho = 40
+
+        def barra(nivel: float) -> None:
+            lleno = int(nivel * ancho)
+            print("\r  " + "#" * lleno + " " * (ancho - lleno), end="", flush=True)
+
+        grabacion = mic.record_until_silence(on_level=barra)
+        print(f"\r  {grabacion.duration:.1f} s grabados, pico {grabacion.peak:.3f}{' ' * ancho}")
+
+        with grabacion:
+            if grabacion.parece_mudo:
+                print()
+                print("  El audio esta practicamente mudo.")
+                print("  Revisa que el microfono no este silenciado y que sea el correcto.")
+                return 1
+
+            from doombot.backends.whisper import WhisperTranscriber
+
+            perfil = profiles.current()
+            print(f"  transcribiendo con {perfil.stt_model} en {perfil.stt_device}...")
+            r = WhisperTranscriber.from_profile(perfil).transcribe_detailed(grabacion.path)
+            print()
+            print(f"  «{r.text}»")
+            print()
+            print(f"  idioma {r.language}   RTF {r.rtf:.2f}   {r.elapsed:.1f} s")
+    except BackendError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main() -> int:
     args = sys.argv[1:]
+    if args and args[0] in ("micro", "microfono"):
+        return microfono(probar=len(args) > 1 and args[1] in ("probar", "test"))
     if args and args[0] in ("chat", "-i", "--interactivo"):
         from doombot.chat import run
 

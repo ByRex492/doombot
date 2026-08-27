@@ -185,3 +185,51 @@ significa media hora de espera repartida en el día. Se fija `keep_alive: -1`.
 **Consecuencia.** Decae el argumento de portabilidad que respaldaba la capa de contratos: ya no
 hay que escribir dos implementaciones de la Capa 4. El `.gitattributes` con normalización de
 finales de línea se mantiene, porque no estorba y protege ante cambios de criterio.
+
+---
+
+## D-012 — Fusión de las dos historias del proyecto
+
+**Contexto.** El proyecto creció en dos sitios sin remoto común: el sobremesa documentaba las
+decisiones (4 commits) mientras el portátil construía el código (13 commits). Ninguna máquina
+podía ver el trabajo de la otra, y los 4 commits del sobremesa **existían en un único disco y
+sin copia de seguridad**.
+
+**Decisión.** Fusionar con `--allow-unrelated-histories`, no rebasar, para conservar intactas
+ambas historias. Resultado: 18 commits, subidos a `github.com/ByRex492/doombot`.
+
+**Los tres conflictos** se dieron por coincidir el mismo fichero en ambas raíces:
+
+| Fichero | Resolución |
+|---|---|
+| `README.md` | El del portátil: describe el proyecto que existe hoy. El del sobremesa era el plan por capas anterior al código, y su contenido único ya estaba duplicado en `notion-PROYECTO-DOOM.md` y en D-007 |
+| `.gitattributes` | Base del portátil **+ recuperada** `*.sh text eol=lf` |
+| `.gitignore` | Base del portátil **+ recuperadas** `*.pt`, `*.bin`, `*.mp3` |
+
+Las versiones del portátil eran más completas —escritas ya con el código delante— pero habían
+perdido cuatro reglas presentes en el sobremesa. Se recuperaron en vez de elegir un lado entero.
+
+**Lección.** Crear el remoto es el primer paso al trabajar desde dos equipos, no el último.
+`docs/migracion.md` lo señalaba como Fase 0 y quedó sin hacer; el coste fue una jornada entera
+con la única copia del registro de decisiones en un solo disco.
+
+---
+
+## D-013 — Cerrado el riesgo de Blackwell en la capa de audio
+
+**Contexto.** D-003 dejó abierto el único riesgo técnico serio del proyecto: la GPU es
+Blackwell (sm_120), demasiado reciente, y estaba verificada para Ollama pero **no para
+CTranslate2**, el motor sobre el que corre `faster-whisper`. El plan B era `whisper.cpp`.
+
+**Medido en esta máquina** con `ctranslate2` 4.8.1:
+
+    CUDA device count: 1
+    Tipos soportados: float16, bfloat16, int8_float16, int8, int8_float32, float32
+
+**Conclusión.** CTranslate2 ve la GPU y ofrece `float16`, que es justo lo que pide el perfil
+`workstation` (`voz small cuda/float16`). **No hace falta el plan B.** La confirmación
+definitiva llegará al transcribir audio real, pero la señal no deja lugar a dudas.
+
+**Queda pendiente** explicar dos observaciones del portátil que ahora cambian de sentido: la
+mala transcripción de términos técnicos ("Python" → "país AN") y el RTF oscilando entre 0,28 y
+0,59. Con la GPU descartada como causa en este equipo, habrá que medirlas aquí de nuevo.

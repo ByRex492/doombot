@@ -31,7 +31,7 @@ def test_data_dir_respeta_el_override(tmp_path, monkeypatch):
     assert paths.data_dir().is_dir()
 
 
-def test_sin_rutas_absolutas_escritas_a_mano():
+def test_sin_rutas_absolutas():
     """Ningun modulo debe llevar dentro una ruta de un equipo concreto.
 
     Es el test que evita que el proyecto vuelva a atarse a una maquina, que es
@@ -47,7 +47,7 @@ def test_sin_rutas_absolutas_escritas_a_mano():
     assert not fallos, "Rutas absolutas encontradas: " + ", ".join(fallos)
 
 
-def test_ningun_test_deja_carpetas_temporales_huerfanas():
+def test_sin_temporales_huerfanos():
     """Las carpetas de tempfile no se limpian: una por ejecucion de la bateria.
 
     Se detectaron 45 MB acumulados en %TEMP% por este motivo. El fixture

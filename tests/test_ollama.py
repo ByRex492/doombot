@@ -71,7 +71,7 @@ def test_from_profile_traslada_los_ajustes(perfil_portatil):
 
     def handler(req: httpx.Request) -> httpx.Response:
         capturado.update(json.loads(req.content))
-        return httpx.Response(200, json={"response": "ok"})
+        return httpx.Response(200, json={"message": {"content": "ok"}})
 
     cfg = Settings(ollama_host="http://127.0.0.1:11434", log_level="INFO")
     gen = OllamaGenerator.from_profile(perfil_portatil, cfg, client=cliente_falso(handler))
@@ -89,13 +89,13 @@ def test_num_gpu_cero_no_se_envia():
 
     def handler(req: httpx.Request) -> httpx.Response:
         capturado.update(json.loads(req.content))
-        return httpx.Response(200, json={"response": "ok"})
+        return httpx.Response(200, json={"message": {"content": "ok"}})
 
     OllamaGenerator("m", num_gpu=0, client=cliente_falso(handler)).generate("hola")
     assert "num_gpu" not in capturado["options"]
 
 
-def test_from_profile_usa_el_host_de_la_configuracion(perfil_portatil):
+def test_from_profile_usa_el_host(perfil_portatil):
     """Apuntar al sobremesa por red no cambia la clase, solo el host."""
     cfg = Settings(ollama_host="http://192.168.1.40:11434", log_level="INFO")
     gen = OllamaGenerator.from_profile(perfil_portatil, cfg)
@@ -105,7 +105,7 @@ def test_from_profile_usa_el_host_de_la_configuracion(perfil_portatil):
 # -- generacion --------------------------------------------------------------
 def test_generate_devuelve_el_texto_limpio():
     def handler(req):
-        return httpx.Response(200, json={"response": "  hola qué tal  ", "done": True})
+        return httpx.Response(200, json={"message": {"content": "  hola qué tal  "}, "done": True})
 
     assert OllamaGenerator("m", client=cliente_falso(handler)).generate("x") == "hola qué tal"
 
@@ -115,19 +115,23 @@ def test_system_prompt_solo_si_lo_hay():
 
     def handler(req):
         cuerpos.append(json.loads(req.content))
-        return httpx.Response(200, json={"response": "ok"})
+        return httpx.Response(200, json={"message": {"content": "ok"}})
 
     gen = OllamaGenerator("m", client=cliente_falso(handler))
     gen.generate("x")
     gen.generate("x", system="Eres D.O.O.M.")
-    assert "system" not in cuerpos[0]
-    assert cuerpos[1]["system"] == "Eres D.O.O.M."
+
+    # Sin system: un unico mensaje de usuario.
+    assert [m["role"] for m in cuerpos[0]["messages"]] == ["user"]
+    # Con system: va delante, como mensaje con rol propio.
+    assert [m["role"] for m in cuerpos[1]["messages"]] == ["system", "user"]
+    assert cuerpos[1]["messages"][0]["content"] == "Eres D.O.O.M."
 
 
 def test_stream_va_entregando_fragmentos():
     lineas = [
-        json.dumps({"response": "Hola"}),
-        json.dumps({"response": " mundo"}),
+        json.dumps({"message": {"content": "Hola"}}),
+        json.dumps({"message": {"content": " mundo"}}),
         json.dumps({"done": True}),
     ]
 
@@ -142,7 +146,8 @@ def test_stream_ignora_lineas_corruptas():
     """Un corte de red a mitad no debe reventar la voz."""
 
     def handler(req):
-        contenido = f"{json.dumps({'response': 'a'})}\n{{rota\n{json.dumps({'done': True})}"
+        bueno = json.dumps({"message": {"content": "a"}})
+        contenido = f"{bueno}\n{{rota\n{json.dumps({'done': True})}"
         return httpx.Response(200, content=contenido.encode())
 
     assert list(OllamaGenerator("m", client=cliente_falso(handler)).stream("x")) == ["a"]
@@ -190,3 +195,49 @@ def test_contra_ollama_real():
     if not gen.is_available():
         pytest.skip("Ollama no esta arrancado")
     assert gen.generate("Responde solo con la palabra: listo")
+
+
+# -- D-008: el endpoint no puede volver a cambiarse -------------------------
+def test_usa_api_chat():
+    """D-008. Medido en el sobremesa: /api/generate con gemma4:12b devolvia
+    respuestas VACIAS. El fallo no aparece con todos los modelos —llama3.2:3b
+    respondia bien— y por eso paso semanas sin detectarse: el codigo funcionaba
+    en una maquina y devolvia el vacio en la otra.
+    """
+    rutas = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        rutas.append(req.url.path)
+        return httpx.Response(200, json={"message": {"content": "ok"}})
+
+    gen = OllamaGenerator("m", client=cliente_falso(handler))
+    gen.generate("x")
+    assert rutas == ["/api/chat"], f"deberia usar /api/chat, uso {rutas}"
+
+
+def test_el_stream_tambien_usa_api_chat():
+    rutas = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        rutas.append(req.url.path)
+        lineas = [
+            json.dumps({"message": {"content": "hola"}}),
+            json.dumps({"done": True}),
+        ]
+        return httpx.Response(200, content="\n".join(lineas).encode())
+
+    gen = OllamaGenerator("m", client=cliente_falso(handler))
+    assert list(gen.stream("x")) == ["hola"]
+    assert rutas == ["/api/chat"]
+
+
+def test_nadie_usa_api_generate():
+    """Buscado en el codigo, no solo en este backend."""
+    from doombot.paths import PROJECT_ROOT
+
+    culpables = []
+    for py in (PROJECT_ROOT / "src").rglob("*.py"):
+        for n, linea in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+            if "/api/generate" in linea and not linea.lstrip().startswith("#"):
+                culpables.append(f"{py.name}:{n}")
+    assert not culpables, "D-008 prohibe /api/generate: " + ", ".join(culpables)

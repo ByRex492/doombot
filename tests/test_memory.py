@@ -74,7 +74,7 @@ def test_no_duplica_lo_mismo(mem):
     assert mem.count() == 1
 
 
-def test_el_mismo_texto_con_otro_tipo_si_es_otro_recuerdo(mem):
+def test_mismo_texto_otro_tipo(mem):
     a = mem.remember("revisar el presupuesto", kind="fact")
     b = mem.remember("revisar el presupuesto", kind="task")
     assert a != b
@@ -86,7 +86,7 @@ def test_guarda_metadatos(mem):
     assert mem.get(i).metadata == {"origen": "voz", "confianza": 0.9}
 
 
-def test_guarda_en_lote_con_una_sola_llamada_al_embedder(emb, tmp_path):
+def test_lote_una_sola_llamada(emb, tmp_path):
     """El coste de un embedder lo domina la llamada, no el numero de textos."""
     with Memory(emb, tmp_path / "lote.db") as m:
         antes = emb.llamadas
@@ -197,7 +197,7 @@ def test_sobrevive_al_cierre(emb, tmp_path):
         assert m.recall("el portatil lleva una GTX 1050")[0].similarity > 0.99
 
 
-def test_detecta_que_cambio_el_modelo_de_embeddings(emb, tmp_path):
+def test_detecta_cambio_de_dimensiones(emb, tmp_path):
     """El fallo mas dificil de diagnosticar de toda la memoria.
 
     Con vectores de dos modelos mezclados nada revienta: las busquedas siguen
@@ -220,7 +220,7 @@ def test_la_base_no_cae_dentro_del_repositorio(emb, tmp_path, monkeypatch):
 
 
 # ============================================================ para el prompt
-def test_as_context_devuelve_vacio_si_no_hay_nada_relevante(mem):
+def test_contexto_vacio_si_nada_encaja(mem):
     """Vacio y no un encabezado suelto: el modelo leeria eso como un fallo."""
     mem.remember("el cielo es azul")
     assert mem.as_context("cualquier cosa", min_similarity=0.999) == ""
@@ -234,7 +234,7 @@ def test_as_context_lista_los_recuerdos(mem):
 
 
 # ============================================================ identidad
-def test_ahora_doom_dice_que_sabe_recordar():
+def test_capacidad_recordar_activa():
     """identity detecta que memory/ ya expone algo y activa la capacidad sola.
 
     Es la prueba de que el prompt se corrige segun avanza el proyecto en vez
@@ -249,7 +249,7 @@ def test_ahora_doom_dice_que_sabe_recordar():
 
 # ============================================================ con el modelo real
 @pytest.mark.hardware
-def test_recupera_por_significado_no_por_palabras(tmp_path):
+def test_recupera_por_significado(tmp_path):
     """LA prueba. Ninguna palabra de la pregunta esta en el recuerdo.
 
     Usa el fixture tmp_path y no tempfile.mkdtemp(): el segundo no se limpia
@@ -277,7 +277,7 @@ def test_recupera_por_significado_no_por_palabras(tmp_path):
         print(f"  similitud: {r[0].similarity:.3f}")
 
 
-def test_detecta_que_cambio_el_modelo_aunque_coincidan_las_dimensiones(tmp_path):
+def test_detecta_cambio_de_modelo(tmp_path):
     """Dos modelos distintos pueden dar vectores del mismo tamano.
 
     Es el caso real que destapo fastembed 0.8: el mismo modelo cambio de CLS
@@ -313,7 +313,7 @@ def test_el_umbral_por_defecto_es_el_medido():
     assert UMBRAL == 0.35
 
 
-def test_el_contexto_invita_a_descartar_lo_irrelevante(mem):
+def test_contexto_invita_a_descartar(mem):
     mem.remember("el portatil lleva una GTX 1050")
     ctx = mem.as_context("el portatil lleva una GTX 1050")
     assert "ignoralas" in ctx

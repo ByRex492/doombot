@@ -23,7 +23,7 @@ def test_no_dice_saber_actuar():
     assert not caps["actuar"].available
 
 
-def test_no_dice_saber_recordar_mientras_memory_este_vacio():
+def test_no_dice_recordar_sin_memoria():
     """En cuanto memory/ exponga algo, esta capacidad se activa sola."""
     from doombot import memory
 

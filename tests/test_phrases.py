@@ -74,7 +74,7 @@ def test_todas_las_variantes_de_una_orden(m):
 
 
 # ============================================================ dentro de una frase
-def test_reconoce_la_orden_con_muletillas_alrededor(m):
+def test_orden_con_muletillas(m):
     """El caso mas comun del dictado."""
     r = m.match("¡DOOM! Activa el modo silencioso.")
     assert r.command == "silence"
@@ -93,13 +93,13 @@ def test_gana_la_frase_mas_larga():
     assert m.match("para").command == "stop"
 
 
-def test_no_reconoce_una_orden_dentro_de_otra_palabra(m):
+def test_no_dispara_dentro_de_palabra(m):
     """'para' no debe dispararse dentro de 'preparar' ni de 'disparate'."""
     assert m.match("voy a preparar la cena") is None
     assert m.match("eso es un disparate") is None
 
 
-def test_la_confianza_baja_si_la_orden_es_una_parte_pequena(m):
+def test_confianza_segun_proporcion(m):
     corta = m.match("doom modo silencioso")
     larga = m.match("oye una cosa que te queria comentar sobre el modo silencioso y tal")
     assert corta.confidence > larga.confidence
@@ -212,7 +212,7 @@ def test_similarity_distintos():
 
 
 # ============================================================ identidad
-def test_ahora_doom_dice_que_entiende_ordenes():
+def test_phrases_expone_algo():
     """identity detecta que phrases/ ya expone algo, sin tocar el prompt."""
     from doombot import identity
 
@@ -245,18 +245,18 @@ def test_reconoce_un_prefijo_con_erratas(m):
     assert r.argument == "mi portatil"
 
 
-def test_el_prefijo_con_erratas_sigue_necesitando_argumento(m):
+def test_prefijo_difuso_sin_argumento(m):
     """Sin nada detras no es una orden util, aunque el prefijo se parezca."""
     assert m.match("que sabe sobre") is None
 
 
-def test_una_errata_en_el_prefijo_no_inventa_ordenes(m):
+def test_errata_no_inventa_ordenes(m):
     """Una frase normal no debe convertirse en orden por parecerse un poco."""
     assert m.match("que sabemos todos de la vida y sus cosas") is None
 
 
 # ============================================================ el argumento intacto
-def test_el_argumento_conserva_tildes_y_mayusculas(m):
+def test_argumento_conserva_original(m):
     """Normalizar sirve para comparar, no para almacenar.
 
     Guardar el argumento ya normalizado destruye los nombres propios sin vuelta
@@ -267,21 +267,21 @@ def test_el_argumento_conserva_tildes_y_mayusculas(m):
     assert r.argument == "el código está en GitHub, no en Python"
 
 
-def test_el_argumento_conserva_la_puntuacion_interna(m):
+def test_argumento_puntuacion_interna(m):
     r = m.match("Apunta que necesito Python 3.12, no la 3.14")
     assert r.command == "remember"
     assert "3.12" in r.argument
     assert "Python" in r.argument
 
 
-def test_el_argumento_difuso_tambien_conserva_el_original(m):
+def test_argumento_difuso_original(m):
     """El caso de la errata de Whisper, ahora sin degradar el texto."""
     r = m.match("que sabe sobre mi portátil Húngaro")
     assert r.command == "recall"
     assert r.argument == "mi portátil Húngaro"
 
 
-def test_partir_cuenta_palabras_normalizadas_no_caracteres():
+def test_partir_cuenta_palabras():
     """normalize() cambia longitudes: '3.12' pasa a ser dos palabras."""
     from doombot.phrases.matcher import _partir_original
 

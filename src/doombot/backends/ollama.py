@@ -26,6 +26,22 @@ from doombot.profiles import Profile
 # tarda lo que tarde el modelo en generar, y en CPU eso puede irse a minutos.
 _TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0)
 
+# D-008: siempre /api/chat, nunca /api/generate.
+#
+# No es una preferencia de estilo. Medido en el sobremesa, /api/generate con
+# gemma4:12b agotaba el limite de tokens devolviendo una respuesta VACIA
+# (done_reason: length, 250 tokens generados, 0 caracteres). La causa es que
+# /api/generate recibe el prompt en crudo, mientras que /api/chat aplica la
+# plantilla de conversacion propia de cada modelo.
+#
+# El fallo no aparece con todos los modelos —en el portatil, llama3.2:3b
+# respondia bien por /api/generate—, y por eso estuvo semanas sin detectarse:
+# el codigo funcionaba en una maquina y devolvia el vacio en la otra.
+#
+# Ademas es el unico endpoint con historial de conversacion y tool calling,
+# ambos necesarios en las capas siguientes.
+RUTA_CHAT = "/api/chat"
+
 
 class OllamaGenerator:
     """Genera texto contra un servidor Ollama."""
@@ -88,8 +104,8 @@ class OllamaGenerator:
 
     def generate(self, prompt: str, *, system: str | None = None) -> str:
         """Respuesta completa. Bloquea hasta que el modelo termina."""
-        datos = self._post("/api/generate", self._cuerpo(prompt, system, stream=False))
-        return str(datos.get("response", "")).strip()
+        datos = self._post(RUTA_CHAT, self._cuerpo(prompt, system, stream=False))
+        return str(datos.get("message", {}).get("content", "")).strip()
 
     def stream(self, prompt: str, *, system: str | None = None) -> Iterator[str]:
         """Respuesta por fragmentos, segun los va produciendo el modelo.
@@ -100,7 +116,7 @@ class OllamaGenerator:
         mientras se genera el resto.
         """
         cuerpo = self._cuerpo(prompt, system, stream=True)
-        url = f"{self._host}/api/generate"
+        url = f"{self._host}{RUTA_CHAT}"
         try:
             with self._client.stream("POST", url, json=cuerpo) as r:
                 r.raise_for_status()
@@ -111,7 +127,7 @@ class OllamaGenerator:
                         trozo = json.loads(linea)
                     except json.JSONDecodeError:
                         continue
-                    if texto := trozo.get("response"):
+                    if texto := trozo.get("message", {}).get("content"):
                         yield texto
                     if trozo.get("done"):
                         return
@@ -133,16 +149,24 @@ class OllamaGenerator:
 
     # -- interno -------------------------------------------------------------
     def _cuerpo(self, prompt: str, system: str | None, *, stream: bool) -> dict[str, Any]:
-        cuerpo: dict[str, Any] = {
+        """Cuerpo para /api/chat: mensajes con rol, no un prompt en crudo.
+
+        El rol de sistema va como un mensaje mas, el primero de la lista. Es la
+        forma que espera este endpoint, y la que permite anadir historial de
+        conversacion mas adelante sin cambiar nada de esta estructura.
+        """
+        mensajes: list[dict[str, str]] = []
+        if system:
+            mensajes.append({"role": "system", "content": system})
+        mensajes.append({"role": "user", "content": prompt})
+
+        return {
             "model": self._model,
-            "prompt": prompt,
+            "messages": mensajes,
             "stream": stream,
             "options": self._options,
             "keep_alive": self._keep_alive,
         }
-        if system:
-            cuerpo["system"] = system
-        return cuerpo
 
     def _post(self, ruta: str, cuerpo: dict[str, Any]) -> dict[str, Any]:
         try:

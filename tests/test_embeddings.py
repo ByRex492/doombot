@@ -214,7 +214,7 @@ def test_el_significado_queda_cerca():
 
 
 @pytest.mark.hardware
-def test_funciona_en_espanol_y_entre_idiomas():
+def test_multilingue():
     """El modelo es multilingue: los bge-small habituales son solo ingleses."""
     pytest.importorskip("fastembed")
     e = FastEmbedder.from_config()
@@ -224,7 +224,7 @@ def test_funciona_en_espanol_y_entre_idiomas():
 
 
 @pytest.mark.hardware
-def test_las_dimensiones_reales_son_las_declaradas():
+def test_dimensiones_reales():
     """profiles.toml declara 384. Si el modelo real no coincide, embed() avisa."""
     pytest.importorskip("fastembed")
     cfg = embedding_config()

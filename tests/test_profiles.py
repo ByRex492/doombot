@@ -39,7 +39,7 @@ def test_seleccion_por_vram(vram, esperado, cargados):
     assert profiles.select(vram, cargados) == esperado
 
 
-def test_el_portatil_fuerza_las_capas_a_gpu(cargados):
+def test_portatil_fuerza_gpu(cargados):
     """En una GPU de 3 GB, sin num_gpu alto Ollama deja la mitad en CPU.
 
     Medido: 12,3 tok/s con el valor por defecto frente a 29,3 forzandolo.

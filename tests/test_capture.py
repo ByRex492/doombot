@@ -74,7 +74,7 @@ def test_detecta_un_microfono_mudo():
     assert not Recording(path=None, duration=1.0, peak=0.4).parece_mudo
 
 
-def test_la_grabacion_se_borra_al_salir_del_contexto(carpeta_aislada):
+def test_grabacion_se_borra_al_salir(carpeta_aislada):
     grabacion = micro_con([0.2]).record(0.2)
     assert grabacion.path.is_file()
     with grabacion:
@@ -83,7 +83,7 @@ def test_la_grabacion_se_borra_al_salir_del_contexto(carpeta_aislada):
 
 
 # -- grabacion ---------------------------------------------------------------
-def test_graba_un_wav_de_16k_mono_con_la_duracion_pedida():
+def test_graba_wav_16k_mono():
     grabacion = micro_con([0.3]).record(0.5)
 
     with wave.open(str(grabacion.path), "rb") as w:
@@ -112,7 +112,7 @@ def test_para_cuando_llega_el_silencio():
     assert grabacion.duration == pytest.approx(36 * 0.05, rel=0.15)
 
 
-def test_espera_a_oir_voz_antes_de_contar_el_silencio():
+def test_espera_voz_antes_del_silencio():
     """Regresion: la primera version cortaba antes de que diera tiempo a hablar.
 
     Contaba el silencio desde el primer bloque, asi que los segundos que uno
@@ -138,7 +138,7 @@ def test_se_rinde_si_nadie_habla():
     assert grabacion.parece_mudo
 
 
-def test_el_umbral_se_calibra_con_el_ruido_de_fondo():
+def test_umbral_calibrado_con_el_fondo():
     """El mismo nivel es voz o silencio segun el ruido de fondo que lo rodee.
 
     Con 0,5 constante desde el principio, ese valor ES el fondo y nunca cuenta
@@ -160,7 +160,7 @@ def test_respeta_el_maximo_si_nunca_hay_silencio():
 
 
 # -- eleccion del dispositivo ------------------------------------------------
-def test_encuentra_el_microfono_por_un_fragmento_del_nombre(monkeypatch):
+def test_micro_por_fragmento(monkeypatch):
     """Por nombre y no por indice: los indices bailan al mover un USB."""
     monkeypatch.setattr(
         capture,

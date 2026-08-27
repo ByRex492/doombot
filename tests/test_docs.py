@@ -24,7 +24,7 @@ def _modulos() -> set[str]:
     return nombres
 
 
-def test_el_paquete_anuncia_todos_sus_modulos():
+def test_paquete_anuncia_modulos():
     """El docstring de doombot/__init__.py es el indice del proyecto."""
     import doombot
 
@@ -33,7 +33,7 @@ def test_el_paquete_anuncia_todos_sus_modulos():
     assert not faltan, f"Sin mencionar en doombot/__init__.py: {faltan}"
 
 
-def test_la_documentacion_describe_todos_los_modulos():
+def test_docs_describen_los_modulos():
     doc = (DOCS_DIR / "estructura.md").read_text(encoding="utf-8")
     faltan = sorted(m for m in _modulos() if m not in doc)
     assert not faltan, f"Sin describir en docs/estructura.md: {faltan}"
@@ -45,7 +45,7 @@ def test_el_readme_existe_y_explica_como_empezar():
         assert imprescindible in readme, f"El README no explica {imprescindible!r}"
 
 
-def test_no_quedan_rutas_de_un_equipo_concreto_en_la_documentacion():
+def test_docs_sin_rutas_de_equipo():
     """Salvo las del sobremesa, que se citan justamente como ejemplo ajeno."""
     for md in [*DOCS_DIR.glob("*.md"), PROJECT_ROOT / "README.md"]:
         texto = md.read_text(encoding="utf-8")

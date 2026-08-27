@@ -1,0 +1,35 @@
+{
+  // Ajustes DEL PROYECTO. Solo cosas que valen igual en cualquier equipo:
+  // nada de rutas absolutas ni nombres de usuario. Lo personal (tema, fuente)
+  // va en los ajustes de usuario y lo sincroniza Settings Sync.
+
+  // El interprete del entorno virtual del propio proyecto. La ruta es
+  // relativa a la carpeta abierta, asi que vale en las dos maquinas aunque
+  // el usuario de Windows sea distinto.
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+
+  // Activa el .venv al abrir un terminal integrado. Sin esto, 'python -m
+  // doombot' usa el Python global, que no tiene el paquete instalado, y el
+  // error que sale ("No module named doombot") no delata la causa.
+  "python.terminal.activateEnvironment": true,
+
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+  "python.analysis.typeCheckingMode": "standard",
+  "python.analysis.extraPaths": ["./src"],
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": { "source.organizeImports": "explicit" }
+  },
+
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // todo-tree encuentra ripgrep por PATH. NO poner aqui una ruta absoluta:
+  // los usuarios son distintos en cada maquina y romperia en la otra.
+  "todo-tree.general.tags": ["TODO", "FIXME", "D-", "HACK"]
+}

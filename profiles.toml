@@ -1,0 +1,85 @@
+# Perfiles de hardware de D.O.O.M
+# ==============================================================================
+# El mismo commit corre en el sobremesa y en el portatil porque el codigo no
+# sabe en que equipo esta: mide la VRAM disponible al arrancar y elige de aqui.
+#
+# La seleccion no usa el nombre del equipo ni el del usuario a proposito. Un
+# hostname cambia, una tarjeta se sustituye, y el proyecto tiene que seguir
+# eligiendo bien sin tocar codigo. La VRAM es el dato del que dependen de
+# verdad las decisiones.
+#
+# Gana el perfil de mayor min_vram_mb que no supere la VRAM detectada.
+
+schema = 1
+
+# ------------------------------------------------------------------------------
+[profiles.workstation]
+description = "Sobremesa con GPU dedicada holgada. Modelo y voz caben juntos en VRAM."
+min_vram_mb = 8192
+
+llm_model   = "gemma4:12b"
+llm_num_ctx = 8192
+llm_num_gpu = 0        # 0 = que decida Ollama; aqui sobra VRAM y acierta
+llm_keep_alive = "-1"  # residente: no compite con nada
+
+stt_model   = "small"
+stt_device  = "cuda"
+stt_compute = "float16"
+
+# ------------------------------------------------------------------------------
+[profiles.laptop]
+description = "Portatil con GPU pequena. La VRAM da para el modelo y para nada mas."
+min_vram_mb = 2048
+
+llm_model   = "llama3.2:3b"
+llm_num_ctx = 4096
+llm_keep_alive = "5m"
+
+# num_gpu = 99 fuerza a subir todas las capas. Medido en una GTX 1050 (3 GB):
+# con el valor por defecto Ollama reparte 49/51 CPU/GPU aunque el modelo quepa
+# —reserva margen de forma conservadora— y baja de 29,3 a 12,3 tok/s.
+llm_num_gpu = 99
+
+# La voz va en CPU porque no queda VRAM: con el modelo dentro sobran 489 MiB.
+# Medido: RTF 0,15 en reposo y 0,16 con el modelo generando a la vez, o sea
+# entre un 7% y un 12% de penalizacion. El reparto se sostiene.
+stt_model   = "small"
+stt_device  = "cpu"
+stt_compute = "int8"
+
+# ------------------------------------------------------------------------------
+[profiles.cpu_only]
+description = "Sin GPU utilizable. Todo en CPU; el modelo baja de tamano."
+min_vram_mb = 0
+
+llm_model   = "qwen3:1.7b"
+llm_num_ctx = 2048
+llm_num_gpu = 0
+llm_keep_alive = "5m"
+
+stt_model   = "base"
+stt_device  = "cpu"
+stt_compute = "int8"
+
+# ==============================================================================
+# Embeddings: FUERA de los perfiles, y a proposito.
+# ==============================================================================
+# El modelo de lenguaje y el de voz cambian de una maquina a otra sin
+# consecuencias: producen texto, y el texto es intercambiable.
+#
+# Los embeddings no. Son vectores que se GUARDAN y luego se comparan entre si.
+# Dos modelos distintos producen espacios distintos, asi que un vector del
+# sobremesa y uno del portatil no se pueden comparar aunque tengan el mismo
+# numero de componentes: la similitud entre ellos no significa nada.
+#
+# Por eso el modelo de embeddings es el mismo en todos los equipos. Y por eso
+# 'dimensions' se declara aqui: la memoria lo guarda junto a los vectores,
+# de modo que cambiar de modelo se detecta en vez de corromper las busquedas
+# en silencio.
+#
+# No hay coste en fijarlo: son 384 dimensiones y 0,22 GB en CPU, que cualquiera
+# de las dos maquinas mueve sin despeinarse, y no toca la VRAM.
+
+[embeddings]
+model = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+dimensions = 384

@@ -1,0 +1,19 @@
+{
+  // Las que este proyecto necesita de verdad. VSCode las ofrece al abrir la
+  // carpeta, asi que un equipo nuevo no tiene que consultar la lista a mano.
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.debugpy",
+    "ms-python.vscode-python-envs",
+    "charliermarsh.ruff",
+    "usernamehw.errorlens",
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+    "yzhang.markdown-all-in-one",
+    "davidanson.vscode-markdownlint",
+    "pkief.material-icon-theme",
+    "mikestead.dotenv",
+    "gruntfuggly.todo-tree"
+  ]
+}

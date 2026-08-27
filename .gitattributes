@@ -1,19 +1,26 @@
-# Normaliza los finales de linea: LF dentro del repositorio, siempre.
-# Sin esto, editar el mismo fichero en Windows (CRLF) y en Linux (LF) genera
-# diffs completos donde no ha cambiado ni una linea de codigo real.
+# Normaliza los finales de linea al entrar en el repositorio.
+# Sin esto, dos equipos con distinta configuracion de core.autocrlf producen
+# diffs enteros de ficheros donde solo cambio una linea. Es el fichero que
+# mas trabajo ahorra en un proyecto que se edita desde varios sitios.
 * text=auto eol=lf
 
-# Los scripts de shell DEBEN llevar LF: con CRLF, Linux falla al ejecutarlos
-# con un error enganoso ("bad interpreter").
-*.sh text eol=lf
-
-# Los .bat y .ps1 solo corren en Windows y quieren CRLF.
-*.bat text eol=crlf
-*.ps1 text eol=crlf
+# PowerShell y CMD se quedan en CRLF: son especificos de Windows y algunos
+# hosts antiguos no interpretan bien un .ps1 con finales unix.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
 
 # Binarios: que git no intente convertir nada.
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.wav  binary
+*.mp3  binary
 *.onnx binary
-*.gguf binary
-*.wav binary
-*.mp3 binary
-*.png binary
+*.bin  binary
+*.db   binary
+
+# Los scripts de shell DEBEN llevar LF: con CRLF fallan con un error
+# enganoso ("bad interpreter"). Se conserva de la historia del sobremesa.
+*.sh text eol=lf

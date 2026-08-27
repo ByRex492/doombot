@@ -1,35 +1,59 @@
-# Entorno virtual
+# --- Entorno virtual -------------------------------------------------------
+# Nunca se versiona: contiene rutas absolutas al Python que lo creo, asi que
+# un .venv del sobremesa no arranca en el portatil. Siempre se recrea.
 .venv/
 venv/
+ENV/
 
-# Python
+# --- Python ----------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *.egg-info/
+build/
+dist/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# Modelos y pesos descargados (pesan GB, se reinstalan con un comando)
-models/
-*.onnx
-*.gguf
-*.bin
-*.pt
-
-# Audio capturado durante pruebas
-*.wav
-*.mp3
-recordings/
-
-# Configuracion local con claves o rutas propias de la maquina
+# --- Configuracion local ---------------------------------------------------
+# .env lleva rutas, IPs y claves propias de cada maquina. La plantilla
+# versionada es .env.example.
 .env
-config.local.yaml
+.env.local
+*.local.toml
 
-# VSCode: se versiona la configuracion compartida, no la personal
+# --- Datos generados -------------------------------------------------------
+# La memoria de D.O.O.M es estado de una maquina, no codigo.
+data/
+*.db
+*.db-journal
+*.sqlite3
+logs/
+*.log
+
+# --- Modelos y audio -------------------------------------------------------
+# Pesan cientos de MB y se descargan solos. Fuera del repositorio.
+models/
+*.gguf
+*.onnx
+recordings/
+*.wav
+
+# --- Editor / SO -----------------------------------------------------------
+# .vscode/ NO se ignora entero: settings.json y extensions.json del proyecto
+# si interesan, y son agnosticos de equipo. Se excluye solo lo personal.
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
-
-# Sistema
+!.vscode/launch.json
+.idea/
 Thumbs.db
 desktop.ini
+
+# --- Recuperado de la historia del sobremesa -------------------------------
+# Pesos y audio que la version remota no cubria.
+*.pt
+*.bin
+*.mp3

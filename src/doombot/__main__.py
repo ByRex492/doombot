@@ -45,7 +45,10 @@ def diagnostico() -> int:
     print(f"  perfil     {perfil.name}  ({perfil.description})")
     print()
     print(
-        f"  modelo     {perfil.llm_model}  ctx={perfil.llm_num_ctx}  num_gpu={perfil.llm_num_gpu}"
+        f"  modelo     {perfil.llm_model}  ctx={perfil.llm_num_ctx}  "
+        # 0 es el centinela de "que decida Ollama": mostrarlo como 0 hacia
+        # leer que no se descarga ninguna capa a la GPU, justo lo contrario.
+        f"num_gpu={perfil.llm_num_gpu or 'auto'}"
     )
     print(f"  voz        {perfil.stt_model}  {perfil.stt_device}/{perfil.stt_compute}")
     print(f"  ollama     {cfg.ollama_host}{'  (remoto)' if cfg.is_remote_ollama else ''}")

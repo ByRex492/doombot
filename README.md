@@ -112,8 +112,11 @@ local que para el del sobremesa por red — solo cambia `DOOMBOT_OLLAMA_HOST`.
 
 `WhisperTranscriber` necesita el extra `voice`. Carga el modelo de forma
 perezosa, así que construirlo para leer su configuración no cuesta la carga.
-Medido en el portátil con `small` en CPU: **RTF 0,28**, cuatro veces más
-rápido que tiempo real.
+
+Medido en el portátil con `small` en CPU: **RTF entre 0,28 y 0,59** según el
+estado del equipo — siempre por debajo de 1, que es la condición para que la
+voz no se acumule. Hay un coste fijo por llamada de unos 4 segundos, así que
+las frases muy cortas dan RTF alto sin que eso indique un problema.
 
 ## Memoria
 

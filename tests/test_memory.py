@@ -229,7 +229,7 @@ def test_as_context_devuelve_vacio_si_no_hay_nada_relevante(mem):
 def test_as_context_lista_los_recuerdos(mem):
     mem.remember("el portatil lleva una GTX 1050")
     ctx = mem.as_context("el portatil lleva una GTX 1050")
-    assert "PODRIAN venir al caso" in ctx
+    assert "Notas de tu memoria" in ctx
     assert "- el portatil lleva una GTX 1050" in ctx
 
 
@@ -313,13 +313,19 @@ def test_el_umbral_por_defecto_es_el_medido():
     assert UMBRAL == 0.35
 
 
-def test_el_contexto_permite_ignorar_lo_que_no_venga_al_caso(mem):
-    """Sin esta instruccion, un modelo pequeno construye sobre contexto malo.
-
-    Medido: con un recuerdo equivocado delante, invento una ruta de carpetas
-    y un fichero JSON inexistentes en vez de decir que no lo sabia.
-    """
+def test_el_contexto_invita_a_descartar_lo_irrelevante(mem):
     mem.remember("el portatil lleva una GTX 1050")
     ctx = mem.as_context("el portatil lleva una GTX 1050")
-    assert "PODRIAN" in ctx
-    assert "no lo sabes" in ctx
+    assert "ignoralas" in ctx
+
+
+def test_el_contexto_no_contiene_frases_copiables(mem):
+    """Un modelo de 3B repite la instruccion en vez de interpretarla.
+
+    Con "si ninguno lo hace, di que no lo sabes" en el encabezado, contestaba
+    literalmente "No lo sabes." incluso teniendo delante el recuerdo correcto.
+    """
+    mem.remember("el portatil lleva una GTX 1050")
+    ctx = mem.as_context("el portatil lleva una GTX 1050").lower()
+    for citable in ("di que no lo sabes", "responde que no", "no lo sabes"):
+        assert citable not in ctx, f"el encabezado contiene una frase copiable: {citable!r}"

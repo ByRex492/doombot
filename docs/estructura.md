@@ -16,6 +16,7 @@ doombot/
 │   ├── config.py        Lo que cambia de un equipo a otro
 │   ├── profiles.py      Detección de hardware y elección de perfil
 │   ├── identity.py      Qué dice saber hacer, según lo que hay instalado
+│   ├── chat.py          Modo interactivo: junta todas las capas en un bucle
 │   ├── backends/        Contratos e implementaciones intercambiables
 │   ├── memory/          Qué recuerda D.O.O.M
 │   ├── phrases/         Frases textuales y órdenes

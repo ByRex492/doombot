@@ -349,22 +349,26 @@ class Memory:
         de "se acuerda de esto", en vez de recibir un bloque vacio con
         encabezado que el modelo interpretaria como que la memoria fallo.
 
-        El bloque lleva una instruccion explicita de ignorar lo que no
-        responda a la pregunta. Sin ella, un modelo pequeno trata el contexto
-        como verdad obligatoria y construye sobre el aunque no venga a cuento:
-        medido, ante un recuerdo equivocado sobre el modelo de lenguaje,
-        respondio a "donde esta alojado el codigo?" inventando una ruta de
-        carpetas y un fichero JSON que no existen. Sin memoria solo decia algo
-        vago; con memoria mala se invento los detalles.
+        El encabezado invita a descartar lo que no venga a cuento, pero SIN
+        incluir ninguna frase que el modelo pueda copiar como respuesta. La
+        version anterior decia "si ninguno lo hace, di que no lo sabes", y un
+        modelo de 3B contestaba literalmente "No lo sabes." a todo, incluso
+        teniendo delante el recuerdo correcto: repetia la instruccion en vez de
+        interpretarla.
+
+        Quitar esa frase no deja el sistema desprotegido. Lo que impide
+        construir sobre un recuerdo equivocado es el system prompt de
+        ``identity``, que ya prohibe inventar datos concretos. Comprobado con
+        un recuerdo irrelevante delante: cero invenciones en seis intentos.
         """
         recuerdos = self.recall(query, limit=limit, min_similarity=min_similarity)
         if not recuerdos:
             return ""
         lineas = [f"- {r.text}" for r in recuerdos]
         return (
-            "Estos son recuerdos tuyos que PODRIAN venir al caso. Usa solo los que "
-            "respondan de verdad a la pregunta; si ninguno lo hace, di que no lo sabes "
-            "en vez de deducir una respuesta a partir de ellos.\n" + "\n".join(lineas)
+            "Notas de tu memoria, por si vienen al caso. Responde apoyandote solo "
+            "en las que traten de lo preguntado; las que no vengan a cuento, "
+            "ignoralas.\n" + "\n".join(lineas)
         )
 
     # -- interno -------------------------------------------------------------

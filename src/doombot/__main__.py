@@ -1,6 +1,7 @@
 """Punto de entrada.
 
     python -m doombot            diagnostico del equipo
+    python -m doombot chat       modo interactivo, con memoria y ordenes
     python -m doombot "pregunta" se la lanza al modelo del perfil activo
 
 El diagnostico es lo primero que conviene ejecutar al sentarse en una maquina
@@ -86,8 +87,13 @@ def preguntar(texto: str) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) > 1:
-        return preguntar(" ".join(sys.argv[1:]))
+    args = sys.argv[1:]
+    if args and args[0] in ("chat", "-i", "--interactivo"):
+        from doombot.chat import run
+
+        return run()
+    if args:
+        return preguntar(" ".join(args))
     return diagnostico()
 
 

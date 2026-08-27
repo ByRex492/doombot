@@ -9,6 +9,7 @@ El paquete se organiza por responsabilidad, no por tecnologia:
 - ``backends`` contratos e implementaciones de modelo, voz y embeddings
 - ``memory``   que recuerda D.O.O.M y como lo consulta
 - ``phrases``  reconocimiento de frases textuales y ordenes
+- ``chat``     modo interactivo que junta todas las capas
 - ``voice``    captura de audio, palabra de activacion y sintesis
 """
 

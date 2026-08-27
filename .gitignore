@@ -57,3 +57,9 @@ desktop.ini
 *.pt
 *.bin
 *.mp3
+
+# --- Rust -----------------------------------------------------------------
+# Los binarios compilados no se versionan: cada equipo los genera.
+target/
+*.pyd
+*.so

@@ -22,6 +22,7 @@ doombot/
 │   ├── phrases/         Frases textuales y órdenes
 │   └── voice/           Audio, palabra de activación, síntesis
 │       └── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
+├── native/doomkit/      Núcleo en Rust, opcional (ver native/README.md)
 └── tests/
 ```
 

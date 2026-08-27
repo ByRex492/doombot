@@ -107,7 +107,7 @@ def test_informa_del_nivel_de_cada_bloque():
 def test_para_cuando_llega_el_silencio():
     """Ruido de fondo bajo, voz, y luego silencio: debe cortar por si solo."""
     niveles = [0.001] * 6 + [0.5] * 20 + [0.001] * 40
-    grabacion = micro_con(niveles).record_until_silence(max_seconds=30.0, silence_seconds=0.5)
+    grabacion = micro_con(niveles).record_until_silence(max_ms=30_000, silence_ms=500)
     # 6 de calibracion + 20 de voz + los 10 bloques de silencio que hacen 0,5 s.
     assert grabacion.duration == pytest.approx(36 * 0.05, rel=0.15)
 
@@ -123,7 +123,7 @@ def test_espera_voz_antes_del_silencio():
     # Dos segundos largos de silencio ANTES de empezar a hablar.
     niveles = [0.001] * 40 + [0.5] * 20 + [0.001] * 20
     grabacion = micro_con(niveles).record_until_silence(
-        max_seconds=30.0, silence_seconds=0.5, wait_seconds=5.0
+        max_ms=30_000, silence_ms=500, wait_ms=5_000
     )
     assert grabacion.duration > 2.0, "corto antes de que empezara la voz"
     assert grabacion.peak > 0.1, "no llego a capturar la voz"
@@ -132,7 +132,7 @@ def test_espera_voz_antes_del_silencio():
 def test_se_rinde_si_nadie_habla():
     """Pero no se queda esperando indefinidamente."""
     grabacion = micro_con([0.001]).record_until_silence(
-        max_seconds=30.0, silence_seconds=0.5, wait_seconds=1.0
+        max_ms=30_000, silence_ms=500, wait_ms=1_000
     )
     assert grabacion.duration == pytest.approx(1.0, abs=0.2)
     assert grabacion.parece_mudo
@@ -146,16 +146,12 @@ def test_umbral_calibrado_con_el_fondo():
     mismo 0,5 sobre un fondo de 0,001 era voz clarisima. Esa es la diferencia
     entre calibrar el umbral y fijarlo por constante.
     """
-    grabacion = micro_con([0.5]).record_until_silence(
-        max_seconds=30.0, silence_seconds=0.5, wait_seconds=1.0
-    )
+    grabacion = micro_con([0.5]).record_until_silence(max_ms=30_000, silence_ms=500, wait_ms=1_000)
     assert grabacion.duration == pytest.approx(1.0, abs=0.2), "considero voz el ruido de fondo"
 
 
 def test_respeta_el_maximo_si_nunca_hay_silencio():
-    grabacion = micro_con([0.001] * 6 + [0.9]).record_until_silence(
-        max_seconds=1.0, silence_seconds=0.5
-    )
+    grabacion = micro_con([0.001] * 6 + [0.9]).record_until_silence(max_ms=1_000, silence_ms=500)
     assert grabacion.duration == pytest.approx(1.0, rel=0.1)
 
 

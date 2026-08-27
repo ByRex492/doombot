@@ -41,7 +41,8 @@ SAMPLE_RATE = 16_000
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # int16
 
-BLOQUE_SEGUNDOS = 0.05
+BLOQUE_MS = 50
+BLOQUE_SEGUNDOS = BLOQUE_MS / 1000
 
 _MISSING = (
     'sounddevice no esta instalado. Es una dependencia opcional:\n    pip install -e ".[voice]"'
@@ -73,7 +74,14 @@ class Recording:
 
     path: Path
     duration: float
-    peak: float
+    elapsed: float = 0.0
+    """Segundos de reloj que costo grabar.
+
+    ``duration`` cuenta muestras; esto cuenta tiempo real. Si difieren mucho, el
+    flujo esta perdiendo bloques y la grabacion no es fiel a lo que se dijo.
+    """
+
+    peak: float = 0.0
     """Amplitud maxima, de 0,0 a 1,0.
 
     Diagnostica el fallo mas comun y mas desconcertante: el microfono
@@ -158,6 +166,8 @@ class Microphone:
     def _resolve(self, device: str | int) -> int:
         if isinstance(device, int):
             return device
+        if device.strip().isdigit():
+            return int(device.strip())
 
         aguja = device.strip().lower()
         disponibles = listar_microfonos()
@@ -196,14 +206,14 @@ class Microphone:
         alimentara la animacion de la interfaz: sin el, la onda de la pantalla es
         decorativa; con el, reacciona a la voz de verdad.
         """
-        return self._grabar(max_seconds=seconds, silence_seconds=None, on_level=on_level)
+        return self._grabar(max_ms=int(seconds * 1000), silence_ms=None, on_level=on_level)
 
     def record_until_silence(
         self,
         *,
-        max_seconds: float = 30.0,
-        silence_seconds: float = 1.2,
-        wait_seconds: float = 10.0,
+        max_ms: int = 30_000,
+        silence_ms: int = 1_200,
+        wait_ms: int = 10_000,
         on_level: Callable[[float], None] | None = None,
     ) -> Recording:
         """Graba hasta detectar silencio sostenido, o hasta el maximo.
@@ -217,31 +227,36 @@ class Microphone:
         el contador y la grabacion termina antes de que a nadie le de tiempo a
         decir nada. Un suelo de duracion minima no basta: solo retrasa el corte.
 
-        ``wait_seconds`` es cuanto se espera a que alguien hable antes de
-        rendirse. Se devuelve la grabacion igualmente, muda, para que quien
-        llama pueda distinguir el caso mirando ``peak``.
+        ``wait_ms`` es cuanto se espera a que alguien hable antes de rendirse.
+        Se devuelve la grabacion igualmente, muda, para que quien llama pueda
+        distinguir el caso mirando ``peak``.
+
+        Los tiempos van en milisegundos porque el bloque de captura mide 50 ms:
+        expresarlos en segundos obligaba a escribir fracciones que no son
+        multiplos exactos del bloque y se redondeaban en silencio.
         """
         return self._grabar(
-            max_seconds=max_seconds,
-            silence_seconds=silence_seconds,
-            wait_seconds=wait_seconds,
+            max_ms=max_ms,
+            silence_ms=silence_ms,
+            wait_ms=wait_ms,
             on_level=on_level,
         )
 
     def _grabar(
         self,
         *,
-        max_seconds: float,
-        silence_seconds: float | None,
-        wait_seconds: float = 10.0,
+        max_ms: int,
+        silence_ms: int | None,
+        wait_ms: int = 10_000,
         on_level: Callable[[float], None] | None = None,
     ) -> Recording:
         import numpy as np
 
         bloque = int(self._samplerate * BLOQUE_SEGUNDOS)
-        bloques_max = max(1, int(max_seconds / BLOQUE_SEGUNDOS))
-        bloques_silencio = int(silence_seconds / BLOQUE_SEGUNDOS) if silence_seconds else 0
-        bloques_espera = int(wait_seconds / BLOQUE_SEGUNDOS)
+        bloques_max = max(1, max_ms // BLOQUE_MS)
+        bloques_silencio = silence_ms // BLOQUE_MS if silence_ms else 0
+        bloques_espera = wait_ms // BLOQUE_MS
+        arranque = time.perf_counter()
         # Los primeros bloques miden el ruido de fondo antes de decidir nada.
         bloques_calibracion = 6
 
@@ -262,7 +277,7 @@ class Microphone:
                     if on_level is not None:
                         on_level(min(1.0, nivel * 4.0))
 
-                    if not silence_seconds:
+                    if not silence_ms:
                         continue
 
                     if n < bloques_calibracion:
@@ -299,7 +314,7 @@ class Microphone:
             raise self._error(e) from e
 
         audio = np.concatenate(trozos) if trozos else np.zeros(0, dtype=np.float32)
-        return self._escribir(audio)
+        return self._escribir(audio, time.perf_counter() - arranque)
 
     def _abrir_flujo(self, bloque: int) -> Any:
         if self._opener is not None:
@@ -313,7 +328,7 @@ class Microphone:
             dtype="float32",
         )
 
-    def _escribir(self, audio: Any) -> Recording:
+    def _escribir(self, audio: Any, elapsed: float = 0.0) -> Recording:
         import numpy as np
 
         marca = time.strftime("%Y%m%d-%H%M%S")
@@ -334,6 +349,7 @@ class Microphone:
         return Recording(
             path=destino,
             duration=audio.size / self._samplerate if audio.size else 0.0,
+            elapsed=elapsed,
             peak=pico,
         )
 

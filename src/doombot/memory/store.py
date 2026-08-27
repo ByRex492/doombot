@@ -27,9 +27,12 @@ es gratis: medir solo la aritmetica del coseno da cifras entre un 12% y un 45%
 mas optimistas de lo que cuesta en realidad.
 
 Para voz el presupuesto razonable ronda los 200 ms: por encima, la pausa antes
-de responder se nota. Eso situa el limite practico cerca de los **1.500
-recuerdos**. A partir de ahi toca sqlite-vec, o numpy para vectorizar la
-comparacion, y la migracion afecta solo al interior de recall().
+de responder se nota. Con la comparacion en Python eso situa el limite practico
+cerca de los **1.500 recuerdos**.
+
+Con el nucleo nativo de ``native/doomkit`` compilado, la comparacion va unas
+cuatro veces mas rapida —1.000 recuerdos pasan de 99 ms a 22 ms— y el techo
+sube a unos **6.000**. Es opcional: sin el, se usa el camino en Python.
 """
 
 from __future__ import annotations
@@ -94,6 +97,33 @@ def _empaquetar(vector: list[float]) -> bytes:
 
 def _desempaquetar(datos: bytes) -> list[float]:
     return list(struct.unpack(f"{len(datos) // 4}f", datos))
+
+
+try:
+    import doomkit  # nucleo nativo opcional
+except ImportError:  # pragma: no cover - depende de si esta compilado
+    doomkit = None
+
+
+def _comparar(consulta: list[float], filas: list[sqlite3.Row]) -> list[float]:
+    """Similitud de la consulta contra cada recuerdo, en el mismo orden.
+
+    Con el nucleo nativo compilado va unas cuatro veces mas rapido, y eso mueve
+    el techo practico de la memoria de unos 1.500 recuerdos a unos 6.000. Sin
+    el, se usa la version en Python: el proyecto tiene que funcionar en un
+    equipo sin cadena de compilacion de Rust.
+
+    Medido con 384 dimensiones: 1.000 recuerdos pasan de 99 ms a 22 ms.
+    """
+    if not filas:
+        return []
+    if doomkit is not None:
+        dim = len(consulta)
+        plano = b"".join(f["vector"] for f in filas)
+        if len(plano) % 4 == 0 and (len(plano) // 4) % dim == 0:
+            crudo = struct.unpack(f"{len(plano) // 4}f", plano)
+            return list(doomkit.similitudes(consulta, list(crudo), dim))
+    return [cosine_similarity(consulta, _desempaquetar(f["vector"])) for f in filas]
 
 
 class Memory:
@@ -294,7 +324,7 @@ class Memory:
             return []
 
         v_query = self._embedder.embed([query])[0]
-        puntuados = [(cosine_similarity(v_query, _desempaquetar(f["vector"])), f) for f in filas]
+        puntuados = list(zip(_comparar(v_query, filas), filas, strict=True))
         puntuados.sort(key=lambda p: p[0], reverse=True)
 
         return [

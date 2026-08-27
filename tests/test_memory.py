@@ -329,3 +329,20 @@ def test_el_contexto_no_contiene_frases_copiables(mem):
     ctx = mem.as_context("el portatil lleva una GTX 1050").lower()
     for citable in ("di que no lo sabes", "responde que no", "no lo sabes"):
         assert citable not in ctx, f"el encabezado contiene una frase copiable: {citable!r}"
+
+
+def test_nucleo_nativo_da_lo_mismo_que_python(mem):
+    """El nucleo en Rust es opcional: ambos caminos deben coincidir."""
+    from doombot.memory import store
+
+    mem.remember_many([f"hecho numero {i}" for i in range(20)])
+    con = [r.similarity for r in mem.recall("hecho", limit=20, min_similarity=-1.0)]
+
+    original, store.doomkit = store.doomkit, None
+    try:
+        sin = [r.similarity for r in mem.recall("hecho", limit=20, min_similarity=-1.0)]
+    finally:
+        store.doomkit = original
+
+    assert len(con) == len(sin)
+    assert all(abs(a - b) < 1e-4 for a, b in zip(con, sin, strict=True))

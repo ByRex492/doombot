@@ -5,6 +5,7 @@
     python -m doombot "pregunta" se la lanza al modelo del perfil activo
     python -m doombot micro         lista los microfonos disponibles
     python -m doombot micro probar  graba con el configurado, mide y transcribe
+    python -m doombot micro probar 12   fuerza el dispositivo 12
 
 El diagnostico es lo primero que conviene ejecutar al sentarse en una maquina
 distinta: dice que perfil ha elegido y por que, que es la pregunta que surge
@@ -65,6 +66,13 @@ def diagnostico() -> int:
     else:
         print("  estado     sin respuesta (¿Ollama arrancado?)")
 
+    # D-010: dos modelos residentes no caben con Whisper y el TTS. Solo se avisa
+    # donde importa: en una GPU pequena nunca entra un segundo modelo.
+    import os
+
+    if vram >= 8192 and os.environ.get("OLLAMA_MAX_LOADED_MODELS") != "1":
+        print("             falta OLLAMA_MAX_LOADED_MODELS=1 (D-010)")
+
     print()
     print(f"  sabe hacer {resumen()}")
     return 0
@@ -91,7 +99,7 @@ def preguntar(texto: str) -> int:
     return 0
 
 
-def microfono(probar: bool = False) -> int:
+def microfono(probar: bool = False, dispositivo: str | None = None) -> int:
     """Lista los microfonos, o graba con el configurado y lo transcribe.
 
     Existe porque el fallo mas comun de la capa de voz no esta en el modelo sino
@@ -111,7 +119,7 @@ def microfono(probar: bool = False) -> int:
             print("  cambiar      DOOMBOT_AUDIO_INPUT en .env, con parte del nombre")
             return 0
 
-        mic = Microphone.from_settings(cfg)
+        mic = Microphone(dispositivo) if dispositivo else Microphone.from_settings(cfg)
         print(f"Microfono: {mic.device_name}")
         print("Habla cuando quieras. Se detiene solo al detectar silencio.")
         print()
@@ -123,13 +131,24 @@ def microfono(probar: bool = False) -> int:
             print("\r  " + "#" * lleno + " " * (ancho - lleno), end="", flush=True)
 
         grabacion = mic.record_until_silence(on_level=barra)
-        print(f"\r  {grabacion.duration:.1f} s grabados, pico {grabacion.peak:.3f}{' ' * ancho}")
+        print(
+            f"\r  {grabacion.duration:.1f} s de audio en {grabacion.elapsed:.1f} s reales, "
+            f"pico {grabacion.peak:.3f}{' ' * ancho}"
+        )
 
         with grabacion:
             if grabacion.parece_mudo:
                 print()
-                print("  El audio esta practicamente mudo.")
-                print("  Revisa que el microfono no este silenciado y que sea el correcto.")
+                if grabacion.peak == 0.0:
+                    # Cero exacto no es un microfono flojo: es que no llega ni
+                    # una muestra distinta de cero. El dispositivo abierto no es
+                    # el que capta, aunque su nombre parezca el correcto.
+                    print("  Pico 0.000 exacto: ese dispositivo no entrega senal.")
+                    print("  Prueba otro indice de la lista:")
+                    print("      python -m doombot micro probar 12")
+                else:
+                    print("  El audio esta practicamente mudo.")
+                    print("  Revisa que el microfono no este silenciado y que sea el correcto.")
                 return 1
 
             from doombot.backends.whisper import WhisperTranscriber
@@ -150,7 +169,8 @@ def microfono(probar: bool = False) -> int:
 def main() -> int:
     args = sys.argv[1:]
     if args and args[0] in ("micro", "microfono"):
-        return microfono(probar=len(args) > 1 and args[1] in ("probar", "test"))
+        probar = len(args) > 1 and args[1] in ("probar", "test")
+        return microfono(probar=probar, dispositivo=args[2] if len(args) > 2 else None)
     if args and args[0] in ("chat", "-i", "--interactivo"):
         from doombot.chat import run
 

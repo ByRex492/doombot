@@ -233,3 +233,72 @@ definitiva llegará al transcribir audio real, pero la señal no deja lugar a du
 **Queda pendiente** explicar dos observaciones del portátil que ahora cambian de sentido: la
 mala transcripción de términos técnicos ("Python" → "país AN") y el RTF oscilando entre 0,28 y
 0,59. Con la GPU descartada como causa en este equipo, habrá que medirlas aquí de nuevo.
+
+---
+
+## D-014 — Adoptar un estándar de *skills* en la capa de acciones, no inventar uno
+
+**Origen.** Revisión de [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) (Stanford Hazy
+Research, Apache 2.0, 9k estrellas, activo a 27/08/2026).
+
+**Decisión, para cuando se aborde la capa de acciones.** Cuando D.O.O.M tenga que ejecutar
+herramientas, adoptar el estándar abierto **agentskills.io** en lugar de diseñar un formato
+propio de definición de herramientas.
+
+**Por qué.** Un formato propio obliga a escribir cada herramienta desde cero. El estándar da
+acceso a catálogos existentes (~150 skills de Hermes Agent, ~13.700 comunitarias de OpenClaw)
+y hace que lo que se escriba aquí sirva fuera. El coste de adoptarlo es el mismo que el de
+inventarlo; el beneficio, no.
+
+**Lo que NO se adopta de OpenJarvis.** Su framework de agentes, su empaquetado Tauri y su
+estructura de proyecto. Son buenas soluciones a un problema mayor que el nuestro, y sustituir
+nuestro código por el suyo destruiría el propósito del proyecto: construirlo entendiendo cada
+pieza. La licencia Apache 2.0 permite reutilizar código concreto con atribución si conviene.
+
+**Segunda idea que sí merece copiarse:** sus tres modos de ejecución —bajo demanda, programado
+y continuo—. Un asistente que solo reacciona es un chat; los otros dos modos son lo que lo
+convierten en asistente. Es barato preverlo en el orquestador y caro añadirlo después.
+
+---
+
+## D-015 — Registro de actividad y memoria semántica son dos cosas distintas
+
+**Contexto.** Objetivo planteado: que D.O.O.M aprenda del uso real del ordenador —qué tareas se
+hacen, cómo se comporta uno con el equipo—.
+
+**Aclaración necesaria: "aprender" aquí no es reentrenar.** Ajustar un modelo con datos
+personales (*fine-tuning*) es caro, lento y suele rendir **peor** que registrar, resumir y
+recuperar como contexto. El módulo `memory/` ya es esa alternativa: la base está construida.
+
+**El choque que obliga a decidir.** La memoria tiene un techo medido de **~1.500 recuerdos por
+latencia** (ver el diagnóstico de la memoria). Registrar actividad del equipo —ventana activa,
+aplicaciones, ficheros— produce **cientos de eventos diarios**: ese techo se agota en dos
+semanas.
+
+**Decisión.** Cuando se implemente, serán **dos almacenes separados**:
+
+| | Registro de actividad | Memoria semántica |
+|---|---|---|
+| Volumen | Alto, cientos/día | Bajo, curado |
+| Contenido | Eventos en bruto | Hechos y patrones |
+| Acceso | Agregación por lotes | Búsqueda por significado |
+| Retención | Ventana corta, se poda | Persistente |
+
+Un proceso periódico agrega lo primero en lo segundo. Un evento en bruto no es un recuerdo;
+*"suele programar por las tardes y usa VSCode con Python"* sí lo es.
+
+**Privacidad.** Un registro así sería el fichero más sensible del equipo. Que sea local no basta:
+hay que decidir de antemano qué se registra, qué nunca, y si se cifra en reposo.
+
+---
+
+## D-016 — El HUD es una aplicación de escritorio, aunque por dentro dibuje HTML
+
+**Aclaración, no cambio de rumbo.** "Que no se ejecute en un HTML" y "que sea una aplicación
+local" no están reñidos. `pywebview` y Tauri producen un ejecutable de escritorio con su propia
+ventana, su icono y sin navegador a la vista; el HTML es solo la técnica de dibujado interna,
+igual que en VSCode, Discord o Spotify.
+
+**Por qué se mantiene.** Renunciar al HTML significa dibujar el HUD en Qt o similar, donde el
+resplandor, el desenfoque y las partículas cuestan diez veces más trabajo. Lo que se descarta
+es abrir una pestaña del navegador, no la tecnología de renderizado.

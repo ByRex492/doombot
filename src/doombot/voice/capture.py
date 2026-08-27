@@ -155,6 +155,18 @@ class Microphone:
             cfg = settings()
         return cls(getattr(cfg, "audio_input", None) or None, **kwargs)
 
+    @property
+    def samplerate(self) -> int:
+        return self._samplerate
+
+    def abrir_flujo(self, bloque: int) -> Any:
+        """Flujo de entrada abierto. Lo usa el bucle de escucha.
+
+        Publico porque la espera de la palabra de activacion necesita leer
+        bloques sueltos sin grabar nada a disco.
+        """
+        return self._abrir_flujo(bloque)
+
     # -- resolucion del dispositivo -----------------------------------------
     @property
     def device(self) -> int | None:

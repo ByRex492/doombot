@@ -6,6 +6,8 @@
     python -m doombot micro         lista los microfonos disponibles
     python -m doombot micro probar  graba con el configurado, mide y transcribe
     python -m doombot micro probar 12   fuerza el dispositivo 12
+    python -m doombot escuchar      espera la palabra de activacion y transcribe
+    python -m doombot escuchar tecla   usa una pulsacion en vez de la palabra
 
 El diagnostico es lo primero que conviene ejecutar al sentarse en una maquina
 distinta: dice que perfil ha elegido y por que, que es la pregunta que surge
@@ -166,11 +168,49 @@ def microfono(probar: bool = False, dispositivo: str | None = None) -> int:
     return 0
 
 
+def escuchar(manual: bool = False) -> int:
+    """Bucle de voz en modo diagnostico: imprime estados y lo que oye.
+
+    Es el comando con el que se valida la Capa 2 en un equipo con microfono. Con
+    ``manual`` se dispara pulsando una tecla en vez de diciendo la palabra, que
+    es como se depura sin depender de que el detector te oiga.
+    """
+    from doombot.backends.whisper import WhisperTranscriber
+    from doombot.voice import Listener, Microphone, PushToTalk, WakeWord
+
+    try:
+        perfil = profiles.current()
+        mic = Microphone.from_settings()
+        detector = PushToTalk() if manual else WakeWord()
+
+        print(f"Microfono: {mic.device_name}")
+        print(f"Activacion: {detector.name}")
+        print("Ctrl+C para salir.\n")
+
+        escucha = Listener(
+            mic,
+            WhisperTranscriber.from_profile(perfil),
+            detector,
+            on_state=lambda e: print(f"  [{e}]"),
+        )
+        for oido in escucha.listen():
+            print(f"  «{oido.text}»")
+            print(f"  ({oido.seconds:.1f} s, pico {oido.peak:.2f}, {oido.detection.word})\n")
+    except KeyboardInterrupt:
+        print()
+    except BackendError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main() -> int:
     args = sys.argv[1:]
     if args and args[0] in ("micro", "microfono"):
         probar = len(args) > 1 and args[1] in ("probar", "test")
         return microfono(probar=probar, dispositivo=args[2] if len(args) > 2 else None)
+    if args and args[0] in ("escuchar", "oir"):
+        return escuchar(manual=len(args) > 1 and args[1] in ("tecla", "manual"))
     if args and args[0] in ("chat", "-i", "--interactivo"):
         from doombot.chat import run
 

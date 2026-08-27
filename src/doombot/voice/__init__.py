@@ -1,9 +1,27 @@
-"""Captura de audio, palabra de activacion y sintesis.
+"""Captura de audio, palabra de activacion y bucle de escucha.
 
-- ``capture``  microfono: grabacion a WAV, deteccion de silencio y nivel
+    from doombot.voice import Listener, Microphone, WakeWord
 
-Es la unica parte del paquete con dependencias opcionales: se instala con
-``pip install -e ".[voice]"``. Los modulos de aqui importan sounddevice y
-companiia dentro de las funciones, para que un equipo que solo edita y
-documenta pueda importar el paquete sin tenerlas.
+    escucha = Listener(Microphone.from_settings(), transcriptor)
+    for oido in escucha.listen():
+        print(oido.text)
+
+La sintesis de voz llegara en la Capa 3. Por ahora D.O.O.M oye pero no habla.
 """
+
+from doombot.voice.capture import Microphone, Recording, listar_microfonos
+from doombot.voice.listener import Heard, Listener, State
+from doombot.voice.wake import Detection, PushToTalk, WakeDetector, WakeWord
+
+__all__ = [
+    "Detection",
+    "Heard",
+    "Listener",
+    "Microphone",
+    "PushToTalk",
+    "Recording",
+    "State",
+    "WakeDetector",
+    "WakeWord",
+    "listar_microfonos",
+]

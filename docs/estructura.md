@@ -22,6 +22,8 @@ doombot/
 │   ├── phrases/         Frases textuales y órdenes
 │   └── voice/           Audio, palabra de activación, síntesis
 │       └── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
+│       ├── wake.py      Palabra de activación y push-to-talk
+│       └── listener.py  Bucle de escucha: la máquina de estados
 ├── native/doomkit/      Núcleo en Rust, opcional (ver native/README.md)
 └── tests/
 ```

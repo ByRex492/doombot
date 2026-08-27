@@ -107,31 +107,49 @@ def test_informa_del_nivel_de_cada_bloque():
 def test_para_cuando_llega_el_silencio():
     """Ruido de fondo bajo, voz, y luego silencio: debe cortar por si solo."""
     niveles = [0.001] * 6 + [0.5] * 20 + [0.001] * 40
-    grabacion = micro_con(niveles).record_until_silence(
-        max_seconds=30.0, silence_seconds=0.5, min_seconds=0.2
-    )
+    grabacion = micro_con(niveles).record_until_silence(max_seconds=30.0, silence_seconds=0.5)
     # 6 de calibracion + 20 de voz + los 10 bloques de silencio que hacen 0,5 s.
     assert grabacion.duration == pytest.approx(36 * 0.05, rel=0.15)
 
 
-def test_el_umbral_se_calibra_con_el_ruido_de_fondo():
-    """Con ruido constante y alto, ese nivel es el silencio y corta enseguida.
+def test_espera_a_oir_voz_antes_de_contar_el_silencio():
+    """Regresion: la primera version cortaba antes de que diera tiempo a hablar.
 
-    Es la prueba de que el umbral no es una constante: el mismo valor de
-    amplitud que aqui cuenta como silencio, en la prueba anterior era voz.
+    Contaba el silencio desde el primer bloque, asi que los segundos que uno
+    tarda en reaccionar al mensaje agotaban el contador y la grabacion terminaba
+    en seco. Un suelo de duracion minima no arreglaba nada: solo retrasaba el
+    corte. La cuenta atras tiene que empezar al oir voz, no al abrir el flujo.
+    """
+    # Dos segundos largos de silencio ANTES de empezar a hablar.
+    niveles = [0.001] * 40 + [0.5] * 20 + [0.001] * 20
+    grabacion = micro_con(niveles).record_until_silence(
+        max_seconds=30.0, silence_seconds=0.5, wait_seconds=5.0
+    )
+    assert grabacion.duration > 2.0, "corto antes de que empezara la voz"
+    assert grabacion.peak > 0.1, "no llego a capturar la voz"
+
+
+def test_se_rinde_si_nadie_habla():
+    """Pero no se queda esperando indefinidamente."""
+    grabacion = micro_con([0.001]).record_until_silence(
+        max_seconds=30.0, silence_seconds=0.5, wait_seconds=1.0
+    )
+    assert grabacion.duration == pytest.approx(1.0, abs=0.2)
+    assert grabacion.parece_mudo
+
+
+def test_el_umbral_se_calibra_con_el_ruido_de_fondo():
+    """El mismo nivel es voz o silencio segun el ruido de fondo que lo rodee.
+
+    Con 0,5 constante desde el principio, ese valor ES el fondo y nunca cuenta
+    como voz: la grabacion acaba rindiendose. En la prueba de mas arriba, ese
+    mismo 0,5 sobre un fondo de 0,001 era voz clarisima. Esa es la diferencia
+    entre calibrar el umbral y fijarlo por constante.
     """
     grabacion = micro_con([0.5]).record_until_silence(
-        max_seconds=5.0, silence_seconds=0.5, min_seconds=0.2
+        max_seconds=30.0, silence_seconds=0.5, wait_seconds=1.0
     )
-    assert grabacion.duration < 5.0, "no llego a considerar silencio el ruido de fondo"
-
-
-def test_nunca_corta_antes_del_minimo():
-    """Sin esto, el silencio del propio arranque termina la grabacion."""
-    grabacion = micro_con([0.0]).record_until_silence(
-        max_seconds=5.0, silence_seconds=0.1, min_seconds=1.0
-    )
-    assert grabacion.duration >= 1.0
+    assert grabacion.duration == pytest.approx(1.0, abs=0.2), "considero voz el ruido de fondo"
 
 
 def test_respeta_el_maximo_si_nunca_hay_silencio():

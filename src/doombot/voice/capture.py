@@ -203,7 +203,7 @@ class Microphone:
         *,
         max_seconds: float = 30.0,
         silence_seconds: float = 1.2,
-        min_seconds: float = 0.5,
+        wait_seconds: float = 10.0,
         on_level: Callable[[float], None] | None = None,
     ) -> Recording:
         """Graba hasta detectar silencio sostenido, o hasta el maximo.
@@ -212,13 +212,19 @@ class Microphone:
         cuanto va a durar, y obligarle a pulsar una tecla para terminar rompe la
         idea de hablarle sin teclado.
 
-        ``min_seconds`` evita que el silencio del propio arranque corte la
-        grabacion antes de que de tiempo a empezar a hablar.
+        **La cuenta atras del silencio no empieza hasta oir voz por primera
+        vez.** Sin esa condicion, el silencio de antes de empezar a hablar agota
+        el contador y la grabacion termina antes de que a nadie le de tiempo a
+        decir nada. Un suelo de duracion minima no basta: solo retrasa el corte.
+
+        ``wait_seconds`` es cuanto se espera a que alguien hable antes de
+        rendirse. Se devuelve la grabacion igualmente, muda, para que quien
+        llama pueda distinguir el caso mirando ``peak``.
         """
         return self._grabar(
             max_seconds=max_seconds,
             silence_seconds=silence_seconds,
-            min_seconds=min_seconds,
+            wait_seconds=wait_seconds,
             on_level=on_level,
         )
 
@@ -227,7 +233,7 @@ class Microphone:
         *,
         max_seconds: float,
         silence_seconds: float | None,
-        min_seconds: float = 0.0,
+        wait_seconds: float = 10.0,
         on_level: Callable[[float], None] | None = None,
     ) -> Recording:
         import numpy as np
@@ -235,7 +241,7 @@ class Microphone:
         bloque = int(self._samplerate * BLOQUE_SEGUNDOS)
         bloques_max = max(1, int(max_seconds / BLOQUE_SEGUNDOS))
         bloques_silencio = int(silence_seconds / BLOQUE_SEGUNDOS) if silence_seconds else 0
-        bloques_min = int(min_seconds / BLOQUE_SEGUNDOS)
+        bloques_espera = int(wait_seconds / BLOQUE_SEGUNDOS)
         # Los primeros bloques miden el ruido de fondo antes de decidir nada.
         bloques_calibracion = 6
 
@@ -243,6 +249,7 @@ class Microphone:
         niveles_fondo: list[float] = []
         umbral: float | None = None
         seguidos_en_silencio = 0
+        ha_hablado = False
 
         try:
             with self._abrir_flujo(bloque) as flujo:
@@ -269,8 +276,22 @@ class Microphone:
                         # como voz y la grabacion no termine nunca.
                         umbral = max(fondo * 3.0, 0.008)
 
-                    seguidos_en_silencio = seguidos_en_silencio + 1 if nivel < umbral else 0
-                    if n >= bloques_min and seguidos_en_silencio >= bloques_silencio:
+                    if nivel >= umbral:
+                        ha_hablado = True
+                        seguidos_en_silencio = 0
+                        continue
+
+                    # La cuenta atras solo corre DESPUES de haber oido voz. Sin
+                    # esta condicion, el silencio de antes de empezar a hablar
+                    # agota el contador y corta la grabacion en seco.
+                    if ha_hablado:
+                        seguidos_en_silencio += 1
+                        if seguidos_en_silencio >= bloques_silencio:
+                            break
+                    elif n >= bloques_espera:
+                        # Nadie ha dicho nada en todo este rato. Se devuelve la
+                        # grabacion muda igualmente: quien llama lo detecta por
+                        # el pico y puede dar un mensaje util.
                         break
         except BackendError:
             raise

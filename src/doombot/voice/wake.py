@@ -19,9 +19,11 @@ habiendo forma de usar el asistente.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from doombot.backends.base import BackendError
+from doombot.paths import models_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -103,21 +105,48 @@ class WakeWord:
             except ImportError as e:
                 raise BackendError(_MISSING) from e
 
-            try:
-                return Model(wakeword_models=[self._model_name], inference_framework="onnx")
-            except Exception:
-                # Los pesos se descargan la primera vez. openWakeWord no lo
-                # hace solo y falla con un error que no lo sugiere.
-                import openwakeword
-
-                openwakeword.utils.download_models([self._model_name])
-                return Model(wakeword_models=[self._model_name], inference_framework="onnx")
+            return Model(wakeword_models=[str(self._pesos())], inference_framework="onnx")
         except BackendError:
             raise
         except Exception as e:  # noqa: BLE001 - depende de la libreria
             raise BackendError(
                 f"No se pudo cargar la palabra de activacion {self._model_name!r}: {e}"
             ) from e
+
+    def _pesos(self) -> Path:
+        """Ruta del modelo, descargandolo a la carpeta de datos si falta.
+
+        openWakeWord descarga por defecto dentro de su propio paquete, es decir
+        dentro del entorno virtual. Eso rompe la regla del proyecto de que los
+        datos generados vivan fuera: un ``rm -rf .venv`` se llevaria por delante
+        los pesos, y en el otro equipo habria que volver a bajarlos sin que
+        nadie sepa por que. Van a ``paths.models_dir()``, como los de Whisper y
+        los embeddings.
+
+        Se descargan tambien los modelos auxiliares —espectrograma, embeddings
+        y detector de voz—, que openWakeWord carga siempre y sin los cuales el
+        modelo de la palabra no sirve de nada.
+        """
+        import openwakeword
+
+        carpeta = models_dir() / "openwakeword"
+        carpeta.mkdir(parents=True, exist_ok=True)
+
+        ficha = openwakeword.MODELS.get(self._model_name)
+        if ficha is None:
+            disponibles = ", ".join(sorted(openwakeword.MODELS))
+            raise BackendError(
+                f"No existe la palabra de activacion {self._model_name!r}. Hay: {disponibles}."
+            )
+
+        destino = carpeta / (Path(ficha["model_path"]).stem + ".onnx")
+        if not destino.is_file():
+            openwakeword.utils.download_models([self._model_name], target_directory=str(carpeta))
+        if not destino.is_file():
+            raise BackendError(
+                f"Los pesos de {self._model_name!r} no aparecieron en {carpeta} tras la descarga."
+            )
+        return destino
 
     def check(self, muestras: Any) -> Detection | None:
         """Mira un bloque de audio. Devuelve la deteccion, o None.

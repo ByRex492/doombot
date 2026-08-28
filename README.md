@@ -24,6 +24,19 @@ Para hablar con el modelo del perfil activo:
 python -m doombot "¿qué hora es un buen momento para hacer commit?"
 ```
 
+### El lanzador: `doom`
+
+Para no depender de acordarse de activar el entorno:
+
+```powershell
+.\doom            # diagnóstico
+.\doom escuchar tecla
+.\doom "que hora es"
+```
+
+`doom.cmd` y `doom.ps1` llaman al Python del `.venv` directamente. Es la forma
+recomendada de usarlo.
+
 ### El entorno virtual tiene que estar activo
 
 `doombot` se instala **dentro del `.venv`**, no en el Python del sistema. Si
@@ -68,7 +81,7 @@ Hay tres reglas, y las tres están cubiertas por tests:
 
 | Regla | Dónde vive | Qué la comprueba |
 |---|---|---|
-| Ninguna ruta absoluta en el código | `paths.py` deriva todas las rutas | `test_sin_rutas_absolutas_escritas_a_mano` |
+| Ninguna ruta absoluta en el código | `paths.py` deriva todas las rutas | `test_sin_rutas_absolutas` |
 | El hardware se detecta, no se escribe | `profiles.py` + `profiles.toml` | `test_seleccion_por_vram` |
 | Lo local no se versiona | `.env` (plantilla en `.env.example`) | `test_env_no_esta_versionado` |
 
@@ -104,7 +117,8 @@ concreto:
 |---|---|---|
 | `TextGenerator` | `generate`, `stream`, `model_name` | `OllamaGenerator` |
 | `Transcriber` | `transcribe` | `WhisperTranscriber` |
-| `Embedder` | `embed`, `dimensions` | pendiente |
+| `Embedder` | `embed`, `dimensions` | `FastEmbedder` |
+| `WakeDetector` | `check`, `reset`, `name` | `WakeWord`, `PushToTalk` |
 
 Son `Protocol`, no clases base: una implementación no hereda ni importa nada,
 le basta con tener los métodos. `OllamaGenerator` sirve igual para el Ollama
@@ -137,11 +151,11 @@ Ninguna palabra de la pregunta aparece en el recuerdo. Es lo que hace el
 Vive en SQLite dentro de la carpeta de datos del usuario, **fuera del
 repositorio** — `python -m doombot` dice dónde. Cada recuerdo ocupa unos 2 KB.
 
-La similitud se calcula en Python, sin dependencias binarias por equipo. Tiene
-un techo medido: una búsqueda cuesta ~76 ms fijos de vectorizar la pregunta más
-unos 62 ms por cada mil recuerdos guardados. Con el presupuesto de ~200 ms que
-necesita la voz, el límite práctico ronda los **1.500 recuerdos**; a partir de
-ahí tocará `sqlite-vec` o numpy.
+Una búsqueda cuesta ~76 ms fijos de vectorizar la pregunta más el recorrido de
+los vectores. Con el presupuesto de ~200 ms que necesita la voz, el límite
+práctico ronda los **1.500 recuerdos** en Python puro, y sube a unos **6.000**
+con el núcleo nativo de `native/doomkit` compilado, que va 4x más rápido.
+Es opcional: ver [native/README.md](native/README.md).
 
 El umbral por defecto es **0,35**, medido: los aciertos claros puntúan entre
 0,51 y 0,67 y el ruido se queda bajo 0,26. Por debajo de ese umbral no se
@@ -175,6 +189,27 @@ micrófono: **10/10**, incluyendo casos donde Whisper transcribió "¡Dum!" por
 "Doom" y se comió una letra.
 
 Mil reconocimientos tardan menos de un segundo.
+
+## Voz
+
+D.O.O.M escucha. El bucle es una máquina de estados:
+
+    DORMIDO --activación--> ESCUCHANDO --silencio--> TRANSCRIBIENDO --> DORMIDO
+
+```powershell
+.\doom escuchar          # espera "hey jarvis"
+.\doom escuchar tecla    # se dispara con una pulsación
+.\doom micro             # lista los micrófonos
+.\doom micro probar 12   # graba con un dispositivo concreto
+```
+
+La palabra de activación (`openWakeWord`, modelo `hey_jarvis`) está siempre
+despierta porque es barata: solo busca un patrón acústico. Dejar a Whisper
+transcribiendo en continuo costaría entre el 28% y el 59% de un núcleo, y
+además transcribiría todo lo que se hable en la habitación.
+
+`PushToTalk` cumple el mismo contrato y sirve para depurar sin depender de que
+el detector te oiga.
 
 ## Desarrollo
 

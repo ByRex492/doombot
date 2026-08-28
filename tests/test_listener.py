@@ -189,3 +189,28 @@ def test_la_conversion_a_int16_no_desborda():
     assert salida.dtype == np.int16
     assert salida.max() <= 32767
     assert salida.min() >= -32767
+
+
+# -- pesos fuera del entorno virtual ----------------------------------------
+def test_los_pesos_no_van_dentro_del_venv(monkeypatch, tmp_path):
+    """openWakeWord descarga en su propio paquete si nadie se lo impide.
+
+    Un borrado del .venv se llevaria los pesos, y en el otro equipo habria que
+    rebajarlos sin que nadie sepa por que.
+    """
+    pytest.importorskip("openwakeword")
+    from doombot.voice.wake import WakeWord
+
+    monkeypatch.setenv("DOOMBOT_DATA_DIR", str(tmp_path))
+    destino = WakeWord()._pesos()
+    assert tmp_path in destino.parents
+    assert ".venv" not in str(destino)
+
+
+def test_una_palabra_inexistente_lista_las_validas():
+    pytest.importorskip("openwakeword")
+    from doombot.backends.base import BackendError
+    from doombot.voice.wake import WakeWord
+
+    with pytest.raises(BackendError, match="hey_jarvis"):
+        WakeWord("no_existe_esta")._pesos()

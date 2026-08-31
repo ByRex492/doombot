@@ -338,6 +338,12 @@ BASICAS = [
         prefix=True,
         description="Delega una tarea real en el agente de acciones",
     ),
+    Command(
+        "progress",
+        ("anota el progreso", "apunta el progreso", "escribe el progreso"),
+        prefix=True,
+        description="Anade una nota de progreso al vault de Obsidian",
+    ),
 ]
 
 

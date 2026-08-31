@@ -28,6 +28,16 @@ PROFILES_FILE: Path = PROJECT_ROOT / "profiles.toml"
 ENV_FILE: Path = PROJECT_ROOT / ".env"
 DOCS_DIR: Path = PROJECT_ROOT / "docs"
 
+VAULT_DIR: Path = PROJECT_ROOT / "obsidian"
+"""El vault de Obsidian del proyecto: se versiona, igual que ``DOCS_DIR``.
+
+A diferencia de ``data_dir()``, esto NO es estado privado -no lleva nada que
+se haya dicho en voz alta, solo hechos que el usuario ha decidido escribir o
+confirmar-, asi que vive dentro del repositorio a proposito: es lo que
+permite que el sobremesa y el resto de equipos vean el mismo vault con
+`git pull`, sin exportar ni copiar nada a mano.
+"""
+
 _APP_NAME = "doombot"
 
 

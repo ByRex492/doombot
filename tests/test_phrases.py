@@ -176,6 +176,12 @@ def test_act_delega_una_tarea(m):
     assert "arregla el test" in r.argument
 
 
+def test_progress_anota_en_el_vault(m):
+    r = m.match("apunta el progreso: hoy consolidamos la rama de trabajo")
+    assert r.command == "progress"
+    assert "consolidamos la rama" in r.argument
+
+
 # ============================================================ lo que NO es orden
 @pytest.mark.parametrize(
     "texto",

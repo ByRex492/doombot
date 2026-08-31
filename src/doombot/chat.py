@@ -22,7 +22,8 @@ from doombot.backends.ollama import OllamaGenerator
 from doombot.config import settings
 from doombot.identity import resumen, system_prompt
 from doombot.memory import Memory
-from doombot.paths import memory_db
+from doombot.obsidian import anotar_progreso, escribir_perfil, sincronizar_perfil
+from doombot.paths import VAULT_DIR, memory_db
 from doombot.phrases import default_matcher
 
 
@@ -53,12 +54,14 @@ Escribe lo que quieras. Se reconocen ordenes:
   que sabes sobre <algo>   lo busca y responde con lo que encuentre
   olvida eso               borra el ultimo recuerdo guardado
   ejecuta esto <tarea>     delega una tarea real en el agente de acciones
+  apunta el progreso <algo>  anade una nota al vault de Obsidian
   para / silencio          ordenes de control (aun sin voz que parar)
 
 Cualquier otra cosa va al modelo. Ademas:
 
   /memoria                 lista todo lo guardado
   /borrar                  vacia la memoria
+  /obsidian                relee usuario.md por si lo editaste a mano
   /estado                  que sabe hacer esta instalacion
   /salir                   terminar
 """
@@ -150,6 +153,11 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                 print(f"  borrados {mem.clear()} recuerdos")
                 ultimo_guardado = None
                 continue
+            if entrada == "/obsidian":
+                n = sincronizar_perfil(mem)
+                escribir_perfil(mem)
+                print(f"  {n} lineas leidas de {VAULT_DIR / 'usuario.md'}")
+                continue
 
             # --- una orden? -------------------------------------------------
             orden = matcher.match(entrada)
@@ -190,7 +198,17 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                     continue
                 _pintar_orden(orden)
                 ultimo_guardado = mem.remember(orden.argument, kind="perfil")
+                escribir_perfil(mem)
                 print(f"D.O.O.M> Anotado sobre ti: {orden.argument}")
+                continue
+
+            if orden and orden.command == "progress":
+                if not orden.argument:
+                    print("  ¿que quieres anotar?")
+                    continue
+                _pintar_orden(orden)
+                ruta = anotar_progreso(orden.argument)
+                print(f"D.O.O.M> Anotado en {ruta.relative_to(VAULT_DIR.parent)}")
                 continue
 
             if orden and orden.command == "act":

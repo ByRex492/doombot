@@ -15,13 +15,16 @@ import contextlib
 import sys
 
 from doombot import profiles
-from doombot.backends.base import BackendError
+from doombot.backends.anthropic import AnthropicGenerator
+from doombot.backends.base import BackendError, TextGenerator
 from doombot.backends.embeddings import FastEmbedder
 from doombot.backends.ollama import OllamaGenerator
+from doombot.config import Settings, settings
 from doombot.identity import resumen, system_prompt
 from doombot.memory import Memory
 from doombot.paths import memory_db
 from doombot.phrases import default_matcher
+from doombot.profiles import Profile
 
 
 def _forzar_utf8() -> None:
@@ -64,6 +67,18 @@ def _pintar_orden(m) -> None:
     print(f"  · orden {m.command} ({m.how}, {m.confidence})", file=sys.stderr)
 
 
+def _generador(perfil: Profile, cfg: Settings) -> TextGenerator:
+    """El TextGenerator que toca segun DOOMBOT_LLM_BACKEND.
+
+    Ollama por defecto (D-009: latencia local, funciona sin conexion).
+    Anthropic es el segundo backend, seleccionable sin tocar el resto del
+    bucle porque ambos cumplen el mismo contrato.
+    """
+    if cfg.llm_backend == "anthropic":
+        return AnthropicGenerator.from_config(cfg)
+    return OllamaGenerator.from_profile(perfil, cfg)
+
+
 def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia lista
     _forzar_utf8()
 
@@ -73,15 +88,19 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
         print(f"No se pudo determinar el perfil: {e}", file=sys.stderr)
         return 1
 
-    gen = OllamaGenerator.from_profile(perfil)
+    cfg = settings()
+    gen = _generador(perfil, cfg)
     if not gen.is_available():
-        print("Ollama no responde. Arrancalo y vuelve a intentarlo.", file=sys.stderr)
+        if cfg.llm_backend == "anthropic":
+            print("Falta DOOMBOT_ANTHROPIC_API_KEY en .env.", file=sys.stderr)
+        else:
+            print("Ollama no responde. Arrancalo y vuelve a intentarlo.", file=sys.stderr)
         return 1
 
     matcher = default_matcher()
     embedder = FastEmbedder.from_config()
 
-    print(f"D.O.O.M. · perfil {perfil.name} · {perfil.llm_model}")
+    print(f"D.O.O.M. · perfil {perfil.name} · {cfg.llm_backend}/{gen.model_name}")
     print(f"memoria en {memory_db()}")
     print("Escribe /ayuda para ver las ordenes, /salir para terminar.\n")
 
@@ -169,7 +188,7 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
             _responder(gen, prompt)
 
 
-def _responder(gen: OllamaGenerator, prompt: str) -> None:
+def _responder(gen: TextGenerator, prompt: str) -> None:
     print("D.O.O.M> ", end="", flush=True)
     try:
         for trozo in gen.stream(prompt, system=system_prompt()):

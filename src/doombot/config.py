@@ -55,6 +55,18 @@ class Settings:
     apuntando a otro microfono. Ver ``voice.capture.Microphone``.
     """
 
+    llm_backend: str = "ollama"
+    """Que ``TextGenerator`` construye el orquestador: ``ollama`` o ``anthropic``.
+
+    Ollama sigue siendo el que decide D-009: en la voz, la latencia local
+    manda y el asistente tiene que funcionar sin conexion. Anthropic entra
+    como segundo backend seleccionable para cuando pese mas la calidad de
+    razonamiento que la latencia, a costa de mandar la conversacion fuera de
+    la maquina.
+    """
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-5"
+
     @property
     def is_remote_ollama(self) -> bool:
         """True si apuntamos al Ollama de otra maquina.
@@ -73,4 +85,7 @@ def settings() -> Settings:
         ollama_host=os.environ.get("DOOMBOT_OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/"),
         log_level=os.environ.get("DOOMBOT_LOG_LEVEL", "INFO").upper(),
         audio_input=os.environ.get("DOOMBOT_AUDIO_INPUT", "").strip(),
+        llm_backend=os.environ.get("DOOMBOT_LLM_BACKEND", "ollama").strip().lower(),
+        anthropic_api_key=os.environ.get("DOOMBOT_ANTHROPIC_API_KEY", "").strip(),
+        anthropic_model=os.environ.get("DOOMBOT_ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
     )

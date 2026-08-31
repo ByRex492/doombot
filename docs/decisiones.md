@@ -302,3 +302,35 @@ igual que en VSCode, Discord o Spotify.
 **Por qué se mantiene.** Renunciar al HTML significa dibujar el HUD en Qt o similar, donde el
 resplandor, el desenfoque y las partículas cuestan diez veces más trabajo. Lo que se descarta
 es abrir una pestaña del navegador, no la tecnología de renderizado.
+
+---
+
+## D-017 — La capa de acciones delega en Claude Code, no en un ejecutor propio
+
+**Contexto.** D-014 decidió el estándar para cuando D.O.O.M tuviera que ejecutar herramientas
+(`agentskills.io`), pero dejó abierto *quién* las ejecuta. Escribir un ejecutor de tool-calling
+propio —parsear la respuesta del modelo, mapear a funciones, gestionar el bucle de turnos— es
+exactamente el tipo de infraestructura que ya existe, madura, en el propio Claude Code.
+
+**Decisión.** `actions/claude_code.py` invoca `claude -p <tarea>` en modo no interactivo
+("print"), pensado para automatización, en vez de una sesión interactiva. D.O.O.M no ejecuta
+herramientas: le pide a Claude Code que las ejecute, y se queda con el resultado.
+
+**Por qué.** El propio agente que construye este proyecto ya sabe editar ficheros, ejecutar
+comandos y razonar sobre código con más profundidad de la que D.O.O.M necesitaría reinventar. La
+alternativa —Open Interpreter, considerado y descartado en D-014, o un bucle de tool-calling
+propio— duplica trabajo que no aporta nada distinto.
+
+**El riesgo real: una orden de voz mal reconocida ejecutando código sin que nadie lo pidiera de
+verdad.** Por eso el modo por defecto es `plan`: el agente propone lo que haría sin tocar nada.
+Pasar a un modo que ejecuta (`acceptEdits`, `bypassPermissions`) es una decisión que toma quien
+instala D.O.O.M, en `DOOMBOT_AGENT_PERMISSION_MODE` de su `.env` —nunca el valor de fábrica—.
+
+**Verificado, no supuesto.** Los flags (`-p`, `--output-format json`, `--permission-mode`,
+`--allowedTools`) y la forma del JSON de salida (`result`, `is_error`, `session_id`,
+`duration_ms`, `total_cost_usd`) se comprobaron contra el binario real (`claude --help` y una
+invocación de prueba), no se copiaron de memoria.
+
+**Pendiente.** Probar el modo `acceptEdits` de verdad, con una tarea real, en el sobremesa. Y
+decidir si `phrases.act` debería exigir una confirmación hablada extra antes de delegar, una vez
+exista la capa de voz completa —hoy solo se prueba por texto—.

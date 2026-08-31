@@ -64,6 +64,17 @@ class Settings:
     D.O.O.M lo decide explicitamente en su .env, nunca por defecto.
     """
     agent_allowed_tools: tuple[str, ...] = ()
+    llm_backend: str = "ollama"
+    """Que ``TextGenerator`` construye el orquestador: ``ollama`` o ``anthropic``.
+
+    Ollama sigue siendo el que decide D-009: en la voz, la latencia local
+    manda y el asistente tiene que funcionar sin conexion. Anthropic entra
+    como segundo backend seleccionable para cuando pese mas la calidad de
+    razonamiento que la latencia, a costa de mandar la conversacion fuera de
+    la maquina.
+    """
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-5"
 
     @property
     def is_remote_ollama(self) -> bool:
@@ -87,4 +98,7 @@ def settings() -> Settings:
         agent_binary=os.environ.get("DOOMBOT_AGENT_BINARY", "claude").strip(),
         agent_permission_mode=os.environ.get("DOOMBOT_AGENT_PERMISSION_MODE", "plan").strip(),
         agent_allowed_tools=tuple(t.strip() for t in tools.split(",") if t.strip()),
+        llm_backend=os.environ.get("DOOMBOT_LLM_BACKEND", "ollama").strip().lower(),
+        anthropic_api_key=os.environ.get("DOOMBOT_ANTHROPIC_API_KEY", "").strip(),
+        anthropic_model=os.environ.get("DOOMBOT_ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
     )

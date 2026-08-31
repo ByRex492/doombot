@@ -15,9 +15,11 @@ import contextlib
 import sys
 
 from doombot import profiles
+from doombot.actions.claude_code import ClaudeCodeAgent
 from doombot.backends.base import BackendError
 from doombot.backends.embeddings import FastEmbedder
 from doombot.backends.ollama import OllamaGenerator
+from doombot.config import settings
 from doombot.identity import resumen, system_prompt
 from doombot.memory import Memory
 from doombot.paths import memory_db
@@ -47,8 +49,10 @@ AYUDA = """
 Escribe lo que quieras. Se reconocen ordenes:
 
   recuerda que <algo>      guarda un hecho en la memoria
+  recuerda que yo <algo>   guarda un hecho SOBRE TI, siempre presente
   que sabes sobre <algo>   lo busca y responde con lo que encuentre
   olvida eso               borra el ultimo recuerdo guardado
+  ejecuta esto <tarea>     delega una tarea real en el agente de acciones
   para / silencio          ordenes de control (aun sin voz que parar)
 
 Cualquier otra cosa va al modelo. Ademas:
@@ -64,6 +68,27 @@ def _pintar_orden(m) -> None:
     print(f"  · orden {m.command} ({m.how}, {m.confidence})", file=sys.stderr)
 
 
+def _contexto_usuario(mem: Memory) -> str:
+    """Hechos guardados SOBRE el usuario, siempre presentes en el prompt.
+
+    A diferencia de ``Memory.as_context()``, no se filtra por parecido con la
+    pregunta: quien habla y que hace es relevante para cualquier conversacion,
+    no solo para las que lo mencionan de pasada.
+    """
+    perfil = mem.all(kind="perfil")
+    if not perfil:
+        return ""
+    lineas = [f"- {r.text}" for r in perfil]
+    return "Lo que sabes del usuario, siempre relevante:\n" + "\n".join(lineas)
+
+
+def _con_contexto(mem: Memory, pregunta: str, *extra: str) -> str:
+    bloques = [b for b in (_contexto_usuario(mem), *extra) if b]
+    if not bloques:
+        return pregunta
+    return "\n\n".join([*bloques, f"Pregunta: {pregunta}"])
+
+
 def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia lista
     _forzar_utf8()
 
@@ -73,13 +98,17 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
         print(f"No se pudo determinar el perfil: {e}", file=sys.stderr)
         return 1
 
-    gen = OllamaGenerator.from_profile(perfil)
+    cfg = settings()
+    gen = OllamaGenerator.from_profile(perfil, cfg)
     if not gen.is_available():
         print("Ollama no responde. Arrancalo y vuelve a intentarlo.", file=sys.stderr)
         return 1
 
     matcher = default_matcher()
     embedder = FastEmbedder.from_config()
+    # Construirlo no lanza ningun proceso -eso solo pasa en .run()-, asi que
+    # se crea siempre, se use o no en esta sesion.
+    agente = ClaudeCodeAgent.from_config(cfg)
 
     print(f"D.O.O.M. · perfil {perfil.name} · {perfil.llm_model}")
     print(f"memoria en {memory_db()}")
@@ -143,7 +172,7 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                     print("D.O.O.M> No tengo nada guardado sobre eso.")
                     continue
                 contexto = mem.as_context(orden.argument)
-                _responder(gen, f"{contexto}\n\nPregunta: {entrada}")
+                _responder(gen, _con_contexto(mem, entrada, contexto))
                 continue
 
             if orden and orden.command == "forget":
@@ -153,6 +182,30 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                     ultimo_guardado = None
                 else:
                     print("D.O.O.M> No hay nada reciente que olvidar.")
+                continue
+
+            if orden and orden.command == "identify":
+                if not orden.argument:
+                    print("  ¿que quieres que sepa de ti?")
+                    continue
+                _pintar_orden(orden)
+                ultimo_guardado = mem.remember(orden.argument, kind="perfil")
+                print(f"D.O.O.M> Anotado sobre ti: {orden.argument}")
+                continue
+
+            if orden and orden.command == "act":
+                if not orden.argument:
+                    print("  ¿que tarea quieres que ejecute?")
+                    continue
+                _pintar_orden(orden)
+                print(f"  · delegando en el agente ({cfg.agent_permission_mode}), puede tardar...")
+                try:
+                    resultado = agente.run(orden.argument)
+                except BackendError as e:
+                    print(f"  {e}", file=sys.stderr)
+                    continue
+                estado = "hecho" if resultado.success else "fallo"
+                print(f"D.O.O.M> [{estado}] {resultado.output}")
                 continue
 
             if orden:
@@ -165,8 +218,7 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
             if contexto:
                 for linea in contexto.splitlines()[1:]:
                     print(f"  · contexto {linea.lstrip('- ')}", file=sys.stderr)
-            prompt = f"{contexto}\n\nPregunta: {entrada}" if contexto else entrada
-            _responder(gen, prompt)
+            _responder(gen, _con_contexto(mem, entrada, contexto))
 
 
 def _responder(gen: OllamaGenerator, prompt: str) -> None:

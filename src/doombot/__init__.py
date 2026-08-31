@@ -11,6 +11,7 @@ El paquete se organiza por responsabilidad, no por tecnologia:
 - ``phrases``  reconocimiento de frases textuales y ordenes
 - ``chat``     modo interactivo que junta todas las capas
 - ``voice``    captura de audio, palabra de activacion y sintesis
+- ``actions``  capa de acciones: delega tareas reales en Claude Code
 """
 
 __version__ = "0.1.0"

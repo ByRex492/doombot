@@ -55,6 +55,16 @@ class Settings:
     apuntando a otro microfono. Ver ``voice.capture.Microphone``.
     """
 
+    agent_binary: str = "claude"
+    agent_permission_mode: str = "plan"
+    """Modo por defecto del agente de acciones (``actions.claude_code``).
+
+    "plan" propone sin ejecutar. Es el valor seguro para una orden que llega
+    por voz: solo se pasa a un modo que ejecuta de verdad si quien instala
+    D.O.O.M lo decide explicitamente en su .env, nunca por defecto.
+    """
+    agent_allowed_tools: tuple[str, ...] = ()
+
     @property
     def is_remote_ollama(self) -> bool:
         """True si apuntamos al Ollama de otra maquina.
@@ -69,8 +79,12 @@ class Settings:
 @lru_cache(maxsize=1)
 def settings() -> Settings:
     load_env()
+    tools = os.environ.get("DOOMBOT_AGENT_ALLOWED_TOOLS", "").strip()
     return Settings(
         ollama_host=os.environ.get("DOOMBOT_OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/"),
         log_level=os.environ.get("DOOMBOT_LOG_LEVEL", "INFO").upper(),
         audio_input=os.environ.get("DOOMBOT_AUDIO_INPUT", "").strip(),
+        agent_binary=os.environ.get("DOOMBOT_AGENT_BINARY", "claude").strip(),
+        agent_permission_mode=os.environ.get("DOOMBOT_AGENT_PERMISSION_MODE", "plan").strip(),
+        agent_allowed_tools=tuple(t.strip() for t in tools.split(",") if t.strip()),
     )

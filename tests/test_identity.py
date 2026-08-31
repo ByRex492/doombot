@@ -17,10 +17,13 @@ def test_siempre_sabe_conversar():
     assert caps["conversar"].available
 
 
-def test_no_dice_saber_actuar():
-    """Ninguna capa toca el sistema todavia."""
+def test_actuar_se_activa_en_cuanto_actions_expone_algo():
+    """Igual que memory/: en cuanto el paquete expone algo, se declara solo."""
+    from doombot import actions
+
+    publico = [x for x in dir(actions) if not x.startswith("_")]
     caps = {c.name: c for c in identity.capabilities()}
-    assert not caps["actuar"].available
+    assert caps["actuar"].available == bool(publico)
 
 
 def test_no_dice_saber_recordar_mientras_memory_este_vacio():
@@ -35,7 +38,9 @@ def test_no_dice_saber_recordar_mientras_memory_este_vacio():
 def test_el_prompt_declara_lo_que_no_puede():
     p = identity.system_prompt()
     assert "Limitaciones" in p
-    assert "abrir programas" in p
+    # "consultar" (acceso a internet) sigue sin implementar; a diferencia de
+    # "actuar", no se activa sola con ningun paquete existente.
+    assert "acceso a internet" in p
 
 
 def test_el_prompt_prohibe_fingir():

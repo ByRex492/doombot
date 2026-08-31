@@ -20,11 +20,16 @@ doombot/
 │   ├── backends/        Contratos e implementaciones intercambiables
 │   ├── memory/          Qué recuerda D.O.O.M
 │   ├── phrases/         Frases textuales y órdenes
-│   └── voice/           Audio, palabra de activación, síntesis
-│       └── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
-│       ├── wake.py      Palabra de activación y push-to-talk
-│       └── listener.py  Bucle de escucha: la máquina de estados
+│   ├── voice/           Audio, palabra de activación, síntesis
+│   │   ├── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
+│   │   ├── wake.py      Palabra de activación y push-to-talk
+│   │   └── listener.py  Bucle de escucha: la máquina de estados
+│   ├── actions/         Capa de acciones: tareas reales, no solo respuestas
+│   │   └── claude_code.py  Delega en `claude -p`, headless
+│   └── obsidian/        Espejo legible de la memoria en el vault
+│       └── vault.py     Lee y escribe usuario.md y progreso/
 ├── native/doomkit/      Núcleo en Rust, opcional (ver native/README.md)
+├── obsidian/            El vault en sí (se versiona, ver su README.md)
 └── tests/
 ```
 
@@ -48,6 +53,9 @@ lógica sin GPU delante.
    portátil pueda usar un modelo pequeño en local o apuntar por red al
    sobremesa sin cambiar una línea.
 3. **Dominio** — `memory`, `phrases`, `voice`. Lo propio de D.O.O.M.
+4. **Acciones** — `actions`. Depende del dominio (llega por la orden `act` de
+   `phrases`) y es la única capa que toca el sistema de verdad: no genera
+   texto, ejecuta tareas. Ver D-014 en `docs/decisiones.md`.
 
 ## Dónde va cada cosa
 
@@ -104,3 +112,45 @@ crece sin techo.
 
 Todo lo grabado va a `data_dir()/audio`, nunca dentro del repositorio: es lo que
 se ha dicho en voz alta delante del ordenador.
+
+## La capa de acciones
+
+`actions/claude_code.py` delega tareas reales -editar código, ejecutar
+comandos- en el propio Claude Code, invocado sin interfaz (`claude -p`), en
+vez de escribir un ejecutor de herramientas propio.
+
+**El modo por defecto es `plan`, no uno que ejecute.** Una orden de voz mal
+reconocida que dispare código de verdad es un riesgo real y difícil de
+deshacer; `plan` hace que el agente proponga sin tocar nada. Pasar a un modo
+que ejecuta (`acceptEdits`, `bypassPermissions`) es una decisión que toma
+quien instala D.O.O.M en `DOOMBOT_AGENT_PERMISSION_MODE`, nunca el valor de
+fábrica.
+
+## El vault de Obsidian
+
+`memory/` es rápido pero es una caja cerrada: SQLite con vectores, no algo
+que se abra cómodo con un editor. `obsidian/vault.py` conecta ese cerebro
+interno con un vault de Obsidian real que vive **dentro del repositorio**
+(`paths.VAULT_DIR`, la carpeta `obsidian/` de la raíz) en vez de en una ruta
+personal fuera de él.
+
+**Por qué dentro del repo y no en el vault personal de cada uno.** Así el
+traspaso entre equipos es el mismo `git pull` de siempre —igual que el resto
+del proyecto—, sin exportar ni copiar nada a mano. La contrapartida es que
+este vault es *del proyecto*, no el de toda tu vida: si quieres mezclarlo con
+tus otras notas, la vía es enlazar o copiar, no apuntar Obsidian aquí y ya.
+
+Dos direcciones, y ninguna sustituye a `memory/` como la fuente que consulta
+D.O.O.M al responder:
+
+- **`escribir_perfil`** (D.O.O.M → vault): vuelca a `usuario.md` los hechos
+  `kind="perfil"` -los que guarda la orden `recuerda que yo...`-. Se
+  sobrescribe entero cada vez: es un espejo, no un diario que se acumula.
+- **`sincronizar_perfil`** (vault → D.O.O.M): lee `usuario.md` a mano
+  -editado por el usuario, con cualquier editor- y guarda cada línea como un
+  hecho de memoria, igual que si se hubiera dicho por voz. Se dispara con
+  `/obsidian` en el modo interactivo.
+- **`anotar_progreso`**: bitácora en `progreso/AAAA-MM-DD.md`, un fichero por
+  día y separado en Mañana/Tarde -corte simple a las 14:00-, para que cada
+  sesión de trabajo deje un rastro legible sin desplazarse por meses de
+  historial.

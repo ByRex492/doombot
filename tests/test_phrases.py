@@ -157,6 +157,31 @@ def test_un_prefijo_sin_argumento_no_cuenta(m):
     assert r is None or r.argument == ""
 
 
+# ============================================================ perfil del usuario y acciones
+def test_identify_guarda_hechos_sobre_el_usuario(m):
+    r = m.match("recuerda que yo trabajo en Anthropic")
+    assert r.command == "identify"
+    assert r.argument == "trabajo en Anthropic"
+
+
+def test_identify_no_choca_con_remember(m):
+    """'recuerda que yo' es mas larga que 'recuerda que': gana la mas especifica."""
+    r = m.match("recuerda que el pan esta caro")
+    assert r.command == "remember"
+
+
+def test_act_delega_una_tarea(m):
+    r = m.match("ejecuta esto: arregla el test que falla")
+    assert r.command == "act"
+    assert "arregla el test" in r.argument
+
+
+def test_progress_anota_en_el_vault(m):
+    r = m.match("apunta el progreso: hoy consolidamos la rama de trabajo")
+    assert r.command == "progress"
+    assert "consolidamos la rama" in r.argument
+
+
 # ============================================================ lo que NO es orden
 @pytest.mark.parametrize(
     "texto",

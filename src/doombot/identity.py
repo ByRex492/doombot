@@ -78,8 +78,9 @@ def capabilities() -> list[Capability]:
         ),
         Capability(
             "actuar",
-            False,  # ninguna capa toca el sistema todavia
-            "abrir programas y manejar el equipo",
+            _tiene_contenido("actions"),
+            "delegar tareas de codigo reales -editar ficheros, ejecutar comandos- "
+            "en el agente de acciones",
             "no puedes abrir programas, ni tocar ficheros, ni manejar el equipo",
         ),
         Capability(

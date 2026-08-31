@@ -63,3 +63,10 @@ desktop.ini
 target/
 *.pyd
 *.so
+
+# --- Vault de Obsidian -------------------------------------------------------
+# El contenido (obsidian/usuario.md, obsidian/progreso/) SI se versiona: es
+# lo que permite el traspaso entre equipos con git pull. Lo que no se
+# versiona es la configuracion propia de la app -tema, plugins activados,
+# estado de ventana-, que es de cada equipo, no del proyecto.
+obsidian/.obsidian/

@@ -326,6 +326,24 @@ BASICAS = [
         ("olvida eso", "olvidalo", "borra eso"),
         description="Descarta el ultimo recuerdo guardado",
     ),
+    Command(
+        "identify",
+        ("recuerda que yo", "recuerda sobre mi que", "mi nombre es", "me llamo"),
+        prefix=True,
+        description="Guarda un hecho SOBRE EL USUARIO, no un hecho general",
+    ),
+    Command(
+        "act",
+        ("ejecuta esto", "encargate del codigo", "tarea de codigo", "haz esto en el codigo"),
+        prefix=True,
+        description="Delega una tarea real en el agente de acciones",
+    ),
+    Command(
+        "progress",
+        ("anota el progreso", "apunta el progreso", "escribe el progreso"),
+        prefix=True,
+        description="Anade una nota de progreso al vault de Obsidian",
+    ),
 ]
 
 

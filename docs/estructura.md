@@ -26,8 +26,10 @@ doombot/
 │   │   └── listener.py  Bucle de escucha: la máquina de estados
 │   ├── actions/         Capa de acciones: tareas reales, no solo respuestas
 │   │   └── claude_code.py  Delega en `claude -p`, headless
-│   └── obsidian/        Espejo legible de la memoria en el vault
-│       └── vault.py     Lee y escribe usuario.md y progreso/
+│   ├── obsidian/        Espejo legible de la memoria en el vault
+│   │   └── vault.py     Lee y escribe usuario.md y progreso/
+│   └── files/           Ficheros que el usuario deja en el buzon
+│       └── reader.py    Resuelve la referencia hablada y lo lee como texto
 ├── native/doomkit/      Núcleo en Rust, opcional (ver native/README.md)
 ├── obsidian/            El vault en sí (se versiona, ver su README.md)
 └── tests/

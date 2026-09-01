@@ -377,3 +377,43 @@ manejadores en una lista de módulo.
 Transcribe 25 veces más rápido de lo que se habla. En el portátil el mismo modelo daba entre
 0,28 y 0,59, y ahí quedaba la duda de si era la GPU o el throttling; con esta cifra la duda se
 cierra por el otro lado. **La Capa 2 deja de estar bloqueada.**
+
+---
+
+## D-019 — Los ficheros entran por un buzón, no dictando una ruta
+
+**El choque.** El objetivo de D.O.O.M es manejarlo sin manos, pero también hay que poder darle
+archivos. Y un fichero no se dicta: nadie va a deletrear una ruta completa en voz alta.
+
+**Decisión.** Partir el gesto en dos, y que solo el primero use las manos:
+
+1. Se suelta el fichero en el **buzón** (`paths.inbox_dir()`), una carpeta fuera del repositorio.
+   Un arrastrar y soltar, sin hablar.
+2. Se le pide de palabra: *"lee lo último que te dejé"* o *"lee el archivo del contrato"*.
+
+**Por qué el buzón está fuera del repositorio.** Ahí acaban documentos del usuario —facturas,
+contratos, apuntes— y un `git add -A` distraído los subiría a GitHub. Es la misma razón por la
+que la memoria vive en `data_dir()` y no en `PROJECT_ROOT`.
+
+**Resolución por palabras, no por subcadena ni por parecido global.** *"el contrato"* tiene que
+encontrar `contrato-alquiler-2026.md`. La subcadena falla por el artículo, y el parecido global
+se hunde por la diferencia de longitud (0,42 medido). Se comparan los conjuntos de palabras
+significativas, descartando artículos y preposiciones; el parecido difuso queda como segunda
+vía, para erratas y para lo que Whisper oiga mal. Una ruta literal que existe gana a las dos:
+escribir una ruta exacta nunca debe acabar abriendo otro fichero.
+
+**Se recorta a 12.000 caracteres**, aproximadamente la mitad del contexto de `workstation`
+(`num_ctx=8192`). Pasarse del contexto no da error: da una respuesta que ignora medio fichero
+sin avisar. El recorte viaja declarado en el objeto y se anuncia por pantalla.
+
+**Solo texto plano, código y datos tabulares.** La lista de extensiones es explícita en vez de
+"inténtalo y ve qué pasa": un `.docx` o un `.xlsx` son ZIP por dentro, se leen sin lanzar
+ningún error y producen caracteres ilegibles que el modelo intentaría interpretar. PDF y
+ofimática quedan pendientes; requieren una dependencia y son una decisión aparte.
+
+**El contenido va delimitado y con un aviso de no obedecerlo.** El fichero es material de
+consulta. Sin la advertencia, un fichero que contenga algo con forma de instrucción se la lleva
+el modelo por delante y responde *al* fichero en vez de *sobre* él.
+
+**Descartado.** Que la orden aceptara solo rutas literales: funciona escribiendo y es inservible
+hablando, justo al revés de lo que necesita el proyecto.

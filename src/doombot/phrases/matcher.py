@@ -344,6 +344,23 @@ BASICAS = [
         prefix=True,
         description="Anade una nota de progreso al vault de Obsidian",
     ),
+    Command(
+        "read_file",
+        # "lee" a secas queda fuera aposta: aparece en demasiadas frases
+        # normales ("lee esto que te digo") y dispararia la orden sin querer.
+        (
+            "lee el archivo",
+            "lee el fichero",
+            "abre el archivo",
+            "abre el fichero",
+            "mira el archivo",
+            "mira el fichero",
+            "lee el documento",
+            "lee lo ultimo que te deje",
+        ),
+        prefix=True,
+        description="Lee un fichero del buzon y lo usa para responder",
+    ),
 ]
 
 

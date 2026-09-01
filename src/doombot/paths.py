@@ -84,6 +84,19 @@ def models_dir() -> Path:
     return _ensure(data_dir() / "models")
 
 
+def inbox_dir() -> Path:
+    """El buzon: ficheros que se le dejan a D.O.O.M para que los lea.
+
+    Vive bajo ``data_dir()`` y no en el repositorio, por la misma razon que la
+    memoria: aqui acaban documentos del usuario -facturas, contratos, apuntes-
+    y un ``git add -A`` distraido los subiria a GitHub.
+
+    Es la respuesta al problema de darle un fichero sin usar las manos para
+    describirlo: se suelta aqui una vez, y despues se le pide de palabra.
+    """
+    return _ensure(data_dir() / "entrada")
+
+
 def _ensure(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p

@@ -21,10 +21,11 @@ from doombot.backends.base import BackendError, TextGenerator
 from doombot.backends.embeddings import FastEmbedder
 from doombot.backends.ollama import OllamaGenerator
 from doombot.config import Settings, settings
+from doombot.files import como_contexto, leer, listar_buzon, resolver
 from doombot.identity import resumen, system_prompt
 from doombot.memory import Memory
 from doombot.obsidian import anotar_progreso, escribir_perfil, sincronizar_perfil
-from doombot.paths import VAULT_DIR, memory_db
+from doombot.paths import VAULT_DIR, inbox_dir, memory_db
 from doombot.phrases import default_matcher
 from doombot.profiles import Profile
 
@@ -57,12 +58,15 @@ Escribe lo que quieras. Se reconocen ordenes:
   olvida eso               borra el ultimo recuerdo guardado
   ejecuta esto <tarea>     delega una tarea real en el agente de acciones
   apunta el progreso <algo>  anade una nota al vault de Obsidian
+  lee el archivo <cual>    lee un fichero del buzon y responde sobre el
+  lee lo ultimo que te deje   el mas reciente que hayas soltado ahi
   para / silencio          ordenes de control (aun sin voz que parar)
 
 Cualquier otra cosa va al modelo. Ademas:
 
   /memoria                 lista todo lo guardado
   /borrar                  vacia la memoria
+  /entrada                 lista los ficheros del buzon
   /obsidian                relee usuario.md por si lo editaste a mano
   /estado                  que sabe hacer esta instalacion
   /salir                   terminar
@@ -170,6 +174,13 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                 print(f"  borrados {mem.clear()} recuerdos")
                 ultimo_guardado = None
                 continue
+            if entrada == "/entrada":
+                ficheros = listar_buzon()
+                if not ficheros:
+                    print(f"  (buzon vacio) deja ficheros en {inbox_dir()}")
+                for f in ficheros:
+                    print(f"  {f.name}  ({f.stat().st_size / 1024:.1f} kB)")
+                continue
             if entrada == "/obsidian":
                 n = sincronizar_perfil(mem)
                 escribir_perfil(mem)
@@ -226,6 +237,22 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                 _pintar_orden(orden)
                 ruta = anotar_progreso(orden.argument)
                 print(f"D.O.O.M> Anotado en {ruta.relative_to(VAULT_DIR.parent)}")
+                continue
+
+            if orden and orden.command == "read_file":
+                _pintar_orden(orden)
+                try:
+                    doc = leer(resolver(orden.argument))
+                except BackendError as e:
+                    print(f"  {e}", file=sys.stderr)
+                    continue
+                print(f"  · leido {doc.resumen}", file=sys.stderr)
+                # La pregunta se guarda: sin ella, "lee el contrato" no dice
+                # que hacer con el, y el modelo se inventa una tarea.
+                pregunta = input("  ¿que quieres saber de el? ").strip()
+                if not pregunta:
+                    pregunta = "Resume este fichero en cinco lineas."
+                _responder(gen, _con_contexto(mem, pregunta, como_contexto(doc)))
                 continue
 
             if orden and orden.command == "act":

@@ -167,14 +167,14 @@ Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version
 
 1. `git add -A ; git commit` — el bundle solo lleva lo commiteado.
 2. Crear repo privado en GitHub y `git push -u origin main`. (Recomendado.)
-3. `.\scripts\exportar-equipo.ps1 -Destino E:\traspaso-jarvis`
+3. `.\scripts\exportar-equipo.ps1 -Destino E:\traspaso-doom`
    Añadir `-IncluirModelosOllama` si se van a copiar los 11,9 GB por USB.
 
 **En el portátil HP:**
 
 4. Comprobar antes que el equipo cumple: Windows 10 versión 1809 o superior y
    x64. VSCode 1.134 no se instala en Windows 8.1 ni en 32 bits.
-5. `.\importar-equipo.ps1 -Origen E:\traspaso-jarvis -SoloJarvis`
+5. `.\importar-equipo.ps1 -Origen E:\traspaso-doom -SoloJarvis`
 6. `py -3.12 -m venv .venv` y activarlo.
 7. Elegir modelo de Ollama según la tabla de arriba.
 8. Iniciar sesión en Settings Sync para que a partir de ahí se mantenga solo.

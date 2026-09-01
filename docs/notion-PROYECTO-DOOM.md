@@ -12,7 +12,7 @@ Fecha del inventario: 26/08/2026
 
 - [ ] **Commitear los cambios pendientes** en el equipo de origen. El bundle solo lleva lo commiteado.
 - [ ] **Crear el repositorio privado en GitHub** y hacer `git push -u origin main`. Es el paso que evita tener que repetir todo esto en el futuro. → [Crear repositorio](https://github.com/new)
-- [ ] Ejecutar `.\scripts\exportar-equipo.ps1 -Destino E:\traspaso-jarvis` y copiar la carpeta al USB.
+- [ ] Ejecutar `.\scripts\exportar-equipo.ps1 -Destino E:\traspaso-doom` y copiar la carpeta al USB.
 - [ ] **Anotar los datos del HP.** Sin esto no se puede elegir el modelo de Ollama (ver Fase 5):
 
 ```powershell
@@ -82,7 +82,7 @@ Las instala `importar-equipo.ps1` con la versión fijada. Con `-SoloJarvis` inst
 
 Comando para una suelta: `code --install-extension <id>@<version>`
 
-**Python (imprescindibles para jarvis-local)**
+**Python (imprescindibles para doombot)**
 
 - [ ] [charliermarsh.ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) - version `2026.74.0` **(nucleo)**
 - [ ] [ms-python.debugpy](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy) - version `2026.6.0` **(nucleo)**
@@ -159,11 +159,11 @@ Comando para una suelta: `code --install-extension <id>@<version>`
 ## Fase 5 — El proyecto
 
 - [ ] **Con repositorio remoto:** `git clone <url-del-repo>` — y listo.
-- [ ] **Sin remoto (por USB):** `git clone E:\traspaso-jarvis\jarvis-local.bundle C:\Users\<usuario>\jarvis-local`
+- [ ] **Sin remoto (por USB):** `git clone E:\traspaso-doom\doombot.bundle C:\Users\<usuario>\doombot`
 - [ ] Crear el entorno virtual **con 3.12 explícito** (si se omite la versión, Windows usa el intérprete por defecto):
 
 ```powershell
-cd C:\Users\<usuario>\jarvis-local
+cd C:\Users\<usuario>\doombot
 py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
 ```

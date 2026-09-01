@@ -11,6 +11,8 @@ el modelo de lenguaje: con el cargado quedan 489 MiB. Medido ahi, transcribe
 
 from __future__ import annotations
 
+import contextlib
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +31,54 @@ if TYPE_CHECKING:
 _MISSING = (
     'faster-whisper no esta instalado. Es una dependencia opcional:\n    pip install -e ".[voice]"'
 )
+
+
+# Los directorios registrados con os.add_dll_directory: hay que mantener vivos
+# los manejadores mientras dure el proceso (ver _registrar_dlls_cuda).
+_DLL_HANDLES: list[Any] = []
+
+
+def _registrar_dlls_cuda() -> None:
+    """Pone en el PATH las librerias CUDA que instala pip, para CTranslate2.
+
+    CTranslate2 no trae cuBLAS ni cuDNN dentro: las pide al sistema por nombre.
+    Los paquetes `nvidia-*-cu12` las dejan en `site-packages/nvidia/*/bin`, un
+    sitio donde Windows no mira, y el error resultante es
+    "Library cublas64_12.dll is not found or cannot be loaded".
+
+    Medido en el sobremesa, y en este orden, porque el mensaje no distingue
+    entre los dos fallos que menciona:
+
+    1. `os.add_dll_directory()` NO basta. Registrar los tres directorios deja
+       el error igual: CTranslate2 resuelve la DLL por una via que no consulta
+       esa lista. Modificar `PATH` si funciona. Se hace lo primero de todas
+       formas porque ayuda a otros cargadores y no cuesta nada.
+    2. Con el PATH puesto seguia fallando hasta instalar
+       `nvidia-cuda-runtime-cu12`: cuBLAS *se encontraba* pero no cargaba, por
+       una dependencia suya que faltaba. Era la segunda mitad del mensaje.
+
+    En Linux no hace falta: el enlazador usa RPATH.
+    """
+    if not hasattr(os, "add_dll_directory") or _DLL_HANDLES:  # no es Windows, o ya hecho
+        return
+
+    import site
+
+    directorios: list[str] = []
+    for base in site.getsitepackages():
+        raiz = Path(base) / "nvidia"
+        if raiz.is_dir():
+            directorios += [str(d) for d in sorted(raiz.glob("*/bin"))]
+    if not directorios:
+        return  # instaladas en el sistema: se confia en el PATH que ya haya
+
+    for d in directorios:
+        with contextlib.suppress(OSError):
+            # El manejador se GUARDA a proposito: add_dll_directory devuelve un
+            # gestor de contexto que retira el directorio al recolectarse.
+            _DLL_HANDLES.append(os.add_dll_directory(d))
+
+    os.environ["PATH"] = os.pathsep.join([*directorios, os.environ.get("PATH", "")])
 
 
 @dataclass(frozen=True)
@@ -113,6 +163,11 @@ class WhisperTranscriber:
                     device=self._device,
                     compute_type=self._compute_type,
                 )
+
+            # Antes de importar: CTranslate2 carga sus DLL de CUDA al
+            # importarse, y despues ya es tarde para decirle donde estan.
+            if self._device != "cpu":
+                _registrar_dlls_cuda()
 
             try:
                 from faster_whisper import WhisperModel

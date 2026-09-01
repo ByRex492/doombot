@@ -26,6 +26,14 @@ voice = [
     "fastembed>=0.8",
     "sounddevice>=0.4",
 ]
+# CUDA para CTranslate2, el motor de faster-whisper. No las trae dentro: las
+# pide al sistema por nombre. Van aparte de "voice" porque un equipo sin GPU
+# NVIDIA no debe descargar 1,3 GB para transcribir en CPU (ver D-018).
+voice-cuda = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cuda-runtime-cu12",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

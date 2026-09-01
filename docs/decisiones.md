@@ -334,3 +334,46 @@ invocación de prueba), no se copiaron de memoria.
 **Pendiente.** Probar el modo `acceptEdits` de verdad, con una tarea real, en el sobremesa. Y
 decidir si `phrases.act` debería exigir una confirmación hablada extra antes de delegar, una vez
 exista la capa de voz completa —hoy solo se prueba por texto—.
+
+---
+
+## D-018 — Las librerías CUDA de Whisper se instalan por pip, y hay que ponerlas en el PATH
+
+**Contexto.** D-013 dejó verificado que CTranslate2 ve la GPU y ofrece `float16`. Pero al
+transcribir audio real fallaba con:
+
+    Library cublas64_12.dll is not found or cannot be loaded
+
+**Causa.** CTranslate2 no empaqueta cuBLAS ni cuDNN: las pide al sistema por nombre. Este equipo
+no tiene el CUDA Toolkit instalado, y Ollama —que sí funciona— trae su propio runtime dentro,
+así que el problema no se veía en la capa del LLM.
+
+**Decisión.** Instalarlas por pip como extra separado `voice-cuda`, no meterlas en `voice`.
+Un equipo sin GPU NVIDIA transcribe en CPU y no tiene por qué descargar 1,3 GB. Se descarta el
+CUDA Toolkit completo: son varios GB, es una instalación de sistema y lo que hace falta son
+tres librerías.
+
+**Lo que costó averiguar, porque el mensaje de error confunde dos fallos distintos:**
+
+1. `os.add_dll_directory()` **no basta**. pip las deja en `site-packages/nvidia/*/bin`, un sitio
+   donde Windows no mira. Registrar los tres directorios dejaba el error idéntico: CTranslate2
+   resuelve la DLL por una vía que no consulta esa lista. Modificar `PATH` sí funciona.
+2. Con el `PATH` puesto **seguía fallando** hasta instalar `nvidia-cuda-runtime-cu12`. cuBLAS
+   se encontraba pero no cargaba, por una dependencia suya que faltaba. Era la segunda mitad
+   del mensaje —"or cannot be loaded"—, que es fácil de pasar por alto.
+
+Un detalle más, del primer intento: `os.add_dll_directory()` devuelve un gestor de contexto que
+**retira el directorio al recolectarse**. Descartar el valor devuelto deja el registro sin
+efecto, con un síntoma idéntico a no haberlo hecho nunca. Por eso `whisper.py` guarda los
+manejadores en una lista de módulo.
+
+**Medido aquí, con `small` en `cuda/float16`.** Audio de 5,3 s generado con la voz de Windows:
+
+| Llamada | RTF |
+|---|---|
+| Primera (en frío) | 0,10 |
+| En caliente | **0,04** (0,21 s) |
+
+Transcribe 25 veces más rápido de lo que se habla. En el portátil el mismo modelo daba entre
+0,28 y 0,59, y ahí quedaba la duda de si era la GPU o el throttling; con esta cifra la duda se
+cierra por el otro lado. **La Capa 2 deja de estar bloqueada.**

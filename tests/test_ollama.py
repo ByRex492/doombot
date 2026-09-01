@@ -241,3 +241,39 @@ def test_nadie_usa_api_generate():
             if "/api/generate" in linea and not linea.lstrip().startswith("#"):
                 culpables.append(f"{py.name}:{n}")
     assert not culpables, "D-008 prohibe /api/generate: " + ", ".join(culpables)
+
+
+# -- keep_alive: el tipo importa, no solo el valor -------------------------
+def test_keep_alive_numerico_va_como_numero():
+    """El perfil `workstation` escribe llm_keep_alive = "-1" en profiles.toml.
+
+    Medido contra el Ollama del sobremesa: enviar la cadena "-1" devuelve 400
+    porque no es una duracion valida; enviar el numero -1 devuelve 200. El
+    fichero de perfiles es dato medido y puede escribirlo de las dos formas,
+    asi que la conversion vive en el backend.
+    """
+    cuerpos = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        cuerpos.append(json.loads(req.content))
+        return httpx.Response(200, json={"message": {"content": "listo"}})
+
+    gen = OllamaGenerator("m", keep_alive="-1", client=cliente_falso(handler))
+    gen.generate("hola")
+
+    assert cuerpos[0]["keep_alive"] == -1
+    assert not isinstance(cuerpos[0]["keep_alive"], str)
+
+
+def test_keep_alive_con_duracion_se_respeta():
+    """ "5m" no es un numero: se manda tal cual, que es lo que Ollama espera."""
+    cuerpos = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        cuerpos.append(json.loads(req.content))
+        return httpx.Response(200, json={"message": {"content": "listo"}})
+
+    gen = OllamaGenerator("m", keep_alive="5m", client=cliente_falso(handler))
+    gen.generate("hola")
+
+    assert cuerpos[0]["keep_alive"] == "5m"

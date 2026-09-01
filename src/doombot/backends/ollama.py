@@ -43,6 +43,27 @@ _TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0)
 RUTA_CHAT = "/api/chat"
 
 
+def _keep_alive_valido(valor: str | int) -> str | int:
+    """Ollama acepta una duracion ("5m") o un numero de segundos (-1), no "-1".
+
+    Medido contra el Ollama de este equipo: el mismo cuerpo con `"keep_alive":
+    "-1"` devuelve 400 y con `"keep_alive": -1` devuelve 200. La cadena "-1" no
+    es una duracion valida para el servidor, y el perfil `workstation` la
+    escribia asi en profiles.toml porque el campo esta tipado como str.
+
+    Se convierte aqui, en el punto donde el valor se encuentra con la API, y no
+    en profiles.py: el fichero de perfiles puede escribirlo de las dos formas
+    -es dato medido, no codigo- y ninguna deberia romper.
+    """
+    if isinstance(valor, int):
+        return valor
+    texto = valor.strip()
+    try:
+        return int(texto)
+    except ValueError:
+        return texto  # una duracion tipo "5m", que Ollama entiende tal cual
+
+
 class OllamaGenerator:
     """Genera texto contra un servidor Ollama."""
 
@@ -59,7 +80,7 @@ class OllamaGenerator:
     ) -> None:
         self._model = model
         self._host = host.rstrip("/")
-        self._keep_alive = keep_alive
+        self._keep_alive = _keep_alive_valido(keep_alive)
 
         # Solo se mandan las opciones que se apartan del criterio de Ollama.
         # num_gpu = 0 significa "decide tu", y enviarlo explicitamente le

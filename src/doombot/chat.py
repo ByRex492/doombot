@@ -93,6 +93,7 @@ def _con_contexto(mem: Memory, pregunta: str, *extra: str) -> str:
         return pregunta
     return "\n\n".join([*bloques, f"Pregunta: {pregunta}"])
 
+
 def _generador(perfil: Profile, cfg: Settings) -> TextGenerator:
     """El TextGenerator que toca segun DOOMBOT_LLM_BACKEND.
 

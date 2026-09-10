@@ -70,3 +70,10 @@ target/
 # versiona es la configuracion propia de la app -tema, plugins activados,
 # estado de ventana-, que es de cada equipo, no del proyecto.
 obsidian/.obsidian/
+
+# --- Auxiliares del trabajo en paralelo por capas --------------------------
+# Cada worktree lleva su lanzador y su encargo. Son de la sesion que trabaja
+# ahi, no del proyecto: versionarlos llenaria el repo de ficheros que solo
+# tienen sentido en una carpeta concreta.
+/arrancar-chat.cmd
+/ENCARGO.md

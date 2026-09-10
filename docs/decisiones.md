@@ -417,3 +417,49 @@ el modelo por delante y responde *al* fichero en vez de *sobre* él.
 
 **Descartado.** Que la orden aceptara solo rutas literales: funciona escribiendo y es inservible
 hablando, justo al revés de lo que necesita el proyecto.
+
+---
+
+## D-020 — Cada capa declara sus órdenes; `chat.py` deja de ser el cuello de botella
+
+**Contexto.** El proyecto va a desarrollarse con **varias sesiones de Claude trabajando en capas
+distintas a la vez**, cada una en su rama. Eso convierte un problema de estilo en uno estructural.
+
+**El problema.** `chat.py` tenía siete bloques `if orden.command == ...` encadenados en una
+función de 293 líneas marcada con `# noqa: C901`. Toda capa nueva pasaba por ahí. Con una
+persona es una molestia; con cinco ramas tocando las mismas veinte líneas es un conflicto de
+fusión garantizado en cada una, y ninguno resoluble automáticamente porque git no sabe en qué
+orden van los bloques.
+
+**Decisión.** Un registro (`orders/`). Cada capa escribe `su_paquete/orders.py`, decora sus
+manejadores con `@orden("nombre")`, y no toca nada compartido. El punto de colisión pasa a ser
+un punto de extensión.
+
+**Descubrimiento en vez de lista escrita.** `cargar()` recorre los subpaquetes de `doombot` e
+importa el `orders` de los que lo tengan. Se descartó una lista explícita de módulos: sería otro
+fichero común que toda capa nueva tendría que editar, y volvería el mismo problema con otro
+nombre. El precio es un `pkgutil.iter_modules`, que se paga una vez.
+
+**La `Sesion` reemplaza a las variables del bucle.** `ultimo_guardado` y `ultima_respuesta` eran
+locales de `run()`, y varias órdenes las comparten —"olvida eso" necesita saber qué guardó
+"recuerda que"—. Sacarlas a un objeto mutable es lo que permite que los manejadores vivan fuera
+del bucle. `responder`, `con_contexto` y `preguntar` se **inyectan**: un manejador no debe
+depender de que la salida sea una consola, y cuando exista la voz cambia la `Sesion` y no los
+manejadores.
+
+**Dos fallos que ahora se detectan solos, con test cada uno:**
+
+- **Manejador huérfano.** Registrar una orden que el matcher no puede producir es código muerto
+  y silencioso. Es un error fácil trabajando en paralelo: se decide un nombre en una rama y otro
+  en la otra.
+- **Dos capas reclamando la misma orden.** Sin comprobarlo ganaría la última importada, y el
+  orden de importación depende del recorrido de `pkgutil`: el síntoma cambiaría de un equipo a
+  otro. Ahora revienta al arrancar, con el nombre de las dos.
+
+**Lo que no cambia.** Una orden definida sin manejador —`stop`, `silence`, `speak`, `repeat`—
+sigue respondiendo *"entendido, pero aún no puedo hacerlo"*. `despachar` devuelve `False` y quien
+llama decide. Sigue siendo una mentira a medias que se resolverá con la Capa 5, pero al menos
+está localizada en un sitio.
+
+**Verificado** recorriendo `remember`, `recall`, `forget`, `read_file` y `stop` contra Ollama
+real: comportamiento idéntico al anterior.

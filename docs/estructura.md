@@ -18,14 +18,16 @@ doombot/
 │   ├── identity.py      Qué dice saber hacer, según lo que hay instalado
 │   ├── chat.py          Modo interactivo: junta todas las capas en un bucle
 │   ├── backends/        Contratos e implementaciones intercambiables
-│   ├── memory/          Qué recuerda D.O.O.M
-│   ├── phrases/         Frases textuales y órdenes
+│   ├── memory/          Qué recuerda D.O.O.M (+ orders.py)
+│   ├── phrases/         Frases textuales y órdenes: qué se puede decir
+│   ├── orders/          Registro: qué capa atiende cada orden
+│   │   └── registry.py  La Sesión, el decorador y el despachador
 │   ├── voice/           Audio, palabra de activación, síntesis
 │   │   ├── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
 │   │   ├── wake.py      Palabra de activación y push-to-talk
 │   │   └── listener.py  Bucle de escucha: la máquina de estados
 │   ├── actions/         Capa de acciones: tareas reales, no solo respuestas
-│   │   └── claude_code.py  Delega en `claude -p`, headless
+│   │   └── claude_code.py  Delega en `claude -p`, headless (+ orders.py)
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon

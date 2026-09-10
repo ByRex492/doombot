@@ -21,10 +21,11 @@ from doombot.backends.base import BackendError, TextGenerator
 from doombot.backends.embeddings import FastEmbedder
 from doombot.backends.ollama import OllamaGenerator
 from doombot.config import Settings, settings
-from doombot.files import como_contexto, leer, listar_buzon, resolver
+from doombot.files import listar_buzon
 from doombot.identity import resumen, system_prompt
 from doombot.memory import Memory
-from doombot.obsidian import anotar_progreso, escribir_perfil, sincronizar_perfil
+from doombot.obsidian import escribir_perfil, sincronizar_perfil
+from doombot.orders import Sesion, despachar
 from doombot.paths import VAULT_DIR, inbox_dir, memory_db
 from doombot.phrases import default_matcher
 from doombot.profiles import Profile
@@ -71,10 +72,6 @@ Cualquier otra cosa va al modelo. Ademas:
   /estado                  que sabe hacer esta instalacion
   /salir                   terminar
 """
-
-
-def _pintar_orden(m) -> None:
-    print(f"  · orden {m.command} ({m.how}, {m.confidence})", file=sys.stderr)
 
 
 def _contexto_usuario(mem: Memory) -> str:
@@ -138,9 +135,21 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
     print(f"memoria en {memory_db()}")
     print("Escribe /ayuda para ver las ordenes, /salir para terminar.\n")
 
-    ultimo_guardado: int | None = None
-
     with Memory(embedder) as mem:
+        # Una sola Sesion para toda la conversacion: los manejadores la
+        # mutan (que se guardo lo ultimo, que se respondio) y el bucle no
+        # necesita saber cuales de ellos lo hacen.
+        sesion = Sesion(
+            gen=gen,
+            mem=mem,
+            cfg=cfg,
+            perfil=perfil,
+            agente=agente,
+            responder=lambda prompt: _responder(sesion, prompt),
+            con_contexto=lambda pregunta, *extra: _con_contexto(mem, pregunta, *extra),
+            preguntar=input,
+        )
+
         while True:
             try:
                 # Se limpian tambien BOM y espacios invisibles: al pegar
@@ -172,7 +181,7 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                 continue
             if entrada == "/borrar":
                 print(f"  borrados {mem.clear()} recuerdos")
-                ultimo_guardado = None
+                sesion.ultimo_guardado = None
                 continue
             if entrada == "/entrada":
                 ficheros = listar_buzon()
@@ -187,107 +196,41 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                 print(f"  {n} lineas leidas de {VAULT_DIR / 'usuario.md'}")
                 continue
 
+            sesion.entrada = entrada
+
             # --- una orden? -------------------------------------------------
             orden = matcher.match(entrada)
 
-            if orden and orden.command == "remember":
-                if not orden.argument:
-                    print("  ¿que quieres que recuerde?")
-                    continue
-                _pintar_orden(orden)
-                ultimo_guardado = mem.remember(orden.argument)
-                print(f"D.O.O.M> Apuntado: {orden.argument}")
-                continue
-
-            if orden and orden.command == "recall":
-                _pintar_orden(orden)
-                encontrados = mem.recall(orden.argument)
-                for r in encontrados:
-                    print(f"  · recuerda ({r.similarity:.2f}) {r.text}", file=sys.stderr)
-                if not encontrados:
-                    print("D.O.O.M> No tengo nada guardado sobre eso.")
-                    continue
-                contexto = mem.as_context(orden.argument)
-                _responder(gen, _con_contexto(mem, entrada, contexto))
-                continue
-
-            if orden and orden.command == "forget":
-                _pintar_orden(orden)
-                if ultimo_guardado is not None and mem.forget(ultimo_guardado):
-                    print("D.O.O.M> Olvidado.")
-                    ultimo_guardado = None
-                else:
-                    print("D.O.O.M> No hay nada reciente que olvidar.")
-                continue
-
-            if orden and orden.command == "identify":
-                if not orden.argument:
-                    print("  ¿que quieres que sepa de ti?")
-                    continue
-                _pintar_orden(orden)
-                ultimo_guardado = mem.remember(orden.argument, kind="perfil")
-                escribir_perfil(mem)
-                print(f"D.O.O.M> Anotado sobre ti: {orden.argument}")
-                continue
-
-            if orden and orden.command == "progress":
-                if not orden.argument:
-                    print("  ¿que quieres anotar?")
-                    continue
-                _pintar_orden(orden)
-                ruta = anotar_progreso(orden.argument)
-                print(f"D.O.O.M> Anotado en {ruta.relative_to(VAULT_DIR.parent)}")
-                continue
-
-            if orden and orden.command == "read_file":
-                _pintar_orden(orden)
-                try:
-                    doc = leer(resolver(orden.argument))
-                except BackendError as e:
-                    print(f"  {e}", file=sys.stderr)
-                    continue
-                print(f"  · leido {doc.resumen}", file=sys.stderr)
-                # La pregunta se guarda: sin ella, "lee el contrato" no dice
-                # que hacer con el, y el modelo se inventa una tarea.
-                pregunta = input("  ¿que quieres saber de el? ").strip()
-                if not pregunta:
-                    pregunta = "Resume este fichero en cinco lineas."
-                _responder(gen, _con_contexto(mem, pregunta, como_contexto(doc)))
-                continue
-
-            if orden and orden.command == "act":
-                if not orden.argument:
-                    print("  ¿que tarea quieres que ejecute?")
-                    continue
-                _pintar_orden(orden)
-                print(f"  · delegando en el agente ({cfg.agent_permission_mode}), puede tardar...")
-                try:
-                    resultado = agente.run(orden.argument)
-                except BackendError as e:
-                    print(f"  {e}", file=sys.stderr)
-                    continue
-                estado = "hecho" if resultado.success else "fallo"
-                print(f"D.O.O.M> [{estado}] {resultado.output}")
-                continue
-
             if orden:
-                _pintar_orden(orden)
-                print(f"D.O.O.M> [{orden.command}] entendido, pero aun no puedo hacerlo.")
+                if not despachar(sesion, orden):
+                    # La orden existe pero nadie la implementa todavia. Se dice
+                    # tal cual: identity.py existe para que D.O.O.M no mienta
+                    # sobre lo que sabe hacer, y callarlo aqui seria mentir.
+                    sesion.traza(f"orden {orden.command} ({orden.how}, {orden.confidence})")
+                    sesion.decir(f"[{orden.command}] entendido, pero aun no puedo hacerlo.")
                 continue
 
             # --- no es una orden: memoria + modelo --------------------------
             contexto = mem.as_context(entrada)
             if contexto:
                 for linea in contexto.splitlines()[1:]:
-                    print(f"  · contexto {linea.lstrip('- ')}", file=sys.stderr)
-            _responder(gen, _con_contexto(mem, entrada, contexto))
+                    sesion.traza(f"contexto {linea.lstrip('- ')}")
+            sesion.responder(sesion.con_contexto(entrada, contexto))
 
 
-def _responder(gen: TextGenerator, prompt: str) -> None:
+def _responder(sesion: Sesion, prompt: str) -> None:
+    """Genera en streaming y guarda lo dicho.
+
+    Se acumula ademas de imprimirse porque "repite" y la voz van a necesitar la
+    ultima respuesta entera, y por streaming solo pasan trozos sueltos.
+    """
     print("D.O.O.M> ", end="", flush=True)
+    partes: list[str] = []
     try:
-        for trozo in gen.stream(prompt, system=system_prompt()):
+        for trozo in sesion.gen.stream(prompt, system=system_prompt()):
+            partes.append(trozo)
             print(trozo, end="", flush=True)
         print()
     except BackendError as e:
         print(f"\n  {e}", file=sys.stderr)
+    sesion.ultima_respuesta = "".join(partes).strip()

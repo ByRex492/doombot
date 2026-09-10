@@ -463,3 +463,92 @@ está localizada en un sitio.
 
 **Verificado** recorriendo `remember`, `recall`, `forget`, `read_file` y `stop` contra Ollama
 real: comportamiento idéntico al anterior.
+
+---
+
+## D-021 — El sintetizador: kokoro-onnx en CPU, fp32, con troceo por frase propio
+
+**Decisión.** `kokoro-onnx` (ONNX Runtime) en vez del paquete `kokoro` (PyTorch), corriendo en
+CPU con el modelo en **fp32**, no en las variantes cuantizadas. `KokoroSynthesizer`
+(`src/doombot/tts/synth.py`) cumple `SpeechSynthesizer` sin heredar de él.
+
+**Por qué kokoro-onnx y no PyTorch.** El proyecto ya carga `onnxruntime` por Whisper (D-018);
+añadir `torch` entero para un modelo de 82M de parámetros es peso que no compensa. Sin
+dependencia nueva de fondo, solo `kokoro-onnx` (que a su vez trae `onnxruntime`, `phonemizer` y
+`espeakng-loader` —éste último empaqueta el propio `espeak-ng` para Windows, así que el binario
+instalado por `winget` durante la sesión quedó de refuerzo, no hizo falta en la práctica—).
+
+**fp32 gana a fp16 e int8 en CPU, medido, y es contraintuitivo.** Se esperaba que los cuantizados
+fueran más rápidos por pesar menos en disco. Al revés:
+
+| Modelo | RTF (frase corta) | RTF (párrafo largo) |
+|---|---|---|
+| fp32 (326 MB) | 0,44–0,56 | 0,44 |
+| fp16 (164 MB) | 0,77–0,94 | — |
+| int8 (114 MB) | 4,26–4,35 | 3,59 |
+
+**Causa.** Este Ryzen 7 5800X (Zen 3) no acelera fp16 de forma nativa —se convierte en el propio
+cálculo, coste que fp32 no paga— y el int8 de ONNX Runtime cae en kernels de referencia sin
+optimizar para esta CPU en vez de las rutas VNNI que sí tendría un Intel reciente. "Más pequeño"
+aquí no significaba "más rápido"; sin medir se habría enviado el int8 por ser el fichero más
+liviano, y habría sido cuatro veces más lento que el que se descartó por pesar más.
+
+**GPU descartada, y no por falta de VRAM.** `onnxruntime-gpu` 1.29 pide `cublasLt64_13.dll`
+(CUDA 13 / cuDNN 9, la pareja que corresponde a esta Blackwell sm_120 — ver D-003, D-013).
+A diferencia de D-018, aquí no hay wheel real: `nvidia-cublas-cu13` en PyPI es un paquete
+placeholder en `0.0.1`, no la librería. Instalar el CUDA Toolkit completo para esto es la misma
+opción que D-018 ya descartó por desproporcionada. `KokoroSynthesizer.from_models_dir` fuerza
+`providers=["CPUExecutionProvider"]` explícitamente: dejar que kokoro-onnx probara Tensor
+RT y CUDA primero solo añadía un "EP Error" ruidoso en cada arranque antes de caer en CPU igual.
+No hace falta la GPU: en CPU ya va cómodamente por debajo de tiempo real, y así queda libre para
+`gemma4:12b`.
+
+**El troceo de `kokoro-onnx` no sirve para lo que `stream()` promete, así que se trocea aparte.**
+Su streaming interno reparte por lotes de hasta 510 fonemas, no por frase. Medido: un párrafo
+típico de D.O.O.M. de cuatro frases cabe entero en un solo lote, y `create_stream` no entrega
+nada hasta tener el párrafo completo —el mismo tiempo que `say`, sin ningún beneficio—.
+`KokoroSynthesizer.stream()` trocea por frase (`_frases`, con cuidado de no partir "D.O.O.M."
+por sus puntos internos) y sintetiza la frase siguiente en un hilo mientras entrega la actual.
+Medido sobre el mismo párrafo:
+
+| | TTFA | Total |
+|---|---|---|
+| `say()` (todo de una vez) | 4,23 s | 4,23 s |
+| `stream()` (por frase) | **0,40 s** | 4,25 s |
+
+Diez veces menos espera hasta el primer sonido, por el mismo coste total: es la diferencia entre
+que D.O.O.M. empiece a hablar casi al momento o que se quede en silencio cuatro segundos.
+
+**Latencia de una frase corta** (la respuesta típica, "breve y directa" por `identity.py`):
+≈1,0 s en español, ≈1,4 s en inglés, en caliente. Probado también variar `intra_op_num_threads`
+de la sesión de ONNX Runtime (4/8/16 frente al automático): la diferencia fue marginal (~7%),
+así que se deja la configuración por defecto en vez de añadir un parámetro que no compensa lo
+que complica.
+
+**Cadencia y pausas: parámetros nativos de Kokoro, no un estirado de audio a posteriori.**
+`speed=0.85` (un 15% más lento que el 1.0 de fábrica, sin sonar arrastrado) y
+`sentence_pause=0.4` / `clause_pause=0.15` (fábrica: 0,25 / 0,10). Kokoro ya calcula la duración
+de cada fonema antes de vocalizar, así que ralentizar por este camino no introduce los artefactos
+de un *time-stretch* posterior.
+
+**Post-procesado (`tts/dsp.py`), deliberadamente sutil.** Pasa-altos Butterworth de fase cero a
+150 Hz (por debajo de cualquier fundamental de voz, incluida una grave masculina) para el corte
+de graves, y una cola de reverberación sintética —ruido con envolvente exponencial, RT60 0,3 s,
+mezclada solo al 15%— para la sala pequeña. Los dos con `scipy`, ya presente por Whisper: sin
+dependencia nueva. Mezcla baja a propósito: esto es la voz de un asistente que hay que entender a
+la primera, no un efecto de producción.
+
+**Voces.** El español solo tiene tres voces en el catálogo de Kokoro frente a veinte del inglés
+—la falta de material de entrenamiento que ya anticipaba el encargo—. `ef_dora` (única femenina)
+queda por defecto, `em_alex` como alternativa masculina, a falta de que el usuario confirme de
+oído; `af_heart` para inglés. Ver la nota de sesión para el resultado de esa escucha.
+
+**Los ficheros del modelo no se instalan por pip.** A diferencia de Whisper (`faster_whisper`) o
+los embeddings (`fastembed`), que descargan solos, `kokoro-onnx` solo falla con la URL en el
+mensaje si faltan. `tts/download.py` (`asegurar_modelos`) los trae la primera vez —354 MB,
+`kokoro-v1.0.onnx` + `voices-v1.0.bin`— a `paths.models_dir() / "kokoro"`, y no toca los
+cuantizados: no se usan, no se descargan.
+
+**Pendiente para `main` (ver la nota de sesión):** `_ESCALA_NIVEL` en `backends/base.py`
+—medida, no adivinada—; el extra `voice-tts` en `pyproject.toml`; e `identity.py`, que hoy solo
+comprueba el paquete `voice` para la capacidad de hablar y no ve `tts/`.

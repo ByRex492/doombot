@@ -38,6 +38,36 @@ Al abrir el proyecto en una máquina distinta: `git fetch`, mirar qué ramas `ta
 pendientes de fusionar (`git branch -r`), y seguir el orden de lectura de arriba antes de asumir
 nada del estado del proyecto.
 
+## Trabajo en paralelo por capas
+
+Varias sesiones de Claude trabajan **a la vez** en capas distintas, cada una en su rama y en su
+propia carpeta (`git worktree`). Comprueba en cuál estás con `git branch --show-current` antes
+de tocar nada.
+
+| Rama | Carpeta | Escribe en |
+|---|---|---|
+| `capa/tts` | `C:\Users\migue\doombot-tts` | `src/doombot/tts/` |
+| `capa/hud` | `C:\Users\migue\doombot-hud` | `ui/` |
+| `main` | `C:\Users\migue\doombot` | integración: fusiona y revisa |
+
+**Las cuatro reglas.** Existen para que las fusiones no se peleen, no por burocracia:
+
+1. **Solo se escribe en la carpeta de la propia capa.** `chat.py`, `config.py`, `paths.py`,
+   `profiles.py` y `pyproject.toml` son de integración. Si necesitas algo ahí, dilo en la nota
+   de sesión y que lo haga `main`.
+2. **Las órdenes se declaran en `tu_paquete/orders.py`**, con `@orden("nombre")` (ver D-020).
+   Nunca en `chat.py`. El registro se descubre solo, así que no hay que apuntarse en ningún
+   sitio. Si dos capas reclaman la misma orden, el registro revienta al arrancar y lo dice.
+3. **Se habla con los `Protocol` de `backends/base.py`, nunca con otra capa.** Ya es la regla
+   del proyecto; en paralelo pasa de recomendación a obligación.
+4. **Una decisión de arquitectura es una entrada en `docs/decisiones.md` con número reservado
+   de antemano** — si no, dos ramas escriben D-021 a la vez y el conflicto cae en el fichero que
+   más duele. Reservados: **D-021 para `capa/tts`**, **D-022 para `capa/hud`**.
+
+**Al cerrar sesión, sin excepción:** nota en `docs/NOTAS_SESION/` y `git push` de tu rama. Es lo
+único que ve el resto — no hay memoria compartida entre sesiones. Se aprendió por las malas: una
+sesión trabajó un día entero sin saber que otra rama ya tenía hecha la palabra de activación.
+
 ## Comandos
 
 ```

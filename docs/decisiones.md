@@ -552,3 +552,64 @@ cuantizados: no se usan, no se descargan.
 **Pendiente para `main` (ver la nota de sesión):** `_ESCALA_NIVEL` en `backends/base.py`
 —medida, no adivinada—; el extra `voice-tts` en `pyproject.toml`; e `identity.py`, que hoy solo
 comprueba el paquete `voice` para la capacidad de hablar y no ve `tts/`.
+
+---
+
+## D-022 — El HUD habla con el orquestador por WebSocket, con JSON de una línea por evento
+
+**Contexto.** El prototipo (`ui/prototipo/hud.html`) fijó el contrato `window.DOOM` —
+`setState`, `amplitude`, `caption`, `reset`— pero pilotado a mano desde el propio JavaScript
+(banco de pruebas) o por `evaluate_js` de pywebview. Empujar amplitud a 60 Hz con
+`evaluate_js` es una llamada **síncrona** por muestra desde Python hacia el motor JS: en el
+hilo de audio del orquestador eso es bloqueo donde menos se puede permitir.
+
+**Decisión.** Un servidor WebSocket en `127.0.0.1:8765`, que abre el orquestador y al que se
+conecta el HUD como cliente. Cada mensaje es una línea JSON con un campo `type`, y cada `type`
+es literalmente una llamada al contrato ya fijado — no hay traducción intermedia:
+
+```json
+{"type": "state",     "value": "escuchando"}
+{"type": "amplitude", "value": 0.63}
+{"type": "caption",   "value": "texto"}
+{"type": "reset"}
+```
+
+| `type` | Cuándo se manda | Frecuencia |
+|---|---|---|
+| `state` | al cambiar de estado (`dormido`\|`escuchando`\|`pensando`\|`hablando`\|`error`) | por evento |
+| `amplitude` | mientras hay audio sonando (mic o TTS) | 30-60 Hz |
+| `caption` | al cambiar el subtítulo (`value: null` para borrarlo) | por evento |
+| `reset` | al reconectar o para forzar `dormido` con el subtítulo vacío | por evento |
+
+**Por qué esta forma y no otra.** El mapeo 1:1 con `window.DOOM` es deliberado: el HUD no
+interpreta nada, solo despacha `type` → método. Así el contrato de comportamiento sigue
+viviendo en un solo sitio (el prototipo), y el transporte no añade una segunda fuente de
+verdad sobre qué significa cada mensaje.
+
+**Por qué el HUD es cliente y no servidor.** El orquestador es el proceso de larga vida que ya
+existe sin interfaz gráfica (`chat.py`); el HUD es la pieza que puede no estar (se puede correr
+D.O.O.M sin ventana). Que el HUD sea cliente significa que se puede cerrar y reabrir la ventana
+sin reiniciar el orquestador, y que el mismo servidor podría en el futuro atender más de un
+cliente (una segunda pantalla, un panel de depuración) sin cambiar nada del lado Python.
+
+**Reconexión sin bloquear.** El cliente (en `hud.html`) reintenta cada 1,5 s si no hay
+servidor, y mientras tanto el banco de pruebas sigue disponible — es como se ha desarrollado
+todo el estilo, sin esperar al orquestador. En cuanto conecta, sale del banco de pruebas
+(oculta el panel, dejan de mandar sus fuentes simuladas) y pasa a `fuente = 'ext'`.
+
+**Verificado con un servidor de prueba**, no solo leído: `ui/mock_servidor.py` (con
+`websockets`, no es el definitivo) sirve el mismo contrato y se comprobó en el navegador que
+`hud.html` reacciona a los cuatro tipos de mensaje, incluida la reconexión al matar y
+levantar el servidor de nuevo.
+
+**Lo que pide a integración**, porque toca ficheros que `capa/hud` no puede editar
+(ver nota de sesión): añadir `pywebview` y `websockets` a `pyproject.toml`, y que el
+orquestador (`chat.py` o un módulo nuevo suyo) abra el servidor WS con este mismo contrato y
+empuje `Audio.level()` (D-021, ya en la escala 0-1 que espera `amplitude`) a 30-60 Hz mientras
+suena mic o TTS.
+
+**No resuelto, heredado del encargo.** La transparencia real de ventana en Windows sigue sin
+solución: WebView2 no la soporta, y el apaño con `LWA_COLORKEY` da un recorte binario que
+destroza el resplandor del anillo. `ui/app.py` (el lanzador de pywebview) va con ventana
+opaca sin marco, como ya preveía el encargo. Si aparece algo mejor, es una entrada propia en
+este fichero, no una reescritura de esta.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DOOM · HUD v0.1</title>
+<title>DOOM · HUD</title>
 <style>
   /* ---------------------------------------------------------------
      PALETA
@@ -50,9 +50,11 @@
   #stage canvas{ position:absolute; inset:0; width:100%; height:100%; }
   /* `screen` hace que el resplandor SUME luz en lugar de superponer una
      imagen semitransparente. Sin esto el bloom apaga la escena en vez de
-     encenderla, que es justo el error que hacia ver el HUD apagado. */
-  #bloomB{ filter: blur(46px) saturate(1.7); opacity:1; mix-blend-mode:screen; }
-  #bloomA{ filter: blur(14px) saturate(1.35); opacity:1; mix-blend-mode:screen; }
+     encenderla, que es justo el error que hacia ver el HUD apagado.
+     Menos difuminado que en un HUD con mas elementos: aqui no hay nada
+     mas que el anillo, asi que su borde tiene que seguir leyendose limpio. */
+  #bloomB{ filter: blur(30px) saturate(1.5); opacity:1; mix-blend-mode:screen; }
+  #bloomA{ filter: blur(9px) saturate(1.25); opacity:1; mix-blend-mode:screen; }
   #fx    { filter: none; }
 
   /* Texto: en HTML, no en canvas. Mas nitido y mas facil de retocar. */
@@ -62,15 +64,18 @@
     pointer-events:none;
   }
   #estado{
-    font-family:"Cascadia Mono",Consolas,ui-monospace,monospace;
-    font-size:11px; letter-spacing:.52em; text-indent:.52em;
+    font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+    font-weight:300;
+    font-size:9.5px; letter-spacing:.60em; text-indent:.60em;
     color: var(--dim);
+    opacity:.72;
     transition: color .45s ease, opacity .45s ease;
   }
   #caption{
-    max-width:min(70vw,620px); text-align:center;
-    font-size:clamp(15px,2.1vmin,20px); line-height:1.55;
-    color: hsl(var(--h) 25% 82%);
+    max-width:min(60vw,520px); text-align:center;
+    font-size:clamp(14px,1.8vmin,18px); line-height:1.6;
+    font-weight:300;
+    color: hsl(var(--h) 22% 78%);
     opacity:0; transform:translateY(6px);
     transition: opacity .5s ease, transform .5s ease;
     text-wrap:balance;
@@ -147,7 +152,7 @@
   <label class="sl">Reactividad <span id="v-react"></span></label>
   <input type="range" id="s-react" min="0" max="200" value="100">
   <label class="sl">Densidad de particulas <span id="v-part"></span></label>
-  <input type="range" id="s-part" min="0" max="160" value="70">
+  <input type="range" id="s-part" min="0" max="160" value="0">
   <label class="sl">Resplandor <span id="v-glow"></span></label>
   <input type="range" id="s-glow" min="0" max="200" value="100">
 
@@ -312,6 +317,55 @@ function amplitudTTS(t, dt){
 }
 
 /* =================================================================
+   3b. TRANSPORTE: WEBSOCKET CON EL ORQUESTADOR
+   -----------------------------------------------------------------
+   Contrato completo en docs/decisiones.md (D-022). Resumen: el
+   orquestador abre un servidor WS en 127.0.0.1 y manda JSON de una
+   linea, un mensaje por evento:
+
+     {"type":"state",     "value":"escuchando"}   al cambiar de estado
+     {"type":"amplitude", "value":0.63}            30-60 Hz mientras suena
+     {"type":"caption",   "value":"texto"|null}    al cambiar el subtitulo
+     {"type":"reset"}                              equivalente a DOOM.reset()
+
+   Cada mensaje es literalmente una llamada a window.DOOM: por eso el
+   despacho de abajo es un mapeo directo type -> metodo, sin logica
+   propia. Si no hay servidor (desarrollando sin el orquestador vivo),
+   sigue disponible el banco de pruebas de mas abajo: reintenta la
+   conexion cada 1.5 s sin bloquear nada.
+   ================================================================= */
+const WS_URL = 'ws://127.0.0.1:8765/hud';
+let ws = null, wsConectado = false;
+
+function conectarWS(){
+  try{
+    ws = new WebSocket(WS_URL);
+  }catch(e){
+    setTimeout(conectarWS, 1500);
+    return;
+  }
+  ws.onopen = function(){
+    wsConectado = true;
+    // El orquestador manda 'reset' al conectar, pero por si no lo hace
+    // (version vieja, o se reinicia la ventana) se sale del banco de
+    // pruebas en cuanto hay servidor real al otro lado.
+    pararDemo(); pararVoz();
+    fuente = 'ext'; pintarBotones();
+    document.getElementById('panel').classList.add('hidden');
+  };
+  ws.onmessage = function(ev){
+    let msg;
+    try{ msg = JSON.parse(ev.data); }catch(e){ return; }
+    if(msg.type === 'state')          DOOM.setState(msg.value);
+    else if(msg.type === 'amplitude') DOOM.amplitude(msg.value);
+    else if(msg.type === 'caption')   DOOM.caption(msg.value);
+    else if(msg.type === 'reset')     DOOM.reset();
+  };
+  ws.onclose = function(){ ws = null; wsConectado = false; setTimeout(conectarWS, 1500); };
+  ws.onerror = function(){ if(ws) ws.close(); };
+}
+
+/* =================================================================
    4. PARTICULAS Y ONDAS DE CHOQUE
    ================================================================= */
 let particulas = [];
@@ -423,97 +477,53 @@ function dibujar(t){
 
   const col = function(l,a,s){ return 'hsl(' + hue + ' ' + (s===undefined?m.sat:s) + '% ' + l + '% / ' + a + ')'; };
 
-  /* ---- halo ambiental ---- */
-  let g = cx.createRadialGradient(cxp,cyp,0, cxp,cyp,R*3.2);
-  g.addColorStop(0,    col(m.lum-4, 0.30*G));
-  g.addColorStop(0.35, col(m.lum-6, 0.11*G));
+  /* ---- halo: apenas una insinuacion, no un fondo ---- */
+  let g = cx.createRadialGradient(cxp,cyp,0, cxp,cyp,R*2.2);
+  g.addColorStop(0,    col(m.lum-4, 0.10*G));
   g.addColorStop(1,    col(m.lum,   0));
   cx.fillStyle = g; cx.fillRect(0,0,W,H);
 
-  /* ---- anillo exterior de marcas: da la lectura "instrumento" ---- */
-  const Rm = R*1.72, rot = t*m.spin*Math.PI*2;
-  cx.save(); cx.translate(cxp,cyp); cx.rotate(rot);
-  cx.lineCap = 'butt';
-  for(let i=0;i<72;i++){
-    const mayor = (i % 6 === 0);
-    const largo = mayor ? 11 : 4.5;
-    cx.strokeStyle = col(m.lum+14, 0.10 + 0.30*G*(mayor?1:0.5));
-    cx.lineWidth = (mayor?1.6:1)*DPR;
-    cx.beginPath();
-    cx.moveTo(Rm,0); cx.lineTo(Rm + largo*DPR*(1 + 0.5*amp), 0);
-    cx.stroke();
-    cx.rotate(Math.PI*2/72);
-  }
-  cx.restore();
-
-  /* ---- arcos orbitales: el "esta pensando" ---- */
-  if(m.orbit > 0.02){
-    cx.lineCap = 'round';
-    const arcos = [
-      {r:1.30, v: 0.55, ini:0.00, len:1.5, w:2.2},
-      {r:1.46, v:-0.34, ini:2.30, len:1.0, w:1.5},
-      {r:1.14, v: 0.80, ini:4.10, len:0.7, w:1.2}
-    ];
-    for(const A of arcos){
-      cx.strokeStyle = col(m.lum+16, m.orbit*0.85);
-      cx.lineWidth = A.w*DPR;
-      cx.beginPath();
-      cx.arc(cxp,cyp, R*A.r, A.ini + t*A.v*Math.PI, A.ini + t*A.v*Math.PI + A.len);
-      cx.stroke();
-    }
-  }
-
-  /* ---- ondas de choque ---- */
+  /* ---- onda de choque: unica concesion a un segundo elemento, y solo
+     en picos marcados de amplitud ---- */
   cx.lineCap = 'round';
   for(const o of ondas){
     const e = (t - o.t0)/1.1;
-    cx.strokeStyle = col(m.lum+18, (1-e)*(1-e)*0.42*o.f*G);
-    cx.lineWidth = 2.2*(1-e)*DPR;
-    cx.beginPath(); cx.arc(cxp,cyp, R*(1.02 + 1.5*e), 0, Math.PI*2); cx.stroke();
+    cx.strokeStyle = col(m.lum+16, (1-e)*(1-e)*0.28*o.f*G);
+    cx.lineWidth = 1.4*(1-e)*DPR;
+    cx.beginPath(); cx.arc(cxp,cyp, R*(1.02 + 1.3*e), 0, Math.PI*2); cx.stroke();
   }
 
-  /* ---- anillo reactivo: la firma visual del HUD ----
-     El radio en cada angulo es la suma de varias sinusoides con
-     frecuencias y velocidades distintas. Al no ser multiplos entre si,
-     el patron nunca se repite y la deformacion parece organica, no
-     mecanica. La amplitud de voz solo escala esa deformacion. */
-  const N = 260;
-  const k = (0.30 + 2.6*amp*m.react) * kReact;
-  cx.lineWidth = (2.0 + 1.8*amp*m.react)*DPR;
-  // Se limita la luminosidad: por encima de ~72% cualquier matiz vira a
-  // blanco y el acento desaparece. El color se refuerza subiendo saturacion.
-  cx.strokeStyle = col(Math.min(m.lum+10,72), 0.95*Math.min(G,1.2), Math.min(m.sat+14,100));
+  /* ---- el anillo: todo el peso cae aqui ----
+     Nada de ticks, nada de arcos, nada de nucleo. Solo un trazo cuya
+     forma, grosor y color llevan sola toda la lectura del estado. La
+     deformacion usa solo dos armonicos, deliberadamente pocos: el
+     movimiento tiene que leerse como intencion, no como ruido. */
+  const N = 200;
+  const k = (0.10 + 1.1*amp*m.react) * kReact;
+  const grosor = (1.4 + 2.6*amp*m.react) * DPR;
+  cx.lineWidth = grosor;
+  cx.strokeStyle = col(Math.min(m.lum+8,70), 0.92*Math.min(G,1.15), Math.min(m.sat+10,100));
   cx.beginPath();
   for(let i=0;i<=N;i++){
     const a = i/N*Math.PI*2;
-    let d = 0.030*Math.sin(2*a + t*0.90)
-          + 0.024*Math.sin(3*a - t*1.35)
-          + 0.017*Math.sin(5*a + t*1.75)
-          + 0.011*Math.sin(8*a - t*2.40);
-    if(m.caos > 0.02) d += m.caos*0.035*Math.sin(23*a + t*31);
+    let d = 0.020*Math.sin(2*a + t*0.75) + 0.013*Math.sin(3*a - t*1.20);
+    if(m.caos > 0.02) d += m.caos*0.03*Math.sin(23*a + t*31);
     const rr = R*(1 + k*d);
     const x = cxp + Math.cos(a)*rr, y = cyp + Math.sin(a)*rr;
     if(i) cx.lineTo(x,y); else cx.moveTo(x,y);
   }
   cx.closePath(); cx.stroke();
 
-  /* ---- nucleo ---- */
-  const Rc = R*(0.72 + 0.16*amp*m.react);
-  g = cx.createRadialGradient(cxp, cyp - Rc*0.24, Rc*0.04, cxp, cyp, Rc);
-  g.addColorStop(0,    col(Math.min(m.lum+10,68), 1.00*Math.min(G,1.1), Math.min(m.sat+16,100)));
-  g.addColorStop(0.28, col(Math.min(m.lum-4,58),  0.78*G, Math.min(m.sat+16,100)));
-  g.addColorStop(0.68, col(m.lum-18, 0.34*G, Math.min(m.sat+10,100)));
-  g.addColorStop(1,    col(m.lum-24, 0));
-  cx.fillStyle = g; cx.beginPath(); cx.arc(cxp,cyp,Rc,0,Math.PI*2); cx.fill();
-
-  /* ---- particulas ---- */
+  /* ---- particulas: apagadas por defecto (slider a 0). Si se sube la
+     densidad para comparar, aparecen muy tenues — nunca compiten con
+     el anillo. ---- */
   for(const p of particulas){
     p.a += p.v*0.016;
-    const rr = R*p.r*(1 + 0.30*amp*m.react + 0.05*Math.sin(t*1.7 + p.fase));
-    const al = (0.22 + 0.62*Math.abs(Math.sin(t*0.9 + p.fase))) * G * 0.8;
-    cx.fillStyle = col(Math.min(m.lum+14,72), al, Math.min(m.sat+14,100));
+    const rr = R*p.r*(1 + 0.20*amp*m.react);
+    const al = (0.10 + 0.25*Math.abs(Math.sin(t*0.9 + p.fase))) * G;
+    cx.fillStyle = col(Math.min(m.lum+10,66), al, m.sat);
     cx.beginPath();
-    cx.arc(cxp + Math.cos(p.a)*rr, cyp + Math.sin(p.a)*rr, p.tam*DPR*(1 + 0.4*amp), 0, Math.PI*2);
+    cx.arc(cxp + Math.cos(p.a)*rr, cyp + Math.sin(p.a)*rr, p.tam*DPR*0.7, 0, Math.PI*2);
     cx.fill();
   }
 }
@@ -592,7 +602,8 @@ sP.oninput = function(){ generarParticulas(+sP.value); sincroSliders(); };
 function actualizarStats(){
   document.getElementById('stats').innerHTML =
     'fps ' + fps.toFixed(0) + '  &middot;  amp ' + amp.toFixed(2) + '<br>' +
-    'estado ' + actual + ' &middot; fuente ' + fuente + '<br><br>' +
+    'estado ' + actual + ' &middot; fuente ' + fuente + '<br>' +
+    'ws ' + (wsConectado ? 'conectado' : 'sin servidor') + '<br><br>' +
     '<kbd>1</kbd>-<kbd>5</kbd> estado &middot; <kbd>D</kbd> ciclo &middot; <kbd>H</kbd> panel<br>' +
     '<kbd>espacio</kbd> hablarle &middot; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> decir';
 }
@@ -756,7 +767,8 @@ sincroSliders();
 sincroRate();
 pintarBotones();
 requestAnimationFrame(frame);
-setTimeout(lanzarDemo, 500);
+conectarWS();
+setTimeout(function(){ if(!wsConectado) lanzarDemo(); }, 500);
 </script>
 </body>
 </html>

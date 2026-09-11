@@ -680,3 +680,43 @@ respuestas fijas de las órdenes ("Apuntado", "Olvidado") también suenan.
 **Cedido a `capa/hud`: el transporte.** Se empezó un `bridge/` propio y se descartó al ver que
 la sesión de la interfaz ya tenía `hud_server.py` con el mismo contrato, el mismo puerto y
 cableado en `chat.py`. Duplicarlo era el error; la `Sesion` apunta al suyo.
+
+---
+
+## D-024 — El bucle manos libres reutiliza la orquestación del modo escrito
+
+**Contexto.** Con la Capa 2 (oír, D-013), el sintetizador (D-021), el reproductor (D-023) y el
+transporte al HUD (D-022) ya construidos, faltaba la pieza que los une en lo que el proyecto
+persigue desde el principio: hablarle sin manos. `python -m doombot voz`.
+
+**Decisión.** No un bucle de voz nuevo, sino **la misma orquestación que el modo escrito**. Se
+extrajo de `chat.py` el núcleo que atiende una frase —`_atender`: reconocer orden y despachar,
+o pasar al modelo con el contexto de la memoria— y ahora lo llaman por igual el bucle de teclado
+y el de voz. Lo único que cambia entre los dos modos es de dónde entra el texto (`input()` o el
+`Listener`) y por dónde sale la respuesta (pantalla o altavoz), y de eso ya se encargaban
+`preguntar` y `responder` en la `Sesion`.
+
+**Por qué importa que sea el mismo código y no una copia.** Una orden nueva, un cambio en cómo
+se consulta la memoria, un arreglo en el manejo de estados: pasa a valer en los dos modos a la
+vez. Dos bucles paralelos se habrían desincronizado al primer cambio —es el mismo error que
+D-020 evitó dentro de `chat.py`, ahora entre modos—.
+
+**El motor común (`_arrancar` / `_Motor`).** El montaje —perfil, LLM, memoria, agente, HUD,
+voz— también se comparte. El orden es deliberado: el LLM es imprescindible y se comprueba
+primero (por eso `voz` se planta con "Ollama no responde" antes de tocar el micrófono); el HUD
+y la voz son opcionales y nunca impiden arrancar.
+
+**El turno no se solapa con la respuesta.** Tras atender una frase, el bucle espera a que
+D.O.O.M termine de hablar (`speaker.wait`) antes de reabrir el micrófono. Es una decisión
+provisional y consciente: sin cancelación de eco, escuchar mientras suena el altavoz haría que
+se oyera a sí mismo y se interrumpiera solo. El *barge-in* de verdad —hablarle encima para
+cortarlo— necesita AEC (referencia por *loopback* + speexdsp), que es la pieza más frágil que
+queda y va aparte.
+
+**Estados al HUD, el turno entero.** Los del `Listener` (escuchando, transcribiendo) y los de
+la respuesta (pensando, hablando, dormido) van al mismo `ServidorHUD`, así que el orbe refleja
+la interacción completa y no solo la mitad hablada.
+
+**Sin probar con micrófono real.** Las pruebas de micrófono están pospuestas por decisión del
+usuario. El bucle está construido, cableado y validado con dobles (`_atender`) y con arranque
+en seco; falta la validación con voz de verdad, que es del usuario cuando levante la pausa.

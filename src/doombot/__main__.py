@@ -215,6 +215,19 @@ def main() -> int:
         from doombot.chat import run
 
         return run()
+    if args and args[0] in ("voz", "voice"):
+        # El bucle manos libres: palabra de activacion -> escucha -> LLM -> voz.
+        # "voz tecla" dispara pulsando en vez de diciendo la palabra, para
+        # depurar sin depender de que el detector oiga.
+        from doombot.chat import run_voz
+
+        return run_voz(manual=len(args) > 1 and args[1] in ("tecla", "manual"))
+    if args and args[0] in ("voz-descargar", "descargar-voz"):
+        from doombot.paths import models_dir
+        from doombot.tts.download import asegurar_modelos
+
+        asegurar_modelos(models_dir() / "kokoro")
+        return 0
     if args:
         return preguntar(" ".join(args))
     return diagnostico()

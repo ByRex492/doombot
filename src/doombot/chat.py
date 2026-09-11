@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import sys
+from dataclasses import dataclass
 
 from doombot import profiles
 from doombot.actions.claude_code import ClaudeCodeAgent
@@ -110,14 +111,40 @@ def _generador(perfil: Profile, cfg: Settings) -> TextGenerator:
     return OllamaGenerator.from_profile(perfil, cfg)
 
 
-def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia lista
-    _forzar_utf8()
+@dataclass
+class _Motor:
+    """Todo lo que necesita una conversacion, montado una vez.
 
+    Lo comparten el modo escrito (``run``) y el hablado (``run_voz``): cambia
+    como entra el texto y por donde sale la respuesta, no las piezas.
+    """
+
+    perfil: Profile
+    cfg: Settings
+    gen: TextGenerator
+    embedder: FastEmbedder
+    agente: ClaudeCodeAgent
+    matcher: PhraseMatcher
+    hud: ServidorHUD
+    speaker: Speaker | None
+
+    def cerrar(self) -> None:
+        if self.speaker is not None:
+            self.speaker.close()
+        self.hud.stop()
+
+
+def _arrancar() -> _Motor | None:
+    """Monta el motor comun, o devuelve None con el motivo ya impreso.
+
+    El orden importa: el LLM es imprescindible y se comprueba primero; el HUD y
+    la voz son opcionales y nunca impiden arrancar (ver sus docstrings).
+    """
     try:
         perfil = profiles.current()
     except (RuntimeError, OSError) as e:
         print(f"No se pudo determinar el perfil: {e}", file=sys.stderr)
-        return 1
+        return None
 
     cfg = settings()
     gen = _generador(perfil, cfg)
@@ -126,44 +153,134 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
             print("Falta DOOMBOT_ANTHROPIC_API_KEY en .env.", file=sys.stderr)
         else:
             print("Ollama no responde. Arrancalo y vuelve a intentarlo.", file=sys.stderr)
-        return 1
+        return None
 
     matcher = default_matcher()
     embedder = FastEmbedder.from_config()
-    # Construirlo no lanza ningun proceso -eso solo pasa en .run()-, asi que
-    # se crea siempre, se use o no en esta sesion.
+    # Construirlo no lanza ningun proceso -eso solo pasa en .run()-, asi que se
+    # crea siempre, se use o no en esta sesion.
     agente = ClaudeCodeAgent.from_config(cfg)
 
-    # El HUD es opcional en los dos sentidos: sin el extra `hud` instalado no
-    # se intenta siquiera (disponible=False), y si el puerto esta ocupado
-    # start() devuelve False sin lanzar. El texto nunca depende de esto.
+    # El HUD es opcional en los dos sentidos: sin el extra `hud` instalado no se
+    # intenta siquiera (disponible=False), y si el puerto esta ocupado start()
+    # devuelve False sin lanzar. Nada depende de esto.
     hud = ServidorHUD()
     if hud.start():
-        print("HUD conectado en ws://127.0.0.1:8765/hud")
+        print(f"HUD conectado en {hud.url}" if hasattr(hud, "url") else "HUD conectado")
     elif hud.disponible:
-        print(
-            "  aviso: el WebSocket del HUD no pudo arrancar (puerto 8765 ocupado?)",
-            file=sys.stderr,
-        )
+        print("  aviso: el WebSocket del HUD no pudo arrancar (puerto ocupado?)", file=sys.stderr)
 
-    # La voz es opcional en cadena: sin el extra `voice-tts`, sin los modelos
-    # de Kokoro descargados, o si algo falla al cargarlos, `montar_voz`
-    # devuelve None y se sigue por consola exactamente igual (ver su
-    # docstring en voice/speaker.py). Nunca bloquea el arranque.
+    # La voz es opcional en cadena: sin `voice-tts`, sin los modelos de Kokoro,
+    # o si algo falla al cargarlos, montar_voz devuelve None y se sigue igual.
     speaker = montar_voz(hud)
     if speaker is not None:
         print("Voz activa (Kokoro).")
 
     print(f"D.O.O.M. · perfil {perfil.name} · {cfg.llm_backend}/{gen.model_name}")
     print(f"memoria en {memory_db()}")
+    return _Motor(perfil, cfg, gen, embedder, agente, matcher, hud, speaker)
+
+
+def run() -> int:
+    """Modo escrito: se teclea, se lee, y si hay voz tambien se oye."""
+    _forzar_utf8()
+    motor = _arrancar()
+    if motor is None:
+        return 1
     print("Escribe /ayuda para ver las ordenes, /salir para terminar.\n")
+    try:
+        return _bucle(
+            motor.gen,
+            motor.embedder,
+            motor.agente,
+            motor.matcher,
+            motor.perfil,
+            motor.cfg,
+            motor.hud,
+            motor.speaker,
+        )
+    finally:
+        motor.cerrar()
+
+
+def run_voz(*, manual: bool = False) -> int:
+    """Modo manos libres: palabra de activacion, se escucha, se responde hablando.
+
+    Cierra el bucle que hasta ahora estaba en piezas sueltas: el Listener
+    (Capa 2) oye y transcribe, ``_atender`` es la misma orquestacion que el
+    modo escrito, y el Speaker responde en voz alta. Los estados del Listener
+    -escuchando, transcribiendo- y los de la respuesta -pensando, hablando- van
+    al mismo HUD, asi que el orbe refleja el turno entero.
+
+    ``manual`` cambia la palabra de activacion por pulsar una tecla: es como se
+    depura sin depender de que el detector te oiga.
+    """
+    _forzar_utf8()
+    try:
+        from doombot.backends.whisper import WhisperTranscriber
+        from doombot.voice import Listener, Microphone, PushToTalk, WakeWord
+    except ImportError as e:
+        print(f"Falta el stack de voz de entrada: {e}", file=sys.stderr)
+        return 1
+
+    motor = _arrancar()
+    if motor is None:
+        return 1
+    if motor.speaker is None:
+        print(
+            "Sin voz de salida el modo manos libres no tiene sentido: responderia por "
+            "pantalla. Instala voice-tts y descarga los modelos (python -m doombot voz-descargar).",
+            file=sys.stderr,
+        )
+        motor.cerrar()
+        return 1
 
     try:
-        return _bucle(gen, embedder, agente, matcher, perfil, cfg, hud, speaker)
+        mic = Microphone.from_settings()
+    except BackendError as e:
+        print(f"\n{e}", file=sys.stderr)
+        motor.cerrar()
+        return 1
+
+    detector = PushToTalk() if manual else WakeWord()
+    print(f"Microfono: {mic.device_name}")
+    print(f"Activacion: {detector.name}")
+    print("Di la palabra de activacion y habla. Ctrl+C para salir.\n")
+
+    # Los estados de la escucha van al HUD igual que los de la respuesta: el
+    # orbe muestra el turno completo, no solo la mitad hablada.
+    escucha = Listener(
+        mic,
+        WhisperTranscriber.from_profile(motor.perfil),
+        detector,
+        on_state=lambda e: motor.hud.set_state(str(e)),
+        on_level=motor.hud.set_amplitude,
+    )
+
+    try:
+        with Memory(motor.embedder) as mem:
+            sesion = _montar_sesion(
+                motor.gen, mem, motor.cfg, motor.perfil, motor.agente, motor.hud, motor.speaker
+            )
+            motor.hud.set_state("dormido")
+            for oido in escucha.listen():
+                if oido.vacio:
+                    continue
+                print(f"tu> {oido.text}")
+                _atender(sesion, motor.matcher, mem, oido.text)
+                # La siguiente escucha no se solapa con la respuesta: se espera
+                # a que D.O.O.M termine de hablar antes de reabrir el microfono.
+                # Sin cancelacion de eco, escuchar mientras suena el altavoz
+                # haria que se oyera a si mismo (pendiente; ver la nota de sesion).
+                motor.speaker.wait(timeout=60)
+    except KeyboardInterrupt:
+        print()
+    except BackendError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 1
     finally:
-        if speaker is not None:
-            speaker.close()
-        hud.stop()
+        motor.cerrar()
+    return 0
 
 
 def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
@@ -177,22 +294,7 @@ def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
     speaker: Speaker | None,
 ) -> int:
     with Memory(embedder) as mem:
-        # Una sola Sesion para toda la conversacion: los manejadores la
-        # mutan (que se guardo lo ultimo, que se respondio) y el bucle no
-        # necesita saber cuales de ellos lo hacen.
-        sesion = Sesion(
-            gen=gen,
-            mem=mem,
-            cfg=cfg,
-            perfil=perfil,
-            agente=agente,
-            speaker=speaker,
-            hud=hud,
-            responder=lambda prompt: _responder(sesion, prompt),
-            con_contexto=lambda pregunta, *extra: _con_contexto(mem, pregunta, *extra),
-            preguntar=input,
-        )
-
+        sesion = _montar_sesion(gen, mem, cfg, perfil, agente, hud, speaker)
         hud.set_state("dormido")
         while True:
             try:
@@ -240,45 +342,77 @@ def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
                 print(f"  {n} lineas leidas de {VAULT_DIR / 'usuario.md'}")
                 continue
 
-            sesion.entrada = entrada
-            hud.set_state("pensando")
-            hud.set_caption(None)
+            _atender(sesion, matcher, mem, entrada)
 
-            # --- una orden? -------------------------------------------------
-            orden = matcher.match(entrada)
 
-            if orden:
-                if not despachar(sesion, orden):
-                    # La orden existe pero nadie la implementa todavia. Se dice
-                    # tal cual: identity.py existe para que D.O.O.M no mienta
-                    # sobre lo que sabe hacer, y callarlo aqui seria mentir.
-                    sesion.traza(f"orden {orden.command} ({orden.how}, {orden.confidence})")
-                    sesion.decir(f"[{orden.command}] entendido, pero aun no puedo hacerlo.")
-                hud.set_state("hablando")
-                if speaker is None:
-                    # Sin voz real no hay reproductor que avise cuando termine
-                    # de sonar (Player.on_idle, ver voice/player.py): el
-                    # "dormido" hay que ponerlo aqui a mano. Con voz, es
-                    # prematuro -la sintesis sigue en marcha en su propio
-                    # hilo cuando esta linea se ejecuta- y lo pone el player
-                    # solo cuando de verdad se queda callado.
-                    hud.set_caption(sesion.ultima_respuesta or None)
-                    hud.set_state("dormido")
-                continue
+def _montar_sesion(gen, mem, cfg, perfil, agente, hud, speaker) -> Sesion:
+    """Una sola Sesion para toda la conversacion, escrita o hablada.
 
-            # --- no es una orden: memoria + modelo --------------------------
-            contexto = mem.as_context(entrada)
-            if contexto:
-                for linea in contexto.splitlines()[1:]:
-                    sesion.traza(f"contexto {linea.lstrip('- ')}")
-            sesion.responder(sesion.con_contexto(entrada, contexto))
-            if speaker is None:
-                # Sin voz, el "dormido" lo pone el bucle al terminar el texto.
-                # Con voz lo pone el reproductor (Player.on_idle) cuando de
-                # verdad se calla, no aqui, que seria prematuro. El "hablando"
-                # lo emite _responder en el primer trozo, en las dos ramas.
-                hud.set_caption(sesion.ultima_respuesta or None)
-                hud.set_state("dormido")
+    Los manejadores la mutan (que se guardo lo ultimo, que se respondio) y el
+    bucle no necesita saber cuales de ellos lo hacen. Se saca aqui porque el
+    modo texto y el de voz la construyen igual: lo unico que cambia entre
+    ellos es de donde sale ``entrada`` y a donde va la respuesta, y de eso ya
+    se encargan ``preguntar`` y ``responder``.
+    """
+    sesion = Sesion(
+        gen=gen,
+        mem=mem,
+        cfg=cfg,
+        perfil=perfil,
+        agente=agente,
+        speaker=speaker,
+        hud=hud,
+        responder=lambda prompt: _responder(sesion, prompt),
+        con_contexto=lambda pregunta, *extra: _con_contexto(mem, pregunta, *extra),
+        preguntar=input,
+    )
+    return sesion
+
+
+def _atender(sesion: Sesion, matcher: PhraseMatcher, mem: Memory, texto: str) -> None:
+    """Atiende una frase del usuario, venga de teclado o de voz.
+
+    Todo lo que ocurre entre que D.O.O.M recibe algo y termina de responder:
+    reconocer si es una orden y despacharla, o pasarlo al modelo con el
+    contexto de la memoria. No sabe de donde vino el texto, y esa es justo la
+    razon de que exista aparte del bucle: el modo escrito y el hablado lo
+    comparten sin duplicar la orquestacion.
+    """
+    sesion.entrada = texto
+    sesion.estado("pensando")
+    if sesion.hud is not None:
+        sesion.hud.set_caption(None)
+
+    orden = matcher.match(texto)
+    if orden:
+        if not despachar(sesion, orden):
+            # La orden existe pero nadie la implementa todavia. Se dice tal
+            # cual: identity.py existe para que D.O.O.M no mienta sobre lo que
+            # sabe hacer, y callarlo aqui seria mentir.
+            sesion.traza(f"orden {orden.command} ({orden.how}, {orden.confidence})")
+            sesion.decir(f"[{orden.command}] entendido, pero aun no puedo hacerlo.")
+        _cerrar_turno(sesion)
+        return
+
+    contexto = mem.as_context(texto)
+    if contexto:
+        for linea in contexto.splitlines()[1:]:
+            sesion.traza(f"contexto {linea.lstrip('- ')}")
+    sesion.responder(sesion.con_contexto(texto, contexto))
+    _cerrar_turno(sesion)
+
+
+def _cerrar_turno(sesion: Sesion) -> None:
+    """Marca el fin del turno cuando no hay voz que lo marque sola.
+
+    Con voz, "hablando" lo emite ``_responder`` en el primer trozo y "dormido"
+    lo pone el reproductor cuando de verdad se calla (Player.on_idle): ponerlo
+    aqui seria prematuro, porque la sintesis sigue en su hilo. Sin voz, el
+    turno acaba en cuanto termina el texto, y hay que marcarlo a mano.
+    """
+    if sesion.speaker is None and sesion.hud is not None:
+        sesion.hud.set_caption(sesion.ultima_respuesta or None)
+        sesion.hud.set_state("dormido")
 
 
 def _responder(sesion: Sesion, prompt: str) -> None:

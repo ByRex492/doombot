@@ -552,3 +552,65 @@ cuantizados: no se usan, no se descargan.
 **Pendiente para `main` (ver la nota de sesión):** `_ESCALA_NIVEL` en `backends/base.py`
 —medida, no adivinada—; el extra `voice-tts` en `pyproject.toml`; e `identity.py`, que hoy solo
 comprueba el paquete `voice` para la capacidad de hablar y no ve `tts/`.
+
+---
+
+## D-023 — Reproducir es de la capa de voz, y va en cola con un hilo por etapa
+
+**Contexto.** D-021 dejó el sintetizador produciendo `Audio` y sin reproducir nada, a
+propósito. Faltaba la otra mitad: que suene, que se pueda cortar, y que la interfaz sepa cuánto
+está sonando. `voice/player.py` y `voice/speaker.py`.
+
+**Tres etapas en paralelo, cada una en su hilo.** Modelo → frases → audio → altavoz:
+
+```
+tokens del LLM  --(hilo del bucle)-->  frases completas
+                --(hilo de síntesis)-->  Audio de cada frase
+                --(callback de la tarjeta)-->  sonido, 30 ms cada vez
+```
+
+Sin el hilo de síntesis, cada frase bloquearía al consumidor del modelo medio segundo y el
+chorro de tokens se atascaría justo mientras D.O.O.M habla. Con él, el modelo sigue generando,
+Kokoro sintetiza la frase anterior y la tarjeta reproduce la anterior a esa. **Medido: primer
+audio a 1,18 s del inicio de la respuesta**, con el chorro del modelo consumido en 0,78 s. Sin
+trocear habría que esperar a la respuesta entera.
+
+**El troceo es incremental y retiene las frases cortas.** `_frases` del sintetizador parte un
+texto ya completo; aquí el texto llega a pedazos. `partir_incremental` decide en cada pedazo si
+hay una frase cerrada. Dos detalles que salieron probando:
+
+- Los puntos internos de "D.O.O.M." no cierran nada porque van pegados a la letra siguiente:
+  la condición "seguido de espacio" los descarta sola. Un *lookbehind* para protegerlos, que
+  era la primera versión, bloqueaba además el punto final de la sigla y dejaba sin cerrar
+  cualquier frase que acabara en mayúscula.
+- Una frase corta al final del pedazo se **retiene** en vez de soltarse: "Hola." llega antes
+  de saber que detrás viene "¿Qué tal estás?", y sintetizarla sola suena entrecortado y paga
+  el coste fijo de Kokoro. Un test comprueba que llegando carácter a carácter salen las mismas
+  frases que con el texto entero.
+
+**El *barge-in* es vaciar dos colas.** `Speaker.stop()` descarta las frases pendientes de
+sintetizar y `Player.stop()` las muestras pendientes de sonar; el siguiente bloque que pida la
+tarjeta sale en silencio. Medido: **cero bloques con sonido tras el `stop`**, y el reproductor
+avisa de que se ha quedado callado (`on_idle`), que es lo que pone el HUD en `dormido`. Es el
+corte a mano —la orden `para`—; el automático por eco llegará con el micrófono abierto.
+
+**El nivel se mide en el callback de la tarjeta**, bloque a bloque, 30 ms cada uno: 33 avisos
+por segundo, dentro de los 30-60 Hz del HUD, y en ventanas lo bastante parecidas a los 50 ms
+con los que se midió `_ESCALA_NIVEL` (D-021). Medido con voz real: mediana 0,44, que es la
+cifra de D-021 clavada; el p90 llega a 1,0 porque ventanas más cortas son más picudas, y es
+aceptable. `Audio.level()` se vectorizó con numpy para no meter un bucle de Python en el hilo de
+audio.
+
+**`wait()` cuenta pendientes, no mira dos señales.** La primera versión comprobaba "cola vacía
+y el hilo no está sintetizando", y entre sacar de la cola y marcar el hilo ocupado había un
+hueco en el que creía que no quedaba nada. Un contador que sube al encolar y baja al terminar
+no tiene ese hueco. Lo detectó un test.
+
+**`stop` y `repeat` dejan de ser promesas vacías.** `stop` corta el `Speaker`; `repeat` dice
+`Sesion.ultima_respuesta`, que existe desde D-020 —estaba mal clasificada como orden de voz: por
+escrito tiene el mismo sentido—. Y `Sesion.decir()` habla además de imprimir, así que las
+respuestas fijas de las órdenes ("Apuntado", "Olvidado") también suenan.
+
+**Cedido a `capa/hud`: el transporte.** Se empezó un `bridge/` propio y se descartó al ver que
+la sesión de la interfaz ya tenía `hud_server.py` con el mismo contrato, el mismo puerto y
+cableado en `chat.py`. Duplicarlo era el error; la `Sesion` apunta al suyo.

@@ -13,9 +13,11 @@ if TYPE_CHECKING:
     from doombot.actions.claude_code import ClaudeCodeAgent
     from doombot.backends.base import TextGenerator
     from doombot.config import Settings
+    from doombot.hud_server import ServidorHUD
     from doombot.memory import Memory
     from doombot.phrases.matcher import Match
     from doombot.profiles import Profile
+    from doombot.voice.speaker import Speaker
 
 
 @dataclass
@@ -41,6 +43,11 @@ class Sesion:
     con_contexto: Callable[..., str]
     preguntar: Callable[[str], str]
 
+    # La voz y la interfaz son opcionales: D.O.O.M funciona por consola sin
+    # ninguna de las dos. Quien las tenga las usa; quien no, las ve a None.
+    speaker: Speaker | None = None
+    hud: ServidorHUD | None = None
+
     entrada: str = ""  # lo que se escribió tal cual, sin recortar la orden
     ultimo_guardado: int | None = None
     ultima_respuesta: str = ""
@@ -53,9 +60,21 @@ class Sesion:
         print(f"  {texto}", file=sys.stderr)
 
     def decir(self, texto: str) -> None:
-        """Una respuesta corta y fija, sin pasar por el modelo."""
+        """Una respuesta corta y fija, sin pasar por el modelo.
+
+        Se imprime siempre y, si hay voz, se dice tambien. Hablar no sustituye
+        al texto: lo acompana, y asi la consola sigue sirviendo para leer lo
+        que se dijo.
+        """
         self.ultima_respuesta = texto
         print(f"D.O.O.M> {texto}")
+        if self.speaker is not None:
+            self.speaker.say(texto)
+
+    def estado(self, nombre: str) -> None:
+        """Cambio de estado hacia la interfaz. Sin HUD conectado no cuesta nada."""
+        if self.hud is not None:
+            self.hud.set_state(nombre)
 
 
 Handler = Callable[["Sesion", "Match"], None]

@@ -67,13 +67,14 @@ def test_dos_capas_no_pueden_reclamar_la_misma_orden():
 
 
 def test_una_orden_sin_manejador_no_es_un_error(sesion):
-    """`stop`, `silence` y `speak` estan definidas y sin implementar.
+    """Una orden definida pero que nadie implementa todavia.
 
     despachar devuelve False y quien llama decide que decir. Devolver False no
     puede confundirse con un fallo: es el estado normal de una orden que espera
-    a que exista su capa.
+    a que exista su capa. (Antes el ejemplo era `stop`; desde D-023 ya tiene
+    manejador, y este test lo detecto: por eso ahora se usa un nombre ficticio.)
     """
-    assert despachar(sesion, Match("stop", "para", 1.0, "exact")) is False
+    assert despachar(sesion, Match("_sin_manejador", "x", 1.0, "exact")) is False
 
 
 def test_el_despacho_llega_al_manejador_de_su_capa(sesion, monkeypatch):

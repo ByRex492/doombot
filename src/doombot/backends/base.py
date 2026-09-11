@@ -95,6 +95,17 @@ class Audio:
         """
         if not len(self.samples):
             return 0.0
+        # Vectorizado si es un ndarray: esto se llama desde el callback de la
+        # tarjeta de sonido 33 veces por segundo, y un bucle de Python ahi
+        # es justo lo que no conviene. La lista pura queda para los tests.
+        try:
+            import numpy as np
+
+            if isinstance(self.samples, np.ndarray):
+                rms = float(np.sqrt(np.mean(self.samples.astype(np.float64) ** 2)))
+                return min(1.0, rms * _ESCALA_NIVEL)
+        except ImportError:
+            pass
         cuadrados = sum(float(s) * float(s) for s in self.samples)
         return min(1.0, (cuadrados / len(self.samples)) ** 0.5 * _ESCALA_NIVEL)
 

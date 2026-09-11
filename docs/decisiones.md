@@ -720,3 +720,47 @@ la interacción completa y no solo la mitad hablada.
 **Sin probar con micrófono real.** Las pruebas de micrófono están pospuestas por decisión del
 usuario. El bucle está construido, cableado y validado con dobles (`_atender`) y con arranque
 en seco; falta la validación con voz de verdad, que es del usuario cuando levante la pausa.
+
+---
+
+## D-025 — `openwakeword.Model` necesita las rutas de los auxiliares a mano, no solo la del wakeword
+
+**Contexto.** Primera prueba con micrófono real (el usuario levantó la pausa de D-024). Fallo
+inmediato al decir "hey jarvis":
+
+    [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from
+    C:\...\.venv\Lib\site-packages\openwakeword\resources\models\melspectrogram.onnx failed
+
+pese a que `wake.py` ya descargaba ese fichero —y los progress bars lo confirmaban al 100%— a
+`models_dir()/openwakeword`, fuera del `.venv`, tal y como documenta D-013 y el propio
+docstring de `_pesos()`.
+
+**Causa.** Dos sitios distintos, y solo uno de ellos configurable. `Model(wakeword_models=[...])`
+acepta la ruta del modelo de la palabra como parámetro, pero `melspectrogram.onnx` y
+`embedding_model.onnx` —que openWakeWord necesita siempre, para cualquier palabra— los busca
+`AudioFeatures.__init__` en una ruta **fija, relativa al propio paquete instalado**
+(`site-packages/openwakeword/resources/models/`) cuando no se le pasa nada. `_pesos()` sí los
+descargaba a `carpeta` —`download_models()` trae los auxiliares pase lo que pase, es su propio
+comportamiento por defecto—, pero `_load()` nunca le decía a `Model` dónde estaban: la ruta que
+mira por defecto se queda vacía siempre, `rm -rf .venv` o no.
+
+**Decisión.** Pasar `melspec_model_path` y `embedding_model_path` explícitos a `Model(...)`,
+apuntando a los mismos ficheros que `_pesos()` ya deja en `carpeta`. Son kwargs que `Model`
+reenvía tal cual a `AudioFeatures` —revisado en el código de la librería, no adivinado—, así que
+no hace falta tocar nada dentro del `.venv` ni duplicar la descarga.
+
+**`_pesos()` pasa a comprobar los tres ficheros, no solo el de la palabra.** Antes, una carpeta
+con el wakeword pero sin los auxiliares —por ejemplo, una copia a medias entre equipos— se daba
+por buena y el fallo aparecía más tarde, en `_load()`, con un error de onnxruntime mucho menos
+claro que el que puede dar `_pesos()` con nombres de fichero de por medio.
+
+**Por qué no se detectó antes.** D-024 lo dejó anotado sin rodeos: "sin probar con micrófono
+real". `_load()` tenía un doble inyectable (`loader`) para los tests, y el doble nunca ejercita
+la construcción real de `Model` ni sus rutas. El camino feliz —fichero de la palabra presente,
+`Model()` sin más argumentos— nunca se había recorrido de verdad hasta esta prueba.
+
+**Verificado**, no solo corregido a ciegas: `WakeWord().model` carga sin excepción contra el
+`openwakeword` real instalado, con los tres ficheros ya descargados por el intento anterior. Un
+test nuevo (`tests/test_wake.py`) fija el contrato con un doble de `Model` que registra los
+kwargs recibidos, para que una regresión futura —alguien que quite las rutas explícitas
+"porque ya no hacen falta"— se detecte sin necesitar un micrófono delante.

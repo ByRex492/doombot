@@ -105,7 +105,20 @@ class WakeWord:
             except ImportError as e:
                 raise BackendError(_MISSING) from e
 
-            return Model(wakeword_models=[str(self._pesos())], inference_framework="onnx")
+            pesos = self._pesos()
+            carpeta = pesos.parent
+            return Model(
+                wakeword_models=[str(pesos)],
+                inference_framework="onnx",
+                # Sin esto, Model busca melspectrogram.onnx y embedding_model.onnx
+                # DENTRO del paquete instalado (site-packages/openwakeword/
+                # resources/models/), no en carpeta -que es justo donde los
+                # bajamos nosotros, y donde _pesos() ya se ha asegurado de que
+                # esten-. Medido: sin las rutas explicitas, Model falla con
+                # "NO_SUCHFILE" contra esa ruta del paquete, que nunca se puebla.
+                melspec_model_path=str(carpeta / "melspectrogram.onnx"),
+                embedding_model_path=str(carpeta / "embedding_model.onnx"),
+            )
         except BackendError:
             raise
         except Exception as e:  # noqa: BLE001 - depende de la libreria
@@ -140,11 +153,23 @@ class WakeWord:
             )
 
         destino = carpeta / (Path(ficha["model_path"]).stem + ".onnx")
-        if not destino.is_file():
+        auxiliares = (carpeta / "melspectrogram.onnx", carpeta / "embedding_model.onnx")
+        # download_models() baja los auxiliares siempre, sin mirar la lista de
+        # nombres -es la propia libreria la que decide eso-, asi que basta con
+        # llamarla si falta cualquiera de los tres. Sin este chequeo extra, una
+        # carpeta con el wakeword pero sin los auxiliares -por ejemplo, copiada
+        # de otro equipo a medias- se daria por buena y fallaria mas tarde, en
+        # _load(), con un error de onnxruntime mucho menos claro.
+        if not destino.is_file() or not all(a.is_file() for a in auxiliares):
             openwakeword.utils.download_models([self._model_name], target_directory=str(carpeta))
         if not destino.is_file():
             raise BackendError(
                 f"Los pesos de {self._model_name!r} no aparecieron en {carpeta} tras la descarga."
+            )
+        faltan = [a.name for a in auxiliares if not a.is_file()]
+        if faltan:
+            raise BackendError(
+                f"Faltan los modelos auxiliares {faltan} en {carpeta} tras la descarga."
             )
         return destino
 

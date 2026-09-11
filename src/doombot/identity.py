@@ -70,11 +70,22 @@ def capabilities() -> list[Capability]:
             "guardar cosas y recuperarlas mas tarde",
             "no guardas nada entre conversaciones",
         ),
+        # Oir y hablar eran una sola capacidad cuando ambos vivian en voice/.
+        # Con tts/ como paquete propio, dejarlas juntas hacia que D.O.O.M
+        # dijera que responde en voz alta por el mero hecho de tener microfono,
+        # que es exactamente la clase de mentira que este modulo existe para
+        # evitar. Se parten: cada una mira su paquete.
         Capability(
             "escuchar",
             _tiene_contenido("voice"),
-            "escuchar por el microfono y responder en voz alta",
-            "no oyes ni hablas",
+            "escuchar por el microfono lo que se te dice",
+            "no oyes: hay que escribirte",
+        ),
+        Capability(
+            "hablar",
+            _tiene_contenido("tts"),
+            "responder en voz alta, no solo por pantalla",
+            "no tienes voz: respondes escribiendo",
         ),
         Capability(
             "actuar",

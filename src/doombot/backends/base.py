@@ -46,12 +46,20 @@ class Transcriber(Protocol):
 
 # Cuanto se amplifica el RMS para llevarlo al 0-1 que espera la interfaz.
 #
-# PROVISIONAL, puesto a ojo: el valor eficaz de la voz es bastante mas bajo que
-# su pico, asi que sin amplificar el orbe apenas se moveria. Con 3, un RMS de
-# 0,15 -tipico al hablar- da 0,45, y los picos llegan arriba sin saturar todo el
-# rato. Hay que medirlo con audio real de Kokoro y corregirlo aqui; es un numero
-# suelto justamente para que eso sea cambiar una linea.
-_ESCALA_NIVEL = 3.0
+# MEDIDO con audio real de Kokoro ya procesado -el que sale de say()-, en
+# ventanas de 50 ms: RMS mediano 0,035, p90 0,073, pico puntual 0,11. Con 13 la
+# mediana queda en 0,45 y el p90 cerca de 0,9, que es el criterio buscado:
+# movimiento amplio sin saturar todo el rato.
+#
+# El 3,0 anterior estaba puesto a ojo y erraba por un factor de cuatro: suponia
+# un RMS tipico de 0,15, y el real es 0,035. Con aquel numero el orbe se habria
+# quedado casi quieto mientras D.O.O.M hablaba (ver D-021).
+#
+# OJO con la ventana: la cifra vale para trozos cortos, del orden de 50 ms, que
+# es como los va a trocear el orquestador para alimentar la interfaz a 30-60 Hz.
+# Aplicado a una frase entera el resultado sale mas bajo, porque las pausas
+# entre palabras entran en el promedio.
+_ESCALA_NIVEL = 13.0
 
 
 @dataclass(frozen=True)

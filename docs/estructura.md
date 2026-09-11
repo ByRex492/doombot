@@ -22,10 +22,14 @@ doombot/
 │   ├── phrases/         Frases textuales y órdenes: qué se puede decir
 │   ├── orders/          Registro: qué capa atiende cada orden
 │   │   └── registry.py  La Sesión, el decorador y el despachador
-│   ├── voice/           Audio, palabra de activación, síntesis
+│   ├── voice/           Audio de entrada y palabra de activación
 │   │   ├── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
 │   │   ├── wake.py      Palabra de activación y push-to-talk
 │   │   └── listener.py  Bucle de escucha: la máquina de estados
+│   ├── tts/             Síntesis de voz (+ orders.py)
+│   │   ├── synth.py     Kokoro por ONNX Runtime, con troceo por frase
+│   │   ├── dsp.py       Procesado sutil: corte de graves y sala pequeña
+│   │   └── download.py  Trae los ficheros del modelo la primera vez
 │   ├── actions/         Capa de acciones: tareas reales, no solo respuestas
 │   │   └── claude_code.py  Delega en `claude -p`, headless (+ orders.py)
 │   ├── obsidian/        Espejo legible de la memoria en el vault

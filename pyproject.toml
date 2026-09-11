@@ -34,6 +34,13 @@ voice-cuda = [
     "nvidia-cudnn-cu12",
     "nvidia-cuda-runtime-cu12",
 ]
+# Sintesis de voz (D-021). kokoro-onnx arrastra onnxruntime, phonemizer y
+# espeakng-loader como transitivas. NO se pide onnxruntime-gpu: hoy no hay ruta
+# de GPU utilizable para esto -pide cublasLt64_13.dll y el paquete de CUDA 13 en
+# PyPI es un placeholder vacio-, y el runtime normal es diez veces mas ligero.
+voice-tts = [
+    "kokoro-onnx>=0.6",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

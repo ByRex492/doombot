@@ -272,8 +272,11 @@ def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
                 for linea in contexto.splitlines()[1:]:
                     sesion.traza(f"contexto {linea.lstrip('- ')}")
             sesion.responder(sesion.con_contexto(entrada, contexto))
-            hud.set_state("hablando")
             if speaker is None:
+                # Sin voz, el "dormido" lo pone el bucle al terminar el texto.
+                # Con voz lo pone el reproductor (Player.on_idle) cuando de
+                # verdad se calla, no aqui, que seria prematuro. El "hablando"
+                # lo emite _responder en el primer trozo, en las dos ramas.
                 hud.set_caption(sesion.ultima_respuesta or None)
                 hud.set_state("dormido")
 
@@ -289,17 +292,31 @@ def _responder(sesion: Sesion, prompt: str) -> None:
     """
     print("D.O.O.M> ", end="", flush=True)
     texto = ""
+    primero = True
+
+    def pintar(trozo: str) -> None:
+        # El "hablando" se emite en el primer trozo, no antes: es cuando el
+        # modelo empieza a producir y, con voz, cuando arranca la sintesis.
+        # Ponerlo al terminar (como estaba) dejaba el orbe en "pensando"
+        # mientras D.O.O.M ya hablaba las primeras frases.
+        nonlocal primero
+        if primero:
+            sesion.estado("hablando")
+            primero = False
+        print(trozo, end="", flush=True)
+
     try:
         trozos = sesion.gen.stream(prompt, system=system_prompt())
         if sesion.speaker is not None:
-            texto = sesion.speaker.speak_stream(trozos, echo=lambda t: print(t, end="", flush=True))
+            texto = sesion.speaker.speak_stream(trozos, echo=pintar)
         else:
             partes: list[str] = []
             for trozo in trozos:
                 partes.append(trozo)
-                print(trozo, end="", flush=True)
+                pintar(trozo)
             texto = "".join(partes)
         print()
     except BackendError as e:
         print(f"\n  {e}", file=sys.stderr)
+        sesion.estado("error")
     sesion.ultima_respuesta = texto.strip()

@@ -1,17 +1,24 @@
-# Prototipo del HUD
+# El HUD
 
-`hud.html` es la interfaz de DOOM. Archivo único, sin dependencias, sin red.
+`hud.html` es la interfaz de DOOM. Archivo único, sin dependencias de build.
+Estilo cerrado: dirección **mínimo** (un solo anillo, sin marcas ni núcleo,
+todo el peso en cómo respira y se engruesa) — ver `docs/decisiones.md` para
+el resto de direcciones que se descartaron.
 
 ## Cómo abrirlo
 
-Doble clic funciona para ver la animación. Pero el micrófono **no**: Chrome
-bloquea `getUserMedia` en `file://`. Para probarlo entero hay que servirlo:
+Doble clic funciona para ver la animación, pero con dos limitaciones: el
+micrófono (Chrome bloquea `getUserMedia` en `file://`) y el WebSocket del
+transporte real (`ws://` desde `file://` también falla en algunos navegadores).
+Para probarlo entero hay que servirlo:
 
 ```bash
-py -3.12 -m http.server 8080 --bind 127.0.0.1 --directory C:\Users\migue\jarvis-local\ui\prototipo
+py -3.12 -m http.server 8080 --bind 127.0.0.1 --directory C:\Users\migue\doombot-hud\ui\prototipo
 ```
 
-Y entrar en `http://localhost:8080/hud.html`.
+Y entrar en `http://localhost:8080/hud.html`. Si además quieres ver el
+transporte real funcionando sin el orquestador todavía montado, levanta
+`ui/mock_servidor.py` en paralelo (ver `ui/README.md`).
 
 ## Controles
 
@@ -23,10 +30,10 @@ Y entrar en `http://localhost:8080/hud.html`.
 | `D` | ciclo completo de conversación |
 | `H` | oculta el panel de pruebas |
 
-## Las dos mitades del archivo
+## Las tres mitades del archivo
 
-**El HUD** (secciones 1–7) es lo que se queda. No decide nada: recibe estado,
-amplitud y texto, y anima. El contrato es `window.DOOM`:
+**El HUD** (secciones 1, 2, 4-7) es lo que se queda. No decide nada: recibe
+estado, amplitud y texto, y anima. El contrato es `window.DOOM`:
 
 ```js
 DOOM.setState('escuchando')   // dormido | escuchando | pensando | hablando | error
@@ -35,8 +42,15 @@ DOOM.caption('texto')         // subtítulo bajo el orbe
 DOOM.reset()
 ```
 
-**El banco de pruebas** (secciones 8 y 8b) se tira cuando exista el orquestador.
-Existe para poder juzgar el ritmo con voz real antes de tener Kokoro y Whisper.
+**El transporte** (sección 3b) conecta ese contrato a un WebSocket real —
+`ws://127.0.0.1:8765/hud`, contrato completo en D-022 (`docs/decisiones.md`).
+Reintenta solo cada 1,5 s si no hay servidor, así que no rompe nada trabajar
+sin el orquestador levantado.
+
+**El banco de pruebas** (secciones 8 y 8b) se tira cuando el transporte esté
+también en el lado Python. Hasta entonces sigue siendo el modo por defecto
+si no hay servidor WS: existe para poder juzgar el ritmo con voz real antes
+de tener Kokoro y Whisper conectados de verdad.
 
 Usa `speechSynthesis`, el sintetizador del sistema. En Windows son las voces SAPI
 instaladas, que corren en local; Chrome además ofrece voces "Google", que se
@@ -59,6 +73,6 @@ que es un cálculo local.
 ## Pendiente
 
 - La transparencia real de ventana en Windows con WebView2 no está resuelta;
-  la v1 va con ventana opaca sin marco.
-- El transporte definitivo será un WebSocket en `127.0.0.1`, no `evaluate_js`.
-- El estilo artístico está sin cerrar: esto fija el comportamiento, no el aspecto.
+  la v1 va con ventana opaca sin marco (`ui/app.py`).
+- El lado Python del transporte (el servidor WS de verdad, en el
+  orquestador) no es cosa de `capa/hud` — pedido a integración, ver D-022.

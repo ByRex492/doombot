@@ -17,15 +17,19 @@ doombot/
 │   ├── profiles.py      Detección de hardware y elección de perfil
 │   ├── identity.py      Qué dice saber hacer, según lo que hay instalado
 │   ├── chat.py          Modo interactivo: junta todas las capas en un bucle
+│   ├── hud_server.py    Transporte del HUD por WebSocket (D-022)
 │   ├── backends/        Contratos e implementaciones intercambiables
 │   ├── memory/          Qué recuerda D.O.O.M (+ orders.py)
 │   ├── phrases/         Frases textuales y órdenes: qué se puede decir
 │   ├── orders/          Registro: qué capa atiende cada orden
 │   │   └── registry.py  La Sesión, el decorador y el despachador
-│   ├── voice/           Audio de entrada y palabra de activación
+│   ├── voice/           Audio de entrada, palabra de activación y salida hablada
 │   │   ├── capture.py   Micrófono: graba a WAV, detecta silencio, mide nivel
 │   │   ├── wake.py      Palabra de activación y push-to-talk
-│   │   └── listener.py  Bucle de escucha: la máquina de estados
+│   │   ├── listener.py  Bucle de escucha: la máquina de estados
+│   │   ├── speaker.py   Texto del modelo -> frases -> Kokoro -> Player, en paralelo
+│   │   ├── player.py    Cola de audio interrumpible, mide nivel para el HUD
+│   │   └── orders.py    `stop` y `repeat`
 │   ├── tts/             Síntesis de voz (+ orders.py)
 │   │   ├── synth.py     Kokoro por ONNX Runtime, con troceo por frase
 │   │   ├── dsp.py       Procesado sutil: corte de graves y sala pequeña

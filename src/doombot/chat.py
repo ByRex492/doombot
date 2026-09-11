@@ -22,13 +22,15 @@ from doombot.backends.embeddings import FastEmbedder
 from doombot.backends.ollama import OllamaGenerator
 from doombot.config import Settings, settings
 from doombot.files import listar_buzon
+from doombot.hud_server import ServidorHUD
 from doombot.identity import resumen, system_prompt
 from doombot.memory import Memory
 from doombot.obsidian import escribir_perfil, sincronizar_perfil
 from doombot.orders import Sesion, despachar
 from doombot.paths import VAULT_DIR, inbox_dir, memory_db
-from doombot.phrases import default_matcher
+from doombot.phrases import PhraseMatcher, default_matcher
 from doombot.profiles import Profile
+from doombot.voice.speaker import Speaker, montar_voz
 
 
 def _forzar_utf8() -> None:
@@ -61,7 +63,8 @@ Escribe lo que quieras. Se reconocen ordenes:
   apunta el progreso <algo>  anade una nota al vault de Obsidian
   lee el archivo <cual>    lee un fichero del buzon y responde sobre el
   lee lo ultimo que te deje   el mas reciente que hayas soltado ahi
-  para / silencio          ordenes de control (aun sin voz que parar)
+  para                     calla en el acto (con voz activa)
+  modo silencioso          deja de hablar hasta "modo normal"
 
 Cualquier otra cosa va al modelo. Ademas:
 
@@ -131,10 +134,48 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
     # se crea siempre, se use o no en esta sesion.
     agente = ClaudeCodeAgent.from_config(cfg)
 
+    # El HUD es opcional en los dos sentidos: sin el extra `hud` instalado no
+    # se intenta siquiera (disponible=False), y si el puerto esta ocupado
+    # start() devuelve False sin lanzar. El texto nunca depende de esto.
+    hud = ServidorHUD()
+    if hud.start():
+        print("HUD conectado en ws://127.0.0.1:8765/hud")
+    elif hud.disponible:
+        print(
+            "  aviso: el WebSocket del HUD no pudo arrancar (puerto 8765 ocupado?)",
+            file=sys.stderr,
+        )
+
+    # La voz es opcional en cadena: sin el extra `voice-tts`, sin los modelos
+    # de Kokoro descargados, o si algo falla al cargarlos, `montar_voz`
+    # devuelve None y se sigue por consola exactamente igual (ver su
+    # docstring en voice/speaker.py). Nunca bloquea el arranque.
+    speaker = montar_voz(hud)
+    if speaker is not None:
+        print("Voz activa (Kokoro).")
+
     print(f"D.O.O.M. · perfil {perfil.name} · {cfg.llm_backend}/{gen.model_name}")
     print(f"memoria en {memory_db()}")
     print("Escribe /ayuda para ver las ordenes, /salir para terminar.\n")
 
+    try:
+        return _bucle(gen, embedder, agente, matcher, perfil, cfg, hud, speaker)
+    finally:
+        if speaker is not None:
+            speaker.close()
+        hud.stop()
+
+
+def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
+    gen: TextGenerator,
+    embedder: FastEmbedder,
+    agente: ClaudeCodeAgent,
+    matcher: PhraseMatcher,
+    perfil: Profile,
+    cfg: Settings,
+    hud: ServidorHUD,
+    speaker: Speaker | None,
+) -> int:
     with Memory(embedder) as mem:
         # Una sola Sesion para toda la conversacion: los manejadores la
         # mutan (que se guardo lo ultimo, que se respondio) y el bucle no
@@ -145,11 +186,14 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
             cfg=cfg,
             perfil=perfil,
             agente=agente,
+            speaker=speaker,
+            hud=hud,
             responder=lambda prompt: _responder(sesion, prompt),
             con_contexto=lambda pregunta, *extra: _con_contexto(mem, pregunta, *extra),
             preguntar=input,
         )
 
+        hud.set_state("dormido")
         while True:
             try:
                 # Se limpian tambien BOM y espacios invisibles: al pegar
@@ -197,6 +241,8 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                 continue
 
             sesion.entrada = entrada
+            hud.set_state("pensando")
+            hud.set_caption(None)
 
             # --- una orden? -------------------------------------------------
             orden = matcher.match(entrada)
@@ -208,6 +254,16 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                     # sobre lo que sabe hacer, y callarlo aqui seria mentir.
                     sesion.traza(f"orden {orden.command} ({orden.how}, {orden.confidence})")
                     sesion.decir(f"[{orden.command}] entendido, pero aun no puedo hacerlo.")
+                hud.set_state("hablando")
+                if speaker is None:
+                    # Sin voz real no hay reproductor que avise cuando termine
+                    # de sonar (Player.on_idle, ver voice/player.py): el
+                    # "dormido" hay que ponerlo aqui a mano. Con voz, es
+                    # prematuro -la sintesis sigue en marcha en su propio
+                    # hilo cuando esta linea se ejecuta- y lo pone el player
+                    # solo cuando de verdad se queda callado.
+                    hud.set_caption(sesion.ultima_respuesta or None)
+                    hud.set_state("dormido")
                 continue
 
             # --- no es una orden: memoria + modelo --------------------------
@@ -216,21 +272,34 @@ def run() -> int:  # noqa: C901 - es un despachador, la longitud es la propia li
                 for linea in contexto.splitlines()[1:]:
                     sesion.traza(f"contexto {linea.lstrip('- ')}")
             sesion.responder(sesion.con_contexto(entrada, contexto))
+            hud.set_state("hablando")
+            if speaker is None:
+                hud.set_caption(sesion.ultima_respuesta or None)
+                hud.set_state("dormido")
 
 
 def _responder(sesion: Sesion, prompt: str) -> None:
-    """Genera en streaming y guarda lo dicho.
+    """Genera en streaming, hablando por el camino si hay voz, y guarda lo dicho.
 
-    Se acumula ademas de imprimirse porque "repite" y la voz van a necesitar la
-    ultima respuesta entera, y por streaming solo pasan trozos sueltos.
+    Con ``speaker``, es el propio ``Speaker.speak_stream`` quien trocea por
+    frases y sintetiza sin esperar al final (ver voice/speaker.py); aqui solo
+    hace falta pasarle el chorro y un ``echo`` para seguir imprimiendo. Sin
+    voz, el bucle de toda la vida: se acumula porque "repite" necesita la
+    respuesta entera, y por streaming solo pasan trozos sueltos.
     """
     print("D.O.O.M> ", end="", flush=True)
-    partes: list[str] = []
+    texto = ""
     try:
-        for trozo in sesion.gen.stream(prompt, system=system_prompt()):
-            partes.append(trozo)
-            print(trozo, end="", flush=True)
+        trozos = sesion.gen.stream(prompt, system=system_prompt())
+        if sesion.speaker is not None:
+            texto = sesion.speaker.speak_stream(trozos, echo=lambda t: print(t, end="", flush=True))
+        else:
+            partes: list[str] = []
+            for trozo in trozos:
+                partes.append(trozo)
+                print(trozo, end="", flush=True)
+            texto = "".join(partes)
         print()
     except BackendError as e:
         print(f"\n  {e}", file=sys.stderr)
-    sesion.ultima_respuesta = "".join(partes).strip()
+    sesion.ultima_respuesta = texto.strip()

@@ -11,8 +11,9 @@ El paquete se organiza por responsabilidad, no por tecnologia:
 - ``phrases``  reconocimiento de frases textuales y ordenes
 - ``orders``   registro donde cada capa declara las ordenes que atiende
 - ``chat``     modo interactivo que junta todas las capas
-- ``voice``    captura de audio y palabra de activacion
+- ``voice``    captura de audio, palabra de activacion y salida hablada
 - ``tts``      sintesis de voz: convierte la respuesta en sonido
+- ``hud_server`` transporte del HUD por WebSocket, hacia ui/prototipo/hud.html
 - ``actions``  capa de acciones: delega tareas reales en Claude Code
 - ``obsidian`` espejo legible de la memoria en el vault del proyecto
 - ``files``    ficheros que el usuario le deja en el buzon, como contexto

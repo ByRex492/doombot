@@ -77,3 +77,7 @@ obsidian/.obsidian/
 # tienen sentido en una carpeta concreta.
 /arrancar-chat.cmd
 /ENCARGO.md
+
+# launch.json del Browser pane: rutas y puertos de una previsualizacion
+# puntual de una sesion concreta, no configuracion del proyecto.
+.claude/

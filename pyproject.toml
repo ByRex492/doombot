@@ -41,6 +41,14 @@ voice-cuda = [
 voice-tts = [
     "kokoro-onnx>=0.6",
 ]
+# Ventana de escritorio del HUD y su transporte (D-022). `pywebview` lo usa
+# ui/app.py, `websockets` lo usan tanto ui/mock_servidor.py (banco de pruebas
+# del cliente) como hud_server.py (el transporte real, en el orquestador).
+# Aparte del resto: un uso solo por texto no necesita ni ventana ni servidor.
+hud = [
+    "pywebview>=4.0",
+    "websockets>=12.0",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

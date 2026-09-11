@@ -97,6 +97,36 @@
              font-weight:600; margin:14px 0 7px; }
   #panel h4:first-child{ margin-top:0; }
   .row{ display:flex; flex-wrap:wrap; gap:5px; }
+
+  /* Estado del transporte: visible de un vistazo, no enterrado en las
+     estadisticas de texto de mas abajo. */
+  #ws-badge{
+    display:flex; align-items:center; gap:6px;
+    font-size:10.5px; color:var(--dim); margin-bottom:12px;
+  }
+  #ws-badge .punto{
+    width:7px; height:7px; border-radius:50%;
+    background:hsl(0 60% 55%); flex:none;
+    transition:background .2s ease, box-shadow .2s ease;
+  }
+  #ws-badge.on{ color:hsl(var(--h) 30% 85%); }
+  #ws-badge.on .punto{
+    background:hsl(150 65% 55%);
+    box-shadow:0 0 6px hsl(150 65% 55% / .7);
+  }
+
+  /* Medidor de amplitud: mismo dato que mueve el anillo, en una barra,
+     para poder juzgar nivel/saturacion sin mirar el orbe. */
+  #vu{
+    height:5px; border-radius:3px; margin:6px 0 2px;
+    background:hsl(var(--h) 30% 50% / .12); overflow:hidden;
+  }
+  #vu-fill{
+    height:100%; width:0%; border-radius:3px;
+    background:linear-gradient(90deg, hsl(var(--h) 70% 55%), hsl(20 85% 60%));
+    transition:width .05s linear;
+  }
+  .error-linea{ color:hsl(0 70% 68%); font-size:10px; line-height:1.5; margin-top:4px; }
   button{
     font:inherit; font-size:11px; cursor:pointer;
     background:hsl(var(--h) 40% 60% / .10);
@@ -140,11 +170,14 @@
 </div>
 
 <div id="panel">
+  <div id="ws-badge"><span class="punto"></span><span id="ws-texto">sin servidor</span></div>
+
   <h4>ESTADO</h4>
   <div class="row" id="btn-estados"></div>
 
   <h4>FUENTE DE AMPLITUD</h4>
   <div class="row" id="btn-fuente"></div>
+  <div id="vu"><div id="vu-fill"></div></div>
 
   <h4>ACENTO</h4>
   <div class="row" id="btn-color"></div>
@@ -169,6 +202,7 @@
     <button id="b-escuchar">&#127908; Escuchar (mantener)</button>
   </div>
   <div class="nota" id="nota-voz"></div>
+  <div class="error-linea" id="error-mic" hidden></div>
 
   <div class="row" style="margin-top:12px">
     <button id="b-demo">&#9654; Ciclo completo</button>
@@ -270,8 +304,20 @@ function amplitudSimulada(t){
   return clamp(sim.nivel * silabas * micro, 0, 1);
 }
 
-/* --- Microfono real --- */
+/* --- Microfono real ---------------------------------------------------
+   No es un boton mas: es la unica pieza del banco de pruebas que puede
+   fallar por motivos ajenos al codigo (file://, permiso denegado, sin
+   dispositivo). El error va a una linea del panel, no a un alert() que
+   bloquea la pestana -- y que ademas los navegadores automatizados
+   silencian, dejando la prueba colgada sin explicacion visible. */
 let analizador = null, bufMic = null;
+function mostrarErrorMic(msg){
+  const el = document.getElementById('error-mic');
+  el.textContent = msg; el.hidden = false;
+}
+function limpiarErrorMic(){
+  document.getElementById('error-mic').hidden = true;
+}
 async function activarMicro(){
   try{
     const s  = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false}});
@@ -280,10 +326,14 @@ async function activarMicro(){
     analizador.fftSize = 1024;
     ac.createMediaStreamSource(s).connect(analizador);
     bufMic = new Float32Array(analizador.fftSize);
+    limpiarErrorMic();
     fuente = 'mic'; pintarBotones();
   }catch(e){
-    alert('Microfono no disponible.\n\nAbrir el archivo con doble clic (file://) lo bloquea.\n'
-        + 'Sirve la carpeta y entra por http://localhost:8080/hud.html');
+    mostrarErrorMic(
+      'Microfono no disponible (' + e.name + '). Abrir el archivo con doble clic '
+      + '(file://) lo bloquea, o el navegador nunca dio permiso. Sirve la carpeta '
+      + 'y entra por http://localhost:8080/hud.html, o revisa el permiso de microfono.'
+    );
   }
 }
 function amplitudMicro(){
@@ -346,6 +396,7 @@ function conectarWS(){
   }
   ws.onopen = function(){
     wsConectado = true;
+    pintarBadgeWS();
     // El orquestador manda 'reset' al conectar, pero por si no lo hace
     // (version vieja, o se reinicia la ventana) se sale del banco de
     // pruebas en cuanto hay servidor real al otro lado.
@@ -361,8 +412,14 @@ function conectarWS(){
     else if(msg.type === 'caption')   DOOM.caption(msg.value);
     else if(msg.type === 'reset')     DOOM.reset();
   };
-  ws.onclose = function(){ ws = null; wsConectado = false; setTimeout(conectarWS, 1500); };
+  ws.onclose = function(){ ws = null; wsConectado = false; pintarBadgeWS(); setTimeout(conectarWS, 1500); };
   ws.onerror = function(){ if(ws) ws.close(); };
+}
+function pintarBadgeWS(){
+  const b = document.getElementById('ws-badge');
+  b.classList.toggle('on', wsConectado);
+  document.getElementById('ws-texto').textContent =
+    wsConectado ? 'orquestador conectado' : 'sin servidor — banco de pruebas';
 }
 
 /* =================================================================
@@ -413,6 +470,7 @@ new ResizeObserver(redimensionar).observe(document.getElementById('stage'));
    ================================================================= */
 let ultimo = performance.now()/1000, fps = 60, acumFps = 0, nFps = 0;
 let kReact = 1, kGlow = 1;
+const elVu = document.getElementById('vu-fill');
 
 function frame(now){
   now /= 1000;
@@ -440,6 +498,7 @@ function frame(now){
   const kA = 1 - Math.exp(-dt/T_ATAQUE), kC = 1 - Math.exp(-dt/T_CAIDA);
   amp      += (ampTarget - amp) * (ampTarget > amp ? kA : kC);
   ampLento += (amp - ampLento) * (1 - Math.exp(-dt/0.55));
+  elVu.style.width = (amp * 100).toFixed(1) + '%';
 
   /* --- ondas de choque en los picos --- */
   const reactiva = (actual === 'escuchando' || actual === 'hablando');
@@ -602,8 +661,7 @@ sP.oninput = function(){ generarParticulas(+sP.value); sincroSliders(); };
 function actualizarStats(){
   document.getElementById('stats').innerHTML =
     'fps ' + fps.toFixed(0) + '  &middot;  amp ' + amp.toFixed(2) + '<br>' +
-    'estado ' + actual + ' &middot; fuente ' + fuente + '<br>' +
-    'ws ' + (wsConectado ? 'conectado' : 'sin servidor') + '<br><br>' +
+    'estado ' + actual + ' &middot; fuente ' + fuente + '<br><br>' +
     '<kbd>1</kbd>-<kbd>5</kbd> estado &middot; <kbd>D</kbd> ciclo &middot; <kbd>H</kbd> panel<br>' +
     '<kbd>espacio</kbd> hablarle &middot; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> decir';
 }
@@ -766,6 +824,7 @@ generarParticulas(+sP.value);
 sincroSliders();
 sincroRate();
 pintarBotones();
+pintarBadgeWS();
 requestAnimationFrame(frame);
 conectarWS();
 setTimeout(function(){ if(!wsConectado) lanzarDemo(); }, 500);

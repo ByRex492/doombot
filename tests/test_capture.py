@@ -188,6 +188,80 @@ def test_sin_dispositivo_usa_el_del_sistema():
     assert Microphone().device is None
 
 
+def test_entre_varias_apis_prefiere_wasapi(monkeypatch):
+    """Medido con un A50 real: 'el primero' podia ser una instancia muerta.
+
+    Windows reinstancia el mismo dispositivo USB en cada reconexion, y el de
+    mas API antigua no siempre es el que de verdad entrega audio -daba pico
+    0.000 exacto, sin error alguno al abrirlo-. WASAPI es la que ademas sabe
+    remuestrear sola (``_wasapi_auto_convert``), asi que gana si esta.
+    """
+    monkeypatch.setattr(
+        capture,
+        "listar_microfonos",
+        lambda: [
+            InputDevice(14, "auriculares (3- A50 Mic)", "Windows DirectSound", 1),
+            InputDevice(32, "auriculares (3- A50 Mic)", "Windows WASAPI", 1),
+            InputDevice(55, "auriculares (A50 Mic)", "Windows WDM-KS", 1),
+        ],
+    )
+    assert Microphone("a50").device == 32
+
+
+def test_sin_wasapi_entre_los_candidatos_se_queda_con_el_primero(monkeypatch):
+    monkeypatch.setattr(
+        capture,
+        "listar_microfonos",
+        lambda: [
+            InputDevice(1, "auriculares (A50 Mic)", "MME", 1),
+            InputDevice(10, "auriculares (A50 Mic)", "Windows DirectSound", 1),
+        ],
+    )
+    assert Microphone("a50").device == 1
+
+
+class SdFalso:
+    """Lo justo de ``sounddevice`` que necesita ``_wasapi_auto_convert``."""
+
+    def __init__(self, api: str) -> None:
+        self._api = api
+        self.pedido_con_auto_convert: bool | None = None
+
+    def query_devices(self, idx):
+        return {"hostapi": 0}
+
+    def query_hostapis(self, _idx):
+        return {"name": self._api}
+
+    def WasapiSettings(self, *, auto_convert):  # noqa: N802 - mismo nombre que sounddevice
+        self.pedido_con_auto_convert = auto_convert
+        return "wasapi-settings"
+
+
+def test_wasapi_pide_auto_convert():
+    """Sin esto, WASAPI en modo compartido rechaza los 16 kHz que pide este modulo.
+
+    Medido con un A50 real: ``InputStream`` fallaba con "Invalid sample
+    rate" hasta anadir ``extra_settings=WasapiSettings(auto_convert=True)``.
+    """
+    mic = Microphone(5)
+    sd_falso = SdFalso("Windows WASAPI")
+    resultado = mic._wasapi_auto_convert(sd_falso)  # noqa: SLF001 - es justo lo que se prueba
+    assert resultado == "wasapi-settings"
+    assert sd_falso.pedido_con_auto_convert is True
+
+
+def test_otras_apis_no_piden_nada_wasapi():
+    mic = Microphone(5)
+    for api in ("MME", "Windows DirectSound", "Windows WDM-KS"):
+        assert mic._wasapi_auto_convert(SdFalso(api)) is None  # noqa: SLF001
+
+
+def test_sin_dispositivo_resuelto_no_pide_wasapi():
+    """``device=None`` es el predeterminado del sistema: no hay indice que consultar."""
+    assert Microphone()._wasapi_auto_convert(SdFalso("Windows WASAPI")) is None  # noqa: SLF001
+
+
 # -- limpieza ----------------------------------------------------------------
 def test_barre_las_capturas_huerfanas(carpeta_aislada):
     """Un cierre brusco deja ficheros que ningun contexto va a borrar."""

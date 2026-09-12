@@ -191,9 +191,16 @@ class Microphone:
                 f"Disponibles:\n{listado}\n"
                 "Ajusta DOOMBOT_AUDIO_INPUT en .env."
             )
-        # Con varias APIs de Windows el mismo microfono aparece repetido. Se
-        # queda el primero, que es el de la API por defecto del sistema.
-        return candidatos[0].index
+        # Con varias APIs de Windows el mismo microfono aparece repetido -mas
+        # aun con USB/Bluetooth, que Windows reinstancia en cada reconexion
+        # ("A50 Mic", "2- A50 Mic", "3- A50 Mic"...)-. Medido con un A50 real:
+        # "quedarse con el primero" no es fiable, puede ser una instancia
+        # muerta que abre sin error pero no entrega ni una muestra (pico
+        # 0.000 exacto). WASAPI es la que de verdad remuestrea con
+        # ``_wasapi_auto_convert`` y en la practica la mas consistente, asi
+        # que se prefiere si hay alguna entre los candidatos.
+        wasapi = [d for d in candidatos if "wasapi" in d.api.lower()]
+        return (wasapi or candidatos)[0].index
 
     @property
     def device_name(self) -> str:
@@ -338,7 +345,30 @@ class Microphone:
             blocksize=bloque,
             device=self.device,
             dtype="float32",
+            extra_settings=self._wasapi_auto_convert(sd),
         )
+
+    def _wasapi_auto_convert(self, sd: Any) -> Any:
+        """``WasapiSettings(auto_convert=True)`` si el dispositivo es WASAPI, si no None.
+
+        En modo compartido, WASAPI solo admite el formato nativo del
+        dispositivo -tipicamente 44100 o 48000 Hz, casi nunca los 16 kHz que
+        pide este modulo- y sin este ajuste ``InputStream`` falla con
+        "Invalid sample rate" en cualquier microfono que no lo tenga por
+        casualidad. ``auto_convert`` le pide a Windows que remuestree el
+        solo; no afecta a MME ni a DirectSound, que no conocen este concepto
+        y fallarian si se les pasara.
+        """
+        idx = self.device
+        if idx is None:
+            return None
+        try:
+            api = sd.query_hostapis(sd.query_devices(idx)["hostapi"])["name"]
+        except Exception:  # noqa: BLE001 - si no se puede saber, se sigue sin el ajuste
+            return None
+        if "wasapi" not in api.lower():
+            return None
+        return sd.WasapiSettings(auto_convert=True)
 
     def _escribir(self, audio: Any, elapsed: float = 0.0) -> Recording:
         import numpy as np

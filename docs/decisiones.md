@@ -897,3 +897,51 @@ esta máquina ahora mismo no soportan la API de lectura bloqueante que usa `Micr
 (WDM-KS), y el auricular Bluetooth que sí funcionaba (D-024, D-025) estaba apagado al escribir
 esto—. La prueba que de verdad importa —¿hablarle encima corta a D.O.O.M sin que se interrumpa
 solo con su propio eco?— la tiene que hacer el usuario, con el micrófono conectado.
+
+---
+
+## D-028 — El micrófono elegido puede ser una instancia muerta, y WASAPI pide su propio ajuste
+
+**Contexto.** Primera prueba de D-027 con el A50 conectado de verdad. Dos fallos en cadena,
+ninguno del barge-in en sí:
+
+1. `python -m doombot micro probar` con el dispositivo que `DOOMBOT_AUDIO_INPUT=A50 Mic`
+   resolvía solo: **pico 0.000 exacto**, el caso que el propio código ya sabía nombrar
+   ("ese dispositivo no entrega señal") pero no evitar.
+2. Con el índice de WASAPI a mano (`micro probar 32`): `InputStream` fallaba con
+   `Invalid sample rate`, aunque WASAPI "suele aceptar más formatos" según el mensaje de error
+   que el propio código ya daba.
+
+**Causa 1: reconectar un USB/Bluetooth crea instancias nuevas, no reutiliza la vieja.** Windows
+había registrado "A50 Mic", "2- A50 Mic" y "3- A50 Mic" como dispositivos separados de
+conexiones distintas, las tres con el mismo nombre visible. `_resolve()` se quedaba con la
+**primera** que encajara por nombre, bajo el supuesto —escrito en el propio comentario, y
+erróneo— de que la primera es "la de la API por defecto del sistema". Medido: la primera era
+DirectSound, y esa instancia concreta abría sin ningún error pero no entregaba ni una muestra.
+
+**Decisión 1.** Cuando varias candidatas comparten nombre, gana la que hable WASAPI si hay
+alguna. No por dogma —"WASAPI es mejor"—, sino porque además es la única con la que
+`_wasapi_auto_convert` (más abajo) puede arreglar el problema 2, y en la práctica fue la única
+de las tres que entregó audio real.
+
+**Causa 2: WASAPI en modo compartido solo admite el formato nativo del dispositivo**, casi
+nunca los 16 kHz que este módulo pide siempre (Whisper y openWakeWord, D-005, D-013). Sin
+avisar de qué falta, `InputStream` simplemente rechaza la tasa.
+
+**Decisión 2.** `extra_settings=sd.WasapiSettings(auto_convert=True)` cuando el dispositivo
+resuelto es WASAPI. Verificado contra el A50 real: sin el ajuste, `Invalid sample rate`; con
+él, el flujo abre y entrega muestras a 16 kHz aunque el dispositivo funcione nativamente a otra
+tasa. No afecta a MME ni a DirectSound —no conocen `WasapiSettings`, y pasárselo fallaría—, de
+ahí que se compruebe la API antes de construirlo.
+
+**Ninguno de los dos fallos es nuevo de D-027.** Ya existían en `voice/capture.py` desde que se
+escribió (D-013 y antes); simplemente nadie había conectado un dispositivo con instancias
+duplicadas y una API que exige `auto_convert` a la vez, porque las pruebas de micrófono estaban
+pospuestas (D-024) hasta esta sesión.
+
+**Verificado con el hardware real**, no solo con el mensaje de error leído: `Microphone(32)`
+abre y lee muestras del A50 por WASAPI; `Microphone("A50 Mic")` resuelve ahora directamente a
+ese mismo índice, sin que el usuario tenga que buscarlo a mano. `tests/test_capture.py` fija
+las dos decisiones con dobles (una API WASAPI falsa, una lista de candidatos con instancias
+repetidas), para que un cambio futuro en `_resolve()` no vuelva a preferir la instancia
+equivocada en silencio.

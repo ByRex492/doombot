@@ -15,15 +15,31 @@ entre sesiones. Para probar en local mientras tanto:
 
     py -3.12 -m pip install pywebview
     py -3.12 ui/app.py
+
+Para el ejecutable (empaquetado con PyInstaller, ver ui/build.py y
+ui/README.md -- es implementacion de D-016, no una decision nueva):
+
+    py -3.12 ui/build.py
+    dist\\DOOM.exe
 """
 
 from __future__ import annotations
 
 import pathlib
+import sys
 
 import webview
 
-HTML = pathlib.Path(__file__).parent / "prototipo" / "hud.html"
+# PyInstaller (--onefile) descomprime los datos empaquetados a una carpeta
+# temporal y la expone en `sys._MEIPASS`; `__file__` del script principal
+# no apunta ahi de forma fiable. En desarrollo (sin empaquetar) no existe
+# ese atributo, y `__file__` es lo correcto.
+if getattr(sys, "frozen", False):
+    BASE = pathlib.Path(sys._MEIPASS)  # type: ignore[attr-defined]
+else:
+    BASE = pathlib.Path(__file__).parent
+
+HTML = BASE / "prototipo" / "hud.html"
 
 
 def main() -> None:

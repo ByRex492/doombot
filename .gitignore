@@ -11,6 +11,9 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# Generado por PyInstaller (ui/build.py); se reconstruye igual siempre, asi
+# que el script es la fuente de verdad, no este fichero.
+*.spec
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

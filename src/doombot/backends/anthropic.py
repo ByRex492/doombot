@@ -16,12 +16,12 @@ base del proyecto.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 import httpx
 
-from doombot.backends.base import BackendError
+from doombot.backends.base import BackendError, Turno
 from doombot.config import Settings, settings
 
 _BASE_URL = "https://api.anthropic.com/v1/messages"
@@ -62,20 +62,24 @@ class AnthropicGenerator:
     def model_name(self) -> str:
         return self._model
 
-    def generate(self, prompt: str, *, system: str | None = None) -> str:
+    def generate(
+        self, prompt: str, *, system: str | None = None, historial: Sequence[Turno] = ()
+    ) -> str:
         """Respuesta completa. Bloquea hasta que el modelo termina."""
-        datos = self._post(self._cuerpo(prompt, system, stream=False))
+        datos = self._post(self._cuerpo(prompt, system, historial, stream=False))
         bloques = datos.get("content", [])
         return "".join(b.get("text", "") for b in bloques if b.get("type") == "text").strip()
 
-    def stream(self, prompt: str, *, system: str | None = None) -> Iterator[str]:
+    def stream(
+        self, prompt: str, *, system: str | None = None, historial: Sequence[Turno] = ()
+    ) -> Iterator[str]:
         """Respuesta por fragmentos, via server-sent events.
 
         Igual motivo que en Ollama: sintetizar la primera frase mientras se
         genera el resto evita que la voz espere la respuesta entera.
         """
         self._exigir_clave()
-        cuerpo = self._cuerpo(prompt, system, stream=True)
+        cuerpo = self._cuerpo(prompt, system, historial, stream=True)
         try:
             with self._client.stream("POST", _BASE_URL, json=cuerpo, headers=self._headers()) as r:
                 if r.status_code >= 400:
@@ -110,12 +114,17 @@ class AnthropicGenerator:
         return bool(self._api_key)
 
     # -- interno -------------------------------------------------------------
-    def _cuerpo(self, prompt: str, system: str | None, *, stream: bool) -> dict[str, Any]:
+    def _cuerpo(
+        self, prompt: str, system: str | None, historial: Sequence[Turno], *, stream: bool
+    ) -> dict[str, Any]:
+        # A diferencia de Ollama, el sistema no es un mensaje mas: va en su
+        # propio campo (D-026). Los turnos anteriores si son mensajes, con el
+        # mismo formato role/content que ya usa esta API.
         cuerpo: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
             "temperature": self._temperature,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [*historial, {"role": "user", "content": prompt}],
             "stream": stream,
         }
         if system:

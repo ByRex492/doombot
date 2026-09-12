@@ -12,12 +12,12 @@ implementaciones ni una rama que las distinga.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 import httpx
 
-from doombot.backends.base import BackendError
+from doombot.backends.base import BackendError, Turno
 from doombot.config import Settings, settings
 from doombot.profiles import Profile
 
@@ -123,12 +123,16 @@ class OllamaGenerator:
     def model_name(self) -> str:
         return self._model
 
-    def generate(self, prompt: str, *, system: str | None = None) -> str:
+    def generate(
+        self, prompt: str, *, system: str | None = None, historial: Sequence[Turno] = ()
+    ) -> str:
         """Respuesta completa. Bloquea hasta que el modelo termina."""
-        datos = self._post(RUTA_CHAT, self._cuerpo(prompt, system, stream=False))
+        datos = self._post(RUTA_CHAT, self._cuerpo(prompt, system, historial, stream=False))
         return str(datos.get("message", {}).get("content", "")).strip()
 
-    def stream(self, prompt: str, *, system: str | None = None) -> Iterator[str]:
+    def stream(
+        self, prompt: str, *, system: str | None = None, historial: Sequence[Turno] = ()
+    ) -> Iterator[str]:
         """Respuesta por fragmentos, segun los va produciendo el modelo.
 
         Lo necesita la voz. Con 29 tok/s, una respuesta de cien palabras tarda
@@ -136,7 +140,7 @@ class OllamaGenerator:
         antes de empezar a hablar. Con streaming se sintetiza la primera frase
         mientras se genera el resto.
         """
-        cuerpo = self._cuerpo(prompt, system, stream=True)
+        cuerpo = self._cuerpo(prompt, system, historial, stream=True)
         url = f"{self._host}{RUTA_CHAT}"
         try:
             with self._client.stream("POST", url, json=cuerpo) as r:
@@ -169,16 +173,20 @@ class OllamaGenerator:
         return sorted(m["name"] for m in datos.get("models", []))
 
     # -- interno -------------------------------------------------------------
-    def _cuerpo(self, prompt: str, system: str | None, *, stream: bool) -> dict[str, Any]:
+    def _cuerpo(
+        self, prompt: str, system: str | None, historial: Sequence[Turno], *, stream: bool
+    ) -> dict[str, Any]:
         """Cuerpo para /api/chat: mensajes con rol, no un prompt en crudo.
 
         El rol de sistema va como un mensaje mas, el primero de la lista. Es la
-        forma que espera este endpoint, y la que permite anadir historial de
-        conversacion mas adelante sin cambiar nada de esta estructura.
+        forma que espera este endpoint, y la que permitio anadir historial de
+        conversacion (D-026) sin cambiar nada de esta estructura: los turnos
+        anteriores van entre el sistema y la pregunta actual, tal cual.
         """
         mensajes: list[dict[str, str]] = []
         if system:
             mensajes.append({"role": "system", "content": system})
+        mensajes.extend(historial)
         mensajes.append({"role": "user", "content": prompt})
 
         return {

@@ -6,7 +6,7 @@ import importlib
 import pkgutil
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -51,6 +51,11 @@ class Sesion:
     entrada: str = ""  # lo que se escribió tal cual, sin recortar la orden
     ultimo_guardado: int | None = None
     ultima_respuesta: str = ""
+
+    # Turnos previos con el modelo -no con las órdenes, que se resuelven aquí
+    # sin pasar por él- (D-026). Se guarda entero; quien construya el cuerpo
+    # de la petición recorta lo que quepa en el contexto del perfil activo.
+    historial: list[dict[str, str]] = field(default_factory=list)
 
     def traza(self, texto: str) -> None:
         """Explicación de por qué hace lo que hace. Va a stderr, no es respuesta."""

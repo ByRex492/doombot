@@ -98,6 +98,27 @@ def test_system_prompt_solo_si_lo_hay():
     assert cuerpos[1]["system"] == "Eres D.O.O.M."
 
 
+def test_el_historial_va_como_mensajes_antes_de_la_pregunta_actual():
+    """A diferencia de Ollama, el sistema no es un mensaje: va aparte."""
+    capturado = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        capturado.update(json.loads(req.content))
+        return httpx.Response(200, json={"content": []})
+
+    historial = [
+        {"role": "user", "content": "cuanta vram tengo"},
+        {"role": "assistant", "content": "3 GB en el portatil"},
+    ]
+    AnthropicGenerator("m", api_key="x", client=cliente_falso(handler)).generate(
+        "y en el sobremesa", historial=historial
+    )
+    assert capturado["messages"] == [
+        *historial,
+        {"role": "user", "content": "y en el sobremesa"},
+    ]
+
+
 def test_la_clave_va_en_la_cabecera():
     cabeceras = []
 

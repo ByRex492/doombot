@@ -128,6 +128,37 @@ def test_system_prompt_solo_si_lo_hay():
     assert cuerpos[1]["messages"][0]["content"] == "Eres D.O.O.M."
 
 
+def test_el_historial_va_entre_el_sistema_y_la_pregunta_actual():
+    cuerpos = []
+
+    def handler(req):
+        cuerpos.append(json.loads(req.content))
+        return httpx.Response(200, json={"message": {"content": "ok"}})
+
+    historial = [
+        {"role": "user", "content": "cuanta vram tengo"},
+        {"role": "assistant", "content": "3 GB en el portatil"},
+    ]
+    OllamaGenerator("m", client=cliente_falso(handler)).generate(
+        "y en el sobremesa", system="Eres D.O.O.M.", historial=historial
+    )
+
+    mensajes = cuerpos[0]["messages"]
+    assert [m["role"] for m in mensajes] == ["system", "user", "assistant", "user"]
+    assert mensajes[-1]["content"] == "y en el sobremesa"
+
+
+def test_sin_historial_no_anade_nada():
+    cuerpos = []
+
+    def handler(req):
+        cuerpos.append(json.loads(req.content))
+        return httpx.Response(200, json={"message": {"content": "ok"}})
+
+    OllamaGenerator("m", client=cliente_falso(handler)).generate("x")
+    assert [m["role"] for m in cuerpos[0]["messages"]] == ["user"]
+
+
 def test_stream_va_entregando_fragmentos():
     lineas = [
         json.dumps({"message": {"content": "Hola"}}),

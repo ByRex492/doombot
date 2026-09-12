@@ -17,14 +17,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+# Un turno anterior de la conversacion: {"role": "user"|"assistant", "content": texto}.
+# El mismo formato que ya monta Ollama en su lista `messages` y que Anthropic
+# usa en la suya -no es un tipo propio del proyecto, es el que hablan las dos
+# APIs-, asi que ninguno de los dos backends tiene que traducir nada.
+Turno = dict[str, str]
+
 
 @runtime_checkable
 class TextGenerator(Protocol):
     """Genera texto a partir de un prompt."""
 
-    def generate(self, prompt: str, *, system: str | None = None) -> str: ...
+    def generate(
+        self, prompt: str, *, system: str | None = None, historial: Sequence[Turno] = ()
+    ) -> str: ...
 
-    def stream(self, prompt: str, *, system: str | None = None) -> Iterator[str]:
+    def stream(
+        self, prompt: str, *, system: str | None = None, historial: Sequence[Turno] = ()
+    ) -> Iterator[str]:
         """Genera por fragmentos.
 
         Lo necesita la voz: esperar a la respuesta entera antes de empezar a

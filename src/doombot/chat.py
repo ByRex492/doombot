@@ -99,6 +99,39 @@ def _con_contexto(mem: Memory, pregunta: str, *extra: str) -> str:
     return "\n\n".join([*bloques, f"Pregunta: {pregunta}"])
 
 
+# Fraccion del contexto del perfil activo que se reserva al historial. El
+# resto lo necesitan el prompt del sistema, la pregunta actual y el propio
+# hueco para que el modelo responda: darselo todo al historial lo dejaria sin
+# sitio para pensar (D-026).
+_FRACCION_HISTORIAL = 0.3
+
+# Caracteres por token, a ojo. Mismo tipo de aproximacion que D-019 usa para
+# el recorte del buzon: no compensa arrastrar un tokenizador solo para esto,
+# y el margen de la fraccion de arriba ya absorbe el error.
+_CARACTERES_POR_TOKEN = 4
+
+
+def _recortar_historial(historial: list[dict[str, str]], num_ctx: int) -> list[dict[str, str]]:
+    """Los turnos mas recientes que quepan en el presupuesto de caracteres.
+
+    Se guarda el historial entero en la ``Sesion`` -no cuesta nada mantenerlo,
+    ni una conversacion de horas pesa lo que el propio contexto del modelo- y
+    se recorta solo aqui, al construir cada peticion. Asi el presupuesto sigue
+    al perfil activo (D-004): el portatil recorta antes que el sobremesa sin
+    que nadie tenga que acordarse de ajustarlo a mano.
+    """
+    presupuesto = int(num_ctx * _FRACCION_HISTORIAL * _CARACTERES_POR_TOKEN)
+    recortado: list[dict[str, str]] = []
+    total = 0
+    for turno in reversed(historial):
+        total += len(turno["content"])
+        if total > presupuesto and recortado:
+            break
+        recortado.append(turno)
+    recortado.reverse()
+    return recortado
+
+
 def _generador(perfil: Profile, cfg: Settings) -> TextGenerator:
     """El TextGenerator que toca segun DOOMBOT_LLM_BACKEND.
 
@@ -439,8 +472,9 @@ def _responder(sesion: Sesion, prompt: str) -> None:
             primero = False
         print(trozo, end="", flush=True)
 
+    historial = _recortar_historial(sesion.historial, sesion.perfil.llm_num_ctx)
     try:
-        trozos = sesion.gen.stream(prompt, system=system_prompt())
+        trozos = sesion.gen.stream(prompt, system=system_prompt(), historial=historial)
         if sesion.speaker is not None:
             texto = sesion.speaker.speak_stream(trozos, echo=pintar)
         else:
@@ -454,3 +488,9 @@ def _responder(sesion: Sesion, prompt: str) -> None:
         print(f"\n  {e}", file=sys.stderr)
         sesion.estado("error")
     sesion.ultima_respuesta = texto.strip()
+
+    # Un fallo deja ultima_respuesta vacia: no hay turno real que recordar, y
+    # guardarlo dejaria un hueco "assistant": "" en el proximo historial.
+    if sesion.ultima_respuesta:
+        sesion.historial.append({"role": "user", "content": sesion.entrada})
+        sesion.historial.append({"role": "assistant", "content": sesion.ultima_respuesta})

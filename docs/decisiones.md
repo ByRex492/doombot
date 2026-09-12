@@ -764,3 +764,49 @@ la construcción real de `Model` ni sus rutas. El camino feliz —fichero de la 
 test nuevo (`tests/test_wake.py`) fija el contrato con un doble de `Model` que registra los
 kwargs recibidos, para que una regresión futura —alguien que quite las rutas explícitas
 "porque ya no hacen falta"— se detecte sin necesitar un micrófono delante.
+
+---
+
+## D-026 — Continuidad de conversación: historial como mensajes, recortado por perfil
+
+**Contexto.** Marcado desde la sesión del 01/09 como "el hueco más grande para el uso por
+texto": cada pregunta llegaba al modelo sin saber nada de las anteriores. D-008 ya había fijado
+`/api/chat` sobre `/api/generate` precisamente porque es "el único endpoint que soporta
+historial de conversación", pero nunca se llegó a mandar ninguno.
+
+**Decisión.** `TextGenerator.generate`/`.stream` ganan un parámetro `historial:
+Sequence[Turno] = ()`, con `Turno = dict[str, str]` (`{"role": "user"|"assistant", "content":
+texto}`) — el mismo formato que Ollama ya monta en su lista `messages` y que Anthropic usa en
+la suya, así que ningún backend traduce nada, solo inserta los turnos entre el sistema y la
+pregunta actual (Ollama) o antes de ella (Anthropic, donde el sistema va en su propio campo,
+no como mensaje).
+
+`Sesion` (en `orders/registry.py`) guarda el historial completo (`historial: list[dict[str,
+str]]`). Se llena en un único sitio, `_responder()` en `chat.py`, con `sesion.entrada` (el texto
+crudo, no el que ya lleva pegado el contexto de memoria) y `sesion.ultima_respuesta` — y como
+`_responder` es adonde llega cualquier llamada a `sesion.responder(...)`, tanto el turno normal
+como el que dispara la orden `recall` quedan en el historial sin que su manejador sepa nada de
+esto: es la misma razón por la que D-020 inyecta `responder` en la `Sesion` en primer lugar.
+
+**Por qué no se guarda un turno cuando falla.** Un `BackendError` deja `ultima_respuesta` vacía;
+guardarlo de todos modos dejaría un hueco `{"role": "assistant", "content": ""}` en el próximo
+historial, y con él una pregunta que el modelo "respondió" con nada.
+
+**El recorte vive en `chat.py`, no en los backends.** `_recortar_historial()` guarda los turnos
+más recientes que quepan en una fracción (0,3) del `llm_num_ctx` del perfil activo, a ~4
+caracteres por token —la misma clase de aproximación que D-019 usa para el buzón, sin arrastrar
+un tokenizador solo para esto—. Que dependa del perfil (D-004) importa: el portátil recorta
+antes que el sobremesa sin que nadie tenga que acordarse de ajustarlo a mano. Se guarda el
+historial *entero* en la `Sesion` y se recorta solo al construir cada petición, así que nada se
+pierde de verdad mientras dure el proceso, aunque el modelo deje de verlo.
+
+**Verificado contra Ollama real**, no solo con dobles: "Me llamo Miguel y mi color favorito es
+el azul" en el turno uno, "¿Cómo me llamo y cuál es mi color favorito?" en el dos, con el
+historial de por medio → "Te llamas Miguel y tu color es el azul". Sin el parámetro, el modelo
+no tiene forma de saberlo.
+
+**Descartado.** Construir el historial dentro del propio `prompt` (concatenar turnos anteriores
+como texto plano, al estilo de `_con_contexto` con la memoria) en vez de como mensajes de
+verdad. Funcionaría, pero tirar por la vía que ya soporta el endpoint —la razón de ser de
+D-008— es gratis y no folclor: el modelo ve la estructura de turnos tal cual la entiende su
+propia plantilla de conversación, en vez de un bloque de texto que tiene que reinterpretar.

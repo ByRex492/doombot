@@ -39,11 +39,15 @@ class Player:
         *,
         on_level: Callable[[float], None] | None = None,
         on_idle: Callable[[], None] | None = None,
+        on_reference: Callable[[np.ndarray], None] | None = None,
         device: int | str | None = None,
     ) -> None:
         self._sr = sample_rate
         self._on_level = on_level
         self._on_idle = on_idle
+        # Lo que de verdad suena, para quien necesite cancelarlo del microfono
+        # (D-027, barge-in). Nadie mas lo necesita, de ahi que sea opcional.
+        self._on_reference = on_reference
         self._device = device
         self._cola: queue.Queue[np.ndarray | None] = queue.Queue()
         self._resto = np.zeros(0, dtype=np.float32)  # lo que sobro del ultimo trozo
@@ -131,3 +135,8 @@ class Player:
                 self._on_idle()
         if self._on_level is not None:
             self._on_level(Audio(bloque, self._sr).level() if sonando else 0.0)
+        if sonando and self._on_reference is not None:
+            # Copia: ``bloque`` puede ser una vista de ``self._resto``, que el
+            # siguiente bloque muta. El callback no puede permitirse nada
+            # pesado -quien reciba esto debe limitarse a encolarlo-.
+            self._on_reference(bloque.copy())

@@ -26,9 +26,12 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from doombot.backends.base import SpeechSynthesizer
+from doombot.voice.eco import MonitorBargeIn, ReferenciaEco
+from doombot.voice.eco import disponible as eco_disponible
 from doombot.voice.player import Player
 
 # Fin de frase: . ! ? o salto de linea, seguidos de espacio o de fin de
@@ -147,6 +150,15 @@ class Speaker:
             self._pendientes -= descartadas
         self._player.stop()
 
+    @property
+    def is_speaking(self) -> bool:
+        """True mientras quede algo por sintetizar o sonando de verdad.
+
+        Lo necesita el barge-in (D-027): mientras esto sea True hay que seguir
+        escuchando en paralelo, no esperar a ciegas a que termine.
+        """
+        return self._pendientes > 0 or self._player.is_playing
+
     def wait(self, timeout: float | None = None) -> bool:
         """Bloquea hasta que todo lo dicho haya sonado.
 
@@ -198,7 +210,17 @@ class Speaker:
         self._player.close()
 
 
-def montar_voz(hud: Any | None = None) -> Speaker | None:
+@dataclass
+class Voz:
+    """Lo que monta ``montar_voz``: quien habla y quien vigila que le hablen encima."""
+
+    speaker: Speaker
+    barge_in: MonitorBargeIn | None
+    """None si falta `pyaec` o `webrtcvad` (D-027): "para" sigue funcionando,
+    pero no el corte automatico al hablarle encima."""
+
+
+def montar_voz(hud: Any | None = None) -> Voz | None:
     """Construye sintetizador + reproductor + Speaker, o None si no se puede.
 
     Todo opcional a proposito: un equipo sin `voice-tts`, o sin los ficheros
@@ -245,5 +267,23 @@ def montar_voz(hud: Any | None = None) -> Speaker | None:
         if hud is not None:
             hud.set_caption(texto)
 
-    player = Player(synth.sample_rate, on_level=nivel, on_idle=callado)
-    return Speaker(synth, player, on_sentence=frase, silenciado=silenciado)
+    # La referencia de eco (D-027) se conecta siempre que haya voz: cuesta
+    # un hilo ocioso si nadie la usa, y sin ella el barge-in no tiene con que
+    # cancelar el eco cuando mas adelante haga falta.
+    referencia = ReferenciaEco()
+    player = Player(
+        synth.sample_rate,
+        on_level=nivel,
+        on_idle=callado,
+        on_reference=referencia.agregar,
+    )
+    speaker = Speaker(synth, player, on_sentence=frase, silenciado=silenciado)
+
+    barge_in = MonitorBargeIn(referencia) if eco_disponible() else None
+    if barge_in is None:
+        print(
+            "  (barge-in automatico no disponible: instala pyaec y webrtcvad-wheels. "
+            '"para" sigue funcionando)',
+            file=sys.stderr,
+        )
+    return Voz(speaker, barge_in)

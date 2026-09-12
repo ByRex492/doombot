@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import sys
 from dataclasses import dataclass
+from typing import Any
 
 from doombot import profiles
 from doombot.actions.claude_code import ClaudeCodeAgent
@@ -31,6 +32,7 @@ from doombot.orders import Sesion, despachar
 from doombot.paths import VAULT_DIR, inbox_dir, memory_db
 from doombot.phrases import PhraseMatcher, default_matcher
 from doombot.profiles import Profile
+from doombot.voice.eco import MonitorBargeIn
 from doombot.voice.speaker import Speaker, montar_voz
 
 
@@ -160,6 +162,8 @@ class _Motor:
     matcher: PhraseMatcher
     hud: ServidorHUD
     speaker: Speaker | None
+    barge_in: MonitorBargeIn | None
+    """None sin `pyaec`/`webrtcvad`, o directamente sin voz (D-027)."""
 
     def cerrar(self) -> None:
         if self.speaker is not None:
@@ -205,13 +209,17 @@ def _arrancar() -> _Motor | None:
 
     # La voz es opcional en cadena: sin `voice-tts`, sin los modelos de Kokoro,
     # o si algo falla al cargarlos, montar_voz devuelve None y se sigue igual.
-    speaker = montar_voz(hud)
+    voz = montar_voz(hud)
+    speaker = voz.speaker if voz is not None else None
+    barge_in = voz.barge_in if voz is not None else None
     if speaker is not None:
         print("Voz activa (Kokoro).")
+        if barge_in is not None:
+            print("Barge-in automatico activo: hablar encima corta a D.O.O.M.")
 
     print(f"D.O.O.M. · perfil {perfil.name} · {cfg.llm_backend}/{gen.model_name}")
     print(f"memoria en {memory_db()}")
-    return _Motor(perfil, cfg, gen, embedder, agente, matcher, hud, speaker)
+    return _Motor(perfil, cfg, gen, embedder, agente, matcher, hud, speaker, barge_in)
 
 
 def run() -> int:
@@ -300,12 +308,10 @@ def run_voz(*, manual: bool = False) -> int:
                 if oido.vacio:
                     continue
                 print(f"tu> {oido.text}")
+                if motor.barge_in is not None:
+                    motor.barge_in.nueva_respuesta()
                 _atender(sesion, motor.matcher, mem, oido.text)
-                # La siguiente escucha no se solapa con la respuesta: se espera
-                # a que D.O.O.M termine de hablar antes de reabrir el microfono.
-                # Sin cancelacion de eco, escuchar mientras suena el altavoz
-                # haria que se oyera a si mismo (pendiente; ver la nota de sesion).
-                motor.speaker.wait(timeout=60)
+                _esperar_hablando(motor, mic)
     except KeyboardInterrupt:
         print()
     except BackendError as e:
@@ -314,6 +320,42 @@ def run_voz(*, manual: bool = False) -> int:
     finally:
         motor.cerrar()
     return 0
+
+
+def _esperar_hablando(motor: _Motor, mic: Any) -> None:
+    """Espera a que D.O.O.M termine de hablar, escuchando por si le interrumpen.
+
+    Sin ``barge_in`` (D-027 no disponible, o sin voz), la espera de siempre:
+    a ciegas, con el microfono cerrado. Con el, el microfono se abre YA, en
+    paralelo a la respuesta: cada bloque pasa por el cancelador de eco y el
+    detector de voz (``MonitorBargeIn``), y en cuanto confirma que es voz de
+    verdad -no el eco de la propia voz de D.O.O.M-, corta en el acto
+    (``Speaker.stop()``, el mismo mecanismo que la orden "para").
+    """
+    if motor.speaker is None:
+        return
+    if motor.barge_in is None:
+        motor.speaker.wait(timeout=60)
+        return
+
+    import numpy as np
+
+    from doombot.voice.eco import MUESTRAS_BLOQUE
+
+    try:
+        with mic.abrir_flujo(MUESTRAS_BLOQUE) as flujo:
+            while motor.speaker.is_speaking:
+                datos, _ = flujo.read(MUESTRAS_BLOQUE)
+                muestras = np.asarray(datos, dtype=np.float32).reshape(-1)
+                if motor.barge_in.procesar(muestras):
+                    print("  (barge-in: te he oido, callo)")
+                    motor.speaker.stop()
+                    return
+    except BackendError as e:
+        # Un fallo del microfono aqui no debe tumbar la respuesta a medias:
+        # se sigue sin escuchar, como si no hubiera barge-in.
+        print(f"  (barge-in interrumpido: {e})", file=sys.stderr)
+        motor.speaker.wait(timeout=60)
 
 
 def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista

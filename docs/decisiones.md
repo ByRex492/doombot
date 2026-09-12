@@ -810,3 +810,90 @@ como texto plano, al estilo de `_con_contexto` con la memoria) en vez de como me
 verdad. Funcionaría, pero tirar por la vía que ya soporta el endpoint —la razón de ser de
 D-008— es gratis y no folclor: el modelo ve la estructura de turnos tal cual la entiende su
 propia plantilla de conversación, en vez de un bloque de texto que tiene que reinterpretar.
+
+---
+
+## D-027 — Barge-in real: cancelación de eco (`pyaec`) + VAD (`webrtcvad`), sin compilar nada
+
+**Contexto.** D-024 dejó pendiente "la pieza más frágil que queda": interrumpir a D.O.O.M
+hablándole encima, no solo con la orden `para`. El obstáculo de fondo es acústico, no de
+código: con el micrófono abierto mientras suena el altavoz, D.O.O.M se oye a sí mismo y
+cualquier detector de voz dispararía con su propio eco, no con el usuario.
+
+**Decisión.** Cancelación de eco (AEC) de verdad, con referencia por *loopback* de software
+—lo que `Player` manda de verdad a la tarjeta, no una suposición— y `pyaec` (bindings de
+`ctypes` a `aec-rs`, del mismo autor que `kokoro-onnx` y `espeakng-loader`) como filtro
+adaptativo. Sobre la señal ya sin eco, `webrtcvad` decide si lo que queda es voz de verdad.
+
+**Por qué estas dos librerías y no otras.** El resto de candidatas obvias —`speexdsp`,
+`webrtc-audio-processing`, el propio `webrtcvad` original— piden compilar en Windows, el mismo
+problema que D-001 fijó Python 3.12 para evitar: sin wheel, `pip` intenta compilar y falla sin
+un compilador instalado. Verificado antes de elegir, no supuesto: `pip download` sobre cada una
+mostró qué se instala de verdad en este equipo.
+
+- `pyaec` trae un `aec.dll` precompilado para `win_amd64` dentro del wheel (~180 KB): no hay
+  nada que compilar.
+- `webrtcvad-wheels` es el mismo `webrtcvad` de siempre —se importa igual, como `webrtcvad`—
+  pero publicado con wheels `cp312-win_amd64` reales, a diferencia del paquete original.
+
+**Verificado con una señal sintética antes de tocar nada real.** Un tono conocido como
+"referencia", una copia atenuada (0,6x) y retrasada como "eco" mezclada con "voz" real solo en
+la segunda mitad: el AEC atenúa el eco puro **~15,6x**, y dos tests (`test_eco.py`) fijan ese
+comportamiento contra la librería real, no contra un doble —lo que hay que verificar es si el
+algoritmo de verdad cancela, no si un mock hace lo que se le ha dicho—.
+
+**Un eco perfecto (retardo y atenuación cero) es un caso degenerado, no el más fácil.** La
+primera versión del test le daba al AEC la misma señal como referencia y como micrófono, sin
+retardo: confundía al filtro más que ayudarlo, y disparaba falsos positivos. Un eco acústico
+real siempre lleva algo de retardo y pérdida —el trayecto altavoz-aire-micrófono nunca es
+instantáneo ni perfecto—; el test se corrigió para simular eso, y ahí sí deja de disparar tras
+converger.
+
+**Arquitectura de las piezas.**
+
+```
+Player (24 kHz) --on_reference--> ReferenciaEco --remuestrea a 16 kHz--> anillo de 2 s
+                                                                              |
+Microfono (16 kHz) --bloques de 20 ms--> MonitorBargeIn.procesar() <---------+
+                                                |
+                                    Aec.cancel_echo()  ->  webrtcvad.is_speech()
+                                                |
+                              3 bloques seguidos de voz -> Speaker.stop()
+```
+
+`ReferenciaEco` vive en su propio hilo: `Player._callback` **no puede bloquear** (lo dice ya su
+propio docstring), así que solo encola el bloque en bruto; el remuestreo con `scipy` —más
+pesado que una copia— ocurre en un hilo aparte, no en el callback de audio en tiempo real.
+
+**20 ms de bloque, no los 50 ms del resto de la voz.** `webrtcvad` solo admite 10, 20 o 30 ms.
+El detector de la palabra de activación sigue con sus 50 ms —no comparten bloque, cada uno abre
+su propio flujo del micrófono en su momento—.
+
+**Tres bloques seguidos para disparar, no uno.** Un carraspeo o un resto de eco mal cancelado
+en un único bloque de 20 ms no debe cortar a D.O.O.M a media frase. El número es a ojo —medirlo
+con barge-in real, hablándole encima de verdad, queda para cuando el usuario lo pruebe con el
+micrófono conectado, igual que D-024 y D-025—.
+
+**El alcance es deliberadamente estrecho.** Interrumpir corta el audio (el mismo mecanismo que
+la orden `para`) y nada más: no se pone a escuchar automáticamente lo que sigue diciendo el
+usuario tras cortar. Para eso hace falta la palabra de activación otra vez, como con cualquier
+otro turno. Ampliarlo es una decisión aparte si hace falta, no una que convenga colar aquí.
+
+**Todo opcional en cadena, como el resto de la voz (D-021, D-023, D-024).** Sin `pyaec` o
+`webrtcvad-wheels` instalados (extra `voice-aec`), `montar_voz` sigue devolviendo un `Speaker`
+que habla; `barge_in` queda en `None` y "para" sigue siendo la única forma de cortar. Nunca
+bloquea el arranque, igual que el HUD o la propia síntesis.
+
+**De paso, `numpy` pasa a dependencia base.** Era ya una dependencia de facto desde D-023
+—`chat.py` importa `voice.speaker`→`voice.player` sin condición, y ese módulo usa `numpy` sin
+comprobarlo—, solo que nadie lo había declarado en `pyproject.toml`. Con `voice/eco.py` sumando
+otro import incondicional de la misma cadena, dejarlo sin declarar habría hecho que un
+`python -m doombot chat` sin ningún extra de voz instalado fallara al arrancar, con un
+`ModuleNotFoundError` que no señala a ninguna dependencia opcional.
+
+**Pendiente, con honestidad.** Todo lo de arriba está verificado con señales sintéticas y con
+la librería real, pero no con un micrófono y un altavoz reales en la misma sala —los que hay en
+esta máquina ahora mismo no soportan la API de lectura bloqueante que usa `Microphone`
+(WDM-KS), y el auricular Bluetooth que sí funcionaba (D-024, D-025) estaba apagado al escribir
+esto—. La prueba que de verdad importa —¿hablarle encima corta a D.O.O.M sin que se interrumpa
+solo con su propio eco?— la tiene que hacer el usuario, con el micrófono conectado.

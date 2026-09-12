@@ -15,6 +15,11 @@ requires-python = ">=3.12,<3.13"
 # error salga al instalar, con un mensaje claro, en vez de a mitad del stack.
 dependencies = [
     "httpx>=0.27",
+    # `voice/player.py` y `voice/eco.py` lo usan sin condicion -ninguno de los
+    # dos sabe si esta instalado el resto del stack de audio-, y `chat.py` los
+    # importa siempre. Declararlo aqui es lo correcto: ya era una dependencia
+    # de facto desde D-023, solo que nadie lo habia escrito todavia.
+    "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +53,18 @@ voice-tts = [
 hud = [
     "pywebview>=4.0",
     "websockets>=12.0",
+]
+# Barge-in real: hablarle encima a D.O.O.M para cortarlo (D-027). `pyaec`
+# trae un binario precompilado para Windows (sin compilador de por medio,
+# el mismo problema que D-001 evita para el resto del proyecto); igual
+# `webrtcvad-wheels` frente al `webrtcvad` original, que si pide compilar.
+# `scipy` remuestrea la referencia de eco de los 24 kHz de Kokoro a los 16
+# kHz del microfono. Aparte del resto de la voz: sin esto, "para" sigue
+# siendo la unica forma de cortar, y D.O.O.M no se calla solo.
+voice-aec = [
+    "pyaec>=1.0",
+    "webrtcvad-wheels>=2.0",
+    "scipy>=1.10",
 ]
 dev = [
     "pytest>=8.0",

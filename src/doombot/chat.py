@@ -244,6 +244,21 @@ def run() -> int:
         motor.cerrar()
 
 
+_ANCHO_BARRA = 30
+
+
+def _barra_nivel(nivel: float) -> None:
+    """Nivel del microfono en la propia consola, en vivo.
+
+    Sin esto, el modo manos libres no da ninguna pista de si esta oyendo algo
+    -el nivel solo llegaba al HUD, que hace falta abrir aparte-. Mismo dibujo
+    que ``python -m doombot micro probar``, para que sea la misma referencia
+    visual en los dos sitios.
+    """
+    lleno = int(min(1.0, nivel) * _ANCHO_BARRA)
+    print("\r  [" + "#" * lleno + " " * (_ANCHO_BARRA - lleno) + "]", end="", flush=True)
+
+
 def run_voz(*, manual: bool = False) -> int:
     """Modo manos libres: palabra de activacion, se escucha, se responde hablando.
 
@@ -288,6 +303,10 @@ def run_voz(*, manual: bool = False) -> int:
     print(f"Activacion: {detector.name}")
     print("Di la palabra de activacion y habla. Ctrl+C para salir.\n")
 
+    def nivel_escucha(v: float) -> None:
+        motor.hud.set_amplitude(v)
+        _barra_nivel(v)
+
     # Los estados de la escucha van al HUD igual que los de la respuesta: el
     # orbe muestra el turno completo, no solo la mitad hablada.
     escucha = Listener(
@@ -295,7 +314,7 @@ def run_voz(*, manual: bool = False) -> int:
         WhisperTranscriber.from_profile(motor.perfil),
         detector,
         on_state=lambda e: motor.hud.set_state(str(e)),
-        on_level=motor.hud.set_amplitude,
+        on_level=nivel_escucha,
     )
 
     try:
@@ -305,6 +324,7 @@ def run_voz(*, manual: bool = False) -> int:
             )
             motor.hud.set_state("dormido")
             for oido in escucha.listen():
+                print()  # cierra la linea de la barra de nivel, que no lleva salto
                 if oido.vacio:
                     continue
                 print(f"tu> {oido.text}")

@@ -41,6 +41,12 @@ SAMPLE_RATE = 16_000
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # int16
 
+# Umbral de pico para dar por viva una instancia de microfono al sondearla.
+# Una instancia muerta entrega pico ~0.0001; una viva, aun en sala en silencio,
+# tiene suelo de ruido por encima de 0.001. 0.0005 separa las dos sin exigir
+# que el usuario hable justo durante el sondeo (D-028).
+_PICO_VIVO = 0.0005
+
 BLOQUE_MS = 50
 BLOQUE_SEGUNDOS = BLOQUE_MS / 1000
 
@@ -194,13 +200,52 @@ class Microphone:
         # Con varias APIs de Windows el mismo microfono aparece repetido -mas
         # aun con USB/Bluetooth, que Windows reinstancia en cada reconexion
         # ("A50 Mic", "2- A50 Mic", "3- A50 Mic"...)-. Medido con un A50 real:
-        # "quedarse con el primero" no es fiable, puede ser una instancia
-        # muerta que abre sin error pero no entrega ni una muestra (pico
-        # 0.000 exacto). WASAPI es la que de verdad remuestrea con
-        # ``_wasapi_auto_convert`` y en la practica la mas consistente, asi
-        # que se prefiere si hay alguna entre los candidatos.
+        # "quedarse con el primero" no es fiable, y "el primero WASAPI" tampoco:
+        # puede haber DOS instancias WASAPI del mismo nombre, una muerta -abre
+        # sin error pero no entrega ni una muestra (pico ~0.0000)- y una viva.
+        # Asi que se prueba cada candidata y se elige la primera que de senal.
+        # WASAPI va primero en el orden porque es la que remuestrea sola
+        # (``_wasapi_auto_convert``); dentro de cada grupo, la que capte.
         wasapi = [d for d in candidatos if "wasapi" in d.api.lower()]
-        return (wasapi or candidatos)[0].index
+        resto = [d for d in candidatos if "wasapi" not in d.api.lower()]
+        ordenados = wasapi + resto
+
+        viva = next((d.index for d in ordenados if self._capta_algo(d.index)), None)
+        if viva is not None:
+            return viva
+        # Ninguna dio senal al probar -sala en silencio, o el micro esta
+        # mudo/apagado de verdad-. No es decidible aqui: se cae al criterio
+        # de antes (primera WASAPI) y que el usuario lo pruebe hablando.
+        return ordenados[0].index
+
+    def _capta_algo(self, idx: int) -> bool:
+        """True si el dispositivo entrega alguna muestra por encima del ruido.
+
+        Distingue una instancia muerta (pico plano ~0.0000) de una viva (con
+        suelo de ruido de sala, ~0.001 y picos por encima). Lee 250 ms; si
+        abrir el flujo falla -dispositivo ocupado o invalido- cuenta como no
+        viva y se pasa a la siguiente candidata.
+        """
+        if self._opener is not None:
+            return True  # en pruebas no hay hardware que sondear
+        sd = _sounddevice()
+        try:
+            api = sd.query_hostapis(sd.query_devices(idx)["hostapi"])["name"]
+            extra = sd.WasapiSettings(auto_convert=True) if "wasapi" in api.lower() else None
+            with sd.InputStream(
+                samplerate=self._samplerate,
+                channels=CHANNELS,
+                blocksize=0,
+                device=idx,
+                dtype="float32",
+                extra_settings=extra,
+            ) as flujo:
+                datos, _ = flujo.read(int(self._samplerate * 0.25))
+        except Exception:  # noqa: BLE001 - device ocupado/invalido: no viva
+            return False
+        import numpy as np
+
+        return float(np.max(np.abs(datos))) > _PICO_VIVO
 
     @property
     def device_name(self) -> str:

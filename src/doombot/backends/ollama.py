@@ -172,6 +172,27 @@ class OllamaGenerator:
         datos = self._get("/api/tags")
         return sorted(m["name"] for m in datos.get("models", []))
 
+    def precalentar(self) -> bool:
+        """Fuerza la carga del modelo en VRAM antes de que alguien pregunte algo.
+
+        Medido (D-029): un modelo que no esta en VRAM tarda 9-23 s en cargar
+        -coincide con los 23 s de D-010-, y sin esto ese coste lo paga la
+        primera pregunta real, justo cuando el usuario ya esta esperando una
+        respuesta. Aqui pasa a la fase de arranque, con un aviso en pantalla
+        en vez de un silencio que parece que no funciona.
+
+        Un solo token de verdad -no una llamada de estado- porque cargar el
+        modelo y generar son la misma operacion en Ollama: no hay un endpoint
+        aparte solo para "cargar y no generar nada".
+        """
+        try:
+            self.generate(".", system=None)
+            return True
+        except BackendError:
+            # Si falla aqui, fallara igual en la primera pregunta real: no
+            # merece la pena bloquear el arranque por esto.
+            return False
+
     # -- interno -------------------------------------------------------------
     def _cuerpo(
         self, prompt: str, system: str | None, historial: Sequence[Turno], *, stream: bool

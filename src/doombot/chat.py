@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -191,6 +192,16 @@ def _arrancar() -> _Motor | None:
         else:
             print("Ollama no responde. Arrancalo y vuelve a intentarlo.", file=sys.stderr)
         return None
+
+    if isinstance(gen, OllamaGenerator):
+        # Sin esto, la primera pregunta real paga la carga del modelo en VRAM
+        # -9-23 s medidos, D-029- justo cuando el usuario ya espera respuesta.
+        print("Cargando el modelo en la GPU...")
+        t0 = time.perf_counter()
+        if gen.precalentar():
+            print(f"  listo en {time.perf_counter() - t0:.1f}s")
+        else:
+            print("  no se pudo precalentar; la primera respuesta ira mas lenta")
 
     matcher = default_matcher()
     embedder = FastEmbedder.from_config()

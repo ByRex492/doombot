@@ -184,6 +184,26 @@ def test_stream_ignora_lineas_corruptas():
     assert list(OllamaGenerator("m", client=cliente_falso(handler)).stream("x")) == ["a"]
 
 
+# -- precalentar (D-029) ------------------------------------------------------
+def test_precalentar_genera_un_token_de_verdad():
+    """Cargar el modelo y generar son la misma operacion en Ollama."""
+    cuerpos = []
+
+    def handler(req):
+        cuerpos.append(json.loads(req.content))
+        return httpx.Response(200, json={"message": {"content": "."}})
+
+    assert OllamaGenerator("m", client=cliente_falso(handler)).precalentar() is True
+    assert len(cuerpos) == 1
+
+
+def test_precalentar_no_lanza_si_ollama_no_responde():
+    def handler(req):
+        raise httpx.ConnectError("sin conexion", request=req)
+
+    assert OllamaGenerator("m", client=cliente_falso(handler)).precalentar() is False
+
+
 # -- errores traducidos -------------------------------------------------------
 def test_sin_servidor_dice_que_hacer():
     def handler(req):

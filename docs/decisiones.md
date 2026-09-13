@@ -945,3 +945,43 @@ ese mismo índice, sin que el usuario tenga que buscarlo a mano. `tests/test_cap
 las dos decisiones con dobles (una API WASAPI falsa, una lista de candidatos con instancias
 repetidas), para que un cambio futuro en `_resolve()` no vuelva a preferir la instancia
 equivocada en silencio.
+
+---
+
+## D-029 — Precalentar Ollama al arrancar, no en la primera pregunta
+
+**Contexto.** Sesión de pruebas con voz real: respuestas que unas veces tardaban 1-2 s y otras
+9-22 s para el mismo prompt trivial, sin patrón aparente. Se sospechó primero de un modelo
+alternativo más rápido.
+
+**Medido antes de tocar nada.** Con la GPU cargada de otras aplicaciones (Steam, Epic, juegos
+de fondo), el mismo prompt osciló entre 1,6 s y 16 s. Al día siguiente, con la GPU casi vacía
+(14,8 GiB libres de 16,3, 3% de uso) y **sin ningún modelo residente en Ollama**
+(`ollama ps` vacío —el servidor lleva un rato sin recibir peticiones—), la primera llamada
+tardó **9,4 s** y las cuatro siguientes 1,2-2,6 s. La variación no era el modelo: era si estaba
+ya cargado en VRAM o no, agravado por lo que otras aplicaciones dejaran libre en ese momento.
+
+**Decisión.** No cambiar de modelo —D-009 ya midió que por encima de ~5 tok/s la velocidad de
+generación es imperceptible en voz, y cualquier modelo pagaría el mismo coste de carga en
+frío—. En su lugar, `OllamaGenerator.precalentar()` fuerza esa carga **al arrancar**
+(`_arrancar()` en `chat.py`), con un aviso en pantalla ("Cargando el modelo en la GPU...", y
+cuánto ha tardado), en vez de dejar que la pague la primera pregunta real, justo cuando el
+usuario ya está esperando una respuesta y no sabe si el asistente se ha quedado colgado.
+
+**Por qué un `generate()` de verdad y no un endpoint de "solo cargar".** En Ollama, cargar el
+modelo en VRAM y generar son la misma operación: no hay un endpoint aparte que solo cargue sin
+generar nada. Un prompt de un carácter (`"."`) paga ese coste con el mínimo de tokens posible.
+
+**Solo para Ollama.** `AnthropicGenerator` no carga ningún modelo local —vive en un servidor
+ajeno—, así que `precalentar()` no es parte del contrato `TextGenerator`: es un extra propio de
+`OllamaGenerator`, y `_arrancar()` lo detecta con `isinstance`, no con un método que todo
+backend tendría que fingir tener.
+
+**Un fallo aquí no bloquea el arranque.** Si `precalentar()` no puede completar, se avisa y se
+sigue: fallará igual en la primera pregunta real, y no hay nada que ganar deteniendo el
+programa por algo que `gen.is_available()` ya comprobó por encima una línea antes.
+
+**Verificado descargando el modelo a mano** (`keep_alive: 0` contra `/api/generate`) y
+comprobando que `_arrancar()` lo recarga solo, con el tiempo real impreso: 9,2 s, antes de que
+aparezca el mensaje de "Escribe /ayuda...". Sin esto, esos mismos 9 s los habría pagado la
+primera vez que alguien le preguntara algo por voz.

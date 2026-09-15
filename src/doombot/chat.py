@@ -66,6 +66,7 @@ Escribe lo que quieras. Se reconocen ordenes:
   olvida eso               borra el ultimo recuerdo guardado
   ejecuta esto <tarea>     delega una tarea real en el agente de acciones
   activa el flujo <nombre>  dispara un workflow de n8n de la lista blanca
+  pregunta a claude <algo>  manda esta pregunta a Claude, no al backend por defecto
   apunta el progreso <algo>  anade una nota al vault de Obsidian
   lee el archivo <cual>    lee un fichero del buzon y responde sobre el
   lee lo ultimo que te deje   el mas reciente que hayas soltado ahi

@@ -366,6 +366,12 @@ BASICAS = [
         description="Dispara un workflow de n8n de la lista blanca (D-030)",
     ),
     Command(
+        "ask_claude",
+        ("pregunta a claude", "preguntale a claude", "pregunta esto a claude"),
+        prefix=True,
+        description="Enruta esta pregunta a Claude, no al backend por defecto (D-032)",
+    ),
+    Command(
         "progress",
         ("anota el progreso", "apunta el progreso", "escribe el progreso"),
         prefix=True,

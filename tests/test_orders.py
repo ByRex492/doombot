@@ -106,3 +106,4 @@ def test_las_capas_declaran_sus_ordenes_donde_viven():
     assert donde["read_file"].startswith("doombot.files")
     assert donde["act"].startswith("doombot.actions")
     assert donde["flow"].startswith("doombot.actions")
+    assert donde["ask_claude"].startswith("doombot.backends")

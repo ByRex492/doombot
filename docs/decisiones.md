@@ -1072,3 +1072,46 @@ hace falta.
 siempre, y que negarse o no configurar nada deja la acción real sin lanzarse -en ningún caso se
 llama al agente ni a n8n-. `tests/test_phrases.py` cubre `es_afirmacion` aparte, incluida la
 palabra suelta frente al fragmento dentro de otra ("así" no es "sí").
+
+---
+
+## D-032 — Enrutador Ollama↔Claude: manual primero, automático sin decidir todavía
+
+**Contexto.** Idea anotada desde el 31/08 junto a la de n8n, y en el mismo estado: "los criterios
+de cuándo escalar a Claude son una decisión de producto, no algo que debiera decidir yo solo"
+-la sesión que lo escribió lo dijo de sí misma, y sigue siendo cierto ahora: quien construye esta
+sesión es la misma Claude a la que enrutaría, y decidir sola cuándo merece la pena invocarse a sí
+misma es exactamente el conflicto de interés que esa nota ya evitaba-.
+
+**Decisión.** Ningún criterio automático todavía. En su lugar, una orden de voz manual: "pregunta
+a Claude: `<algo>`" (`ask_claude`, `backends/orders.py`) manda esa pregunta puntual a
+`AnthropicGenerator` en vez de al backend configurado en `DOOMBOT_LLM_BACKEND`, sin cambiar cuál
+es el backend por defecto para el resto de la conversación.
+
+**Por qué no se inventan criterios ahora.** Longitud del mensaje, palabras clave, complejidad
+percibida... cualquiera de esos heurísticos se puede escribir, pero ninguno sale de una necesidad
+medida -a diferencia de, por ejemplo, D-029 (el precalentado de Ollama), que sí vino de tiempos
+reales observados-. Construir el automatismo sin ese dato sería fijar una decisión de producto
+sobre una suposición, exactamente lo que la nota original quería evitar. La orden manual deja
+resuelto lo que sí se puede resolver hoy sin adivinar nada: que el usuario pueda pedir a Claude
+cuando él -no un heurístico- decide que le importa más la calidad de razonamiento que la latencia
+o el coste.
+
+**Por qué presta el generador en vez de escribir un camino de respuesta aparte.** `_responder()`
+en `chat.py` ya sabe generar en streaming, hablar si hay voz (`Speaker.speak_stream`), e ir
+guardando el turno en `sesion.historial`; reescribir eso para un segundo backend habría duplicado
+esa lógica con el riesgo de que diverja con el tiempo. En su lugar, la orden cambia
+`sesion.gen` por un `AnthropicGenerator.from_config()` recién construido, llama a
+`sesion.responder()` -que usa `sesion.gen` internamente, sea cual sea- dentro de un `try`, y lo
+devuelve al backend original en el `finally`, pase lo que pase. El turno queda en el historial
+igual que cualquier otro; lo único que cambió fue quién lo generó.
+
+**Sin clave de Anthropic configurada, el aviso ya existe y no hay que duplicarlo.**
+`AnthropicGenerator.stream()` ya comprueba `DOOMBOT_ANTHROPIC_API_KEY` y lanza `BackendError` si
+falta (ver `backends/anthropic.py`), y `_responder()` ya sabe mostrar ese error sin propagarlo ni
+guardar un turno vacío en el historial. Repetir esa comprobación en `backends/orders.py` habría
+sido el mismo mensaje escrito dos veces.
+
+**Verificado con dobles**: `tests/test_ask_claude_order.py` comprueba que se presta un
+`AnthropicGenerator` de verdad durante el turno, que el backend original vuelve después -incluso
+si `responder()` falla a medias-, y que sin argumento no se toca nada.

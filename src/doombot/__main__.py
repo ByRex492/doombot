@@ -8,6 +8,9 @@
     python -m doombot micro probar 12   fuerza el dispositivo 12
     python -m doombot escuchar      espera la palabra de activacion y transcribe
     python -m doombot escuchar tecla   usa una pulsacion en vez de la palabra
+    python -m doombot voz           manos libres: activacion -> escucha -> LLM -> voz
+    python -m doombot voz tecla     igual, disparado con una pulsacion
+    python -m doombot voz-descargar trae los modelos de Kokoro (TTS) la primera vez
 
 El diagnostico es lo primero que conviene ejecutar al sentarse en una maquina
 distinta: dice que perfil ha elegido y por que, que es la pregunta que surge

@@ -70,7 +70,16 @@ nada:
 Ojo con el nombre: la carpeta del portátil es `doombot-local`, pero el módulo
 de Python es `doombot`. `python -m doombot`, siempre.
 
-Para trabajar también la parte de voz: `pip install -e ".[dev,voice]"`.
+Para trabajar también la parte de voz: `pip install -e ".[dev,voice]"`. Los
+extras se combinan según lo que necesites (ver `pyproject.toml`):
+
+| Extra | Trae | Para |
+|---|---|---|
+| `voice` | Whisper, wake word, embeddings, micrófono | Oír y transcribir (Capa 2) |
+| `voice-cuda` | Librerías CUDA de Whisper | Transcribir en GPU NVIDIA |
+| `voice-tts` | `kokoro-onnx` | Hablar en voz alta (D-021) |
+| `voice-aec` | Cancelación de eco + VAD | Barge-in: cortar a D.O.O.M hablándole encima (D-027) |
+| `hud` | `pywebview`, `websockets` | La ventana del HUD (D-016, D-022) |
 
 Requiere **Python 3.12** exacto. Ni 3.13 ni 3.14: el stack de audio e IA no
 publica wheels para esas versiones.
@@ -115,7 +124,7 @@ concreto:
 
 | Contrato | Qué promete | Implementación |
 |---|---|---|
-| `TextGenerator` | `generate`, `stream`, `model_name` | `OllamaGenerator` |
+| `TextGenerator` | `generate`, `stream`, `model_name` | `OllamaGenerator`, `AnthropicGenerator` |
 | `Transcriber` | `transcribe` | `WhisperTranscriber` |
 | `Embedder` | `embed`, `dimensions` | `FastEmbedder` |
 | `WakeDetector` | `check`, `reset`, `name` | `WakeWord`, `PushToTalk` |
@@ -123,6 +132,13 @@ concreto:
 Son `Protocol`, no clases base: una implementación no hereda ni importa nada,
 le basta con tener los métodos. `OllamaGenerator` sirve igual para el Ollama
 local que para el del sobremesa por red — solo cambia `DOOMBOT_OLLAMA_HOST`.
+
+**Dos `TextGenerator`, seleccionables con `DOOMBOT_LLM_BACKEND`.** Ollama es
+el que corre por defecto (D-009: latencia local, funciona sin conexión).
+`AnthropicGenerator` habla con la API de Claude por `httpx` crudo, sin el SDK,
+y pesa más la calidad de razonamiento a costa de mandar la conversación fuera
+del equipo. También se puede pedir puntualmente sin cambiar el backend por
+defecto — ver "pregunta a Claude" en Órdenes.
 
 `WhisperTranscriber` necesita el extra `voice`. Carga el modelo de forma
 perezosa, así que construirlo para leer su configuración no cuesta la carga.
@@ -190,17 +206,40 @@ micrófono: **10/10**, incluyendo casos donde Whisper transcribió "¡Dum!" por
 
 Mil reconocimientos tardan menos de un segundo.
 
+Cada capa declara las suyas en su propio `orders.py` (D-020): `chat.py` no es
+el cuello de botella por el que pasa toda orden nueva. Además de las básicas
+de arriba:
+
+| Orden | Qué hace | Capa |
+|---|---|---|
+| `recuerda que yo <algo>` | Guarda un hecho SOBRE el usuario, siempre presente en el prompt | `memory` |
+| `ejecuta esto: <tarea>` | Delega una tarea real en Claude Code (`claude -p`, modo `plan` por defecto) | `actions` |
+| `activa el flujo: <nombre>` | Dispara un *workflow* de n8n de la lista blanca (D-030) | `actions` |
+| `pregunta a claude: <algo>` | Manda esta pregunta a Claude, sin cambiar el backend por defecto (D-032) | `backends` |
+| `apunta el progreso: <algo>` | Añade una nota al vault de Obsidian del día | `obsidian` |
+| `lee el archivo <cuál>` | Lee un fichero del buzón (`data_dir()/buzon`) y responde sobre él | `files` |
+
+**`ejecuta esto` y `activa el flujo` piden confirmación hablada antes de
+tocar nada de verdad** (D-031) — salvo `ejecuta esto` en modo `plan`, donde ya
+no hay nada real que confirmar porque el agente solo propone. Silencio o
+cualquier respuesta que no sea una afirmación clara ("sí", "confirmo",
+"adelante"...) se toma como negativa.
+
 ## Voz
 
-D.O.O.M escucha. El bucle es una máquina de estados:
+D.O.O.M escucha y, con `voice-tts` instalado, también habla. El bucle manos
+libres cierra las dos mitades:
 
-    DORMIDO --activación--> ESCUCHANDO --silencio--> TRANSCRIBIENDO --> DORMIDO
+    DORMIDO --activación--> ESCUCHANDO --silencio--> TRANSCRIBIENDO --> LLM --> HABLANDO --> DORMIDO
 
 ```powershell
-.\doom escuchar          # espera "hey jarvis"
-.\doom escuchar tecla    # se dispara con una pulsación
-.\doom micro             # lista los micrófonos
-.\doom micro probar 12   # graba con un dispositivo concreto
+.\doom voz               # manos libres: activación -> escucha -> LLM -> voz
+.\doom voz tecla          # igual, disparado con una pulsación en vez de la palabra
+.\doom voz-descargar      # trae los modelos de Kokoro la primera vez
+.\doom escuchar           # solo la mitad de oír, sin responder en voz
+.\doom escuchar tecla     # se dispara con una pulsación
+.\doom micro              # lista los micrófonos
+.\doom micro probar 12    # graba con un dispositivo concreto
 ```
 
 La palabra de activación (`openWakeWord`, modelo `hey_jarvis`) está siempre
@@ -210,6 +249,42 @@ además transcribiría todo lo que se hable en la habitación.
 
 `PushToTalk` cumple el mismo contrato y sirve para depurar sin depender de que
 el detector te oiga.
+
+**La síntesis** (`tts/synth.py`) usa Kokoro por ONNX Runtime en CPU, con
+troceo por frase propio (D-021): la primera frase se sintetiza mientras el
+LLM sigue generando el resto, así la voz no espera la respuesta entera.
+
+**Barge-in real** (D-027, extra `voice-aec`): hablarle encima a D.O.O.M lo
+corta al instante — cancelación de eco (`pyaec`) + detector de voz
+(`webrtcvad`), sin necesitar la palabra de activación de nuevo. Sin ese extra,
+"para" (D-023) sigue siendo la forma de cortarlo.
+
+## Interfaz (HUD)
+
+Extra `hud`. Una ventana de escritorio (`pywebview`) con un orbe que refleja
+el estado del turno — escuchando, pensando, hablando — servida por
+`hud_server.py` vía WebSocket (D-016, D-022). Es opcional en los dos sentidos:
+sin el extra instalado no se intenta arrancar, y si el puerto está ocupado
+D.O.O.M sigue igual sin ella.
+
+## Acciones
+
+D.O.O.M puede tocar el mundo real, de dos formas con riesgos distintos (ver
+`docs/estructura.md`):
+
+- **`actions/claude_code.py`** delega tareas de código -editar ficheros,
+  ejecutar comandos- en `claude -p`, sin interfaz. Modo `plan` por defecto:
+  propone sin ejecutar nada; pasar a uno que ejecuta de verdad
+  (`DOOMBOT_AGENT_PERMISSION_MODE=acceptEdits` o `bypassPermissions`) es una
+  decisión explícita en `.env`, nunca el valor de fábrica (D-014).
+- **`actions/n8n.py`** dispara *workflows* de n8n por webhook (D-030). D.O.O.M
+  siempre inicia, n8n nunca — no hay servidor nuevo escuchando entradas
+  ajenas. Un webhook no tiene modo `plan`, así que la salvaguarda es una lista
+  blanca en `.env` (`DOOMBOT_N8N_WORKFLOWS`): un nombre que no esté ahí no
+  dispara nada.
+
+Ambas piden confirmación hablada antes de ejecutar de verdad (D-031, ver
+Órdenes arriba).
 
 ## Desarrollo
 

@@ -35,7 +35,9 @@ doombot/
 │   │   ├── dsp.py       Procesado sutil: corte de graves y sala pequeña
 │   │   └── download.py  Trae los ficheros del modelo la primera vez
 │   ├── actions/         Capa de acciones: tareas reales, no solo respuestas
-│   │   └── claude_code.py  Delega en `claude -p`, headless (+ orders.py)
+│   │   ├── claude_code.py  Delega en `claude -p`, headless
+│   │   ├── n8n.py       Dispara workflows por webhook, lista blanca (D-030)
+│   │   └── orders.py    `act` y `flow`
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon
@@ -137,6 +139,14 @@ deshacer; `plan` hace que el agente proponga sin tocar nada. Pasar a un modo
 que ejecuta (`acceptEdits`, `bypassPermissions`) es una decisión que toma
 quien instala D.O.O.M en `DOOMBOT_AGENT_PERMISSION_MODE`, nunca el valor de
 fábrica.
+
+**`actions/n8n.py` es la segunda forma de actuar, con un riesgo distinto
+(D-030).** Dispara workflows de n8n por webhook -"activa el flujo:
+`<nombre>`"-, pero D.O.O.M nunca recibe órdenes de n8n, solo se las manda: no
+hay servidor nuevo escuchando entradas ajenas. Un webhook no tiene modo
+`plan` -ejecuta en cuanto llega la petición-, así que la salvaguarda no es un
+nivel de permiso sino una lista blanca en `.env`
+(`DOOMBOT_N8N_WORKFLOWS`): un nombre que no esté ahí no dispara nada.
 
 ## El vault de Obsidian
 

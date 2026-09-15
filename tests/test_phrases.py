@@ -15,6 +15,7 @@ from doombot.phrases import (
     Command,
     PhraseMatcher,
     default_matcher,
+    es_afirmacion,
     normalize,
     similarity,
 )
@@ -313,3 +314,23 @@ def test_partir_cuenta_palabras():
     assert _partir_original("Recuerda que Python 3.12", 2) == "Python 3.12"
     assert _partir_original("uno dos tres", 1) == "dos tres"
     assert _partir_original("uno dos", 5) == ""
+
+
+# ============================================================ es_afirmacion (D-031)
+@pytest.mark.parametrize(
+    "texto",
+    ["si", "Sí", "confirmo", "¡Adelante!", "hazlo", "sí, confirmo", "vale, dale"],
+)
+def test_es_afirmacion_reconoce_las_formas_de_decir_si(texto):
+    assert es_afirmacion(texto) is True
+
+
+@pytest.mark.parametrize("texto", ["no", "para", "cancela", "", "  ", "quizas mas tarde"])
+def test_es_afirmacion_todo_lo_demas_es_negativo(texto):
+    """Silencio o duda cuentan como "no": es la opcion segura antes de una accion real."""
+    assert es_afirmacion(texto) is False
+
+
+def test_es_afirmacion_no_se_cuela_dentro_de_otra_palabra():
+    """'si' tiene que ser una palabra suelta, no un fragmento de "asi" o "casi"."""
+    assert es_afirmacion("asi no, mejor casi nunca") is False

@@ -1029,3 +1029,46 @@ porque los dos son la capa que toca el mundo real, no porque compartan implement
 **Verificado sin n8n real delante**, con el mismo criterio que `test_ollama.py`: un cliente HTTP
 falso en `tests/test_n8n.py` comprueba la resolución contra la lista blanca, el aviso cuando el
 nombre no está en ella, y que no se construye ninguna URL a partir de texto sin verificar.
+
+---
+
+## D-031 — Confirmación hablada antes de una acción real
+
+**Contexto.** D-017 dejó anotado un pendiente: "confirmación hablada extra antes de que 'act'
+ejecute de verdad, una vez exista la capa de voz completa". La voz ya está cerrada de punta a
+punta (TTS, HUD, barge-in), así que la condición que lo bloqueaba ya no aplica. Con D-030 además
+hay una segunda acción real -disparar un *workflow* de n8n- con el mismo problema: nada evita
+que una orden de voz mal reconocida la dispare.
+
+**Decisión.** Antes de ejecutar de verdad, se pregunta y se espera una confirmación explícita:
+
+- `act`: solo si `DOOMBOT_AGENT_PERMISSION_MODE` no es `plan`. En `plan` el agente ya propone sin
+  tocar nada (D-014); preguntar además sería un paso de más sin nada real que proteger.
+- `flow`: siempre. Un webhook de n8n no tiene un modo `plan` equivalente (D-030), así que aquí la
+  confirmación **es** la única salvaguarda además de la lista blanca.
+
+Silencio, "no", o cualquier respuesta que no sea una afirmación reconocida (`phrases.es_afirmacion`:
+"sí", "confirmo", "adelante", "hazlo"...) cuenta como negativa. Ante la duda de si se entendió
+bien la respuesta, no ejecutar es la opción segura -mismo criterio que el umbral de similitud de
+la memoria (D-015): preferible no actuar a actuar sobre algo que no se confirmó con claridad-.
+
+**Cómo se pregunta y se escucha, sin repetir la palabra de activación.** `Sesion.preguntar` ya
+existía como costura -la usa `read_file` para "¿qué quieres saber de él?"-, pero en voz estaba
+fijada a `input()`, que bloquea el hilo esperando teclado y no tiene sentido en manos libres. En
+modo voz (`chat.py: run_voz`), `preguntar` pasa a ser un cierre que dice la pregunta con el
+`Speaker` ya montado y graba con `Microphone.record_until_silence()` -el mismo micrófono y el
+mismo `WhisperTranscriber` del `Listener`, no una segunda instancia-, sin pasar por el detector de
+palabra de activación: seguir en el mismo turno de conversación es lo que permite responder
+"confirmo" sin decir "DOOM" otra vez. El modo escrito sigue usando `input()` sin cambios.
+
+**Por qué una intersección de conjuntos y no el mismo aparato de erratas que `PhraseMatcher`.**
+Una respuesta de confirmación es una o dos palabras, no una frase larga con margen para que el
+parecido difuso aporte algo; comparar contra un conjunto fijo de afirmaciones normalizadas
+(`es_afirmacion`) es suficiente y no arrastra el umbral de erratas (D-013) a un sitio donde no
+hace falta.
+
+**Verificado con dobles**, sin agente ni n8n real: `tests/test_actions_orders.py` comprueba que
+`plan` no pregunta, que un modo que ejecuta sí y respeta la respuesta, que `flow` pregunta
+siempre, y que negarse o no configurar nada deja la acción real sin lanzarse -en ningún caso se
+llama al agente ni a n8n-. `tests/test_phrases.py` cubre `es_afirmacion` aparte, incluida la
+palabra suelta frente al fragmento dentro de otra ("así" no es "sí").

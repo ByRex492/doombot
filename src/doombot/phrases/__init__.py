@@ -24,6 +24,7 @@ from doombot.phrases.matcher import (
     Match,
     PhraseMatcher,
     default_matcher,
+    es_afirmacion,
     normalize,
     similarity,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "Match",
     "PhraseMatcher",
     "default_matcher",
+    "es_afirmacion",
     "normalize",
     "similarity",
 ]

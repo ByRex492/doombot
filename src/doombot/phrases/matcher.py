@@ -64,6 +64,27 @@ def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
+# Para "¿confirmas?": una palabra sola basta como respuesta, y la duda no es
+# entre negacion y afirmacion exactas -la mayoria de erratas de Whisper en una
+# respuesta de una palabra no la convierten en otra palabra real de la lista
+# contraria-, asi que aqui no hace falta el mismo aparato de erratas que
+# PhraseMatcher. Interseccion de conjuntos de palabras: simple y suficiente
+# para una respuesta de una o dos palabras.
+_AFIRMATIVAS = frozenset(
+    {"si", "confirmo", "adelante", "hazlo", "vale", "claro", "dale", "afirmativo"}
+)
+
+
+def es_afirmacion(texto: str) -> bool:
+    """True si ``texto`` es una respuesta afirmativa a una pregunta de confirmacion.
+
+    Se usa para "¿confirmas?" antes de una accion real (D-031): silencio, "no",
+    o cualquier otra cosa que no este en la lista se toma como negativa. Ante
+    la duda, no ejecutar es la opcion segura.
+    """
+    return bool(set(normalize(texto).split()) & _AFIRMATIVAS)
+
+
 @dataclass(frozen=True)
 class Command:
     """Una orden y las formas de decirla.

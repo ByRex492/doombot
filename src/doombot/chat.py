@@ -326,15 +326,35 @@ def run_voz(*, manual: bool = False) -> int:
         motor.hud.set_amplitude(v)
         _barra_nivel(v)
 
+    transcriber = WhisperTranscriber.from_profile(motor.perfil)
+
     # Los estados de la escucha van al HUD igual que los de la respuesta: el
     # orbe muestra el turno completo, no solo la mitad hablada.
     escucha = Listener(
         mic,
-        WhisperTranscriber.from_profile(motor.perfil),
+        transcriber,
         detector,
         on_state=lambda e: motor.hud.set_state(str(e)),
         on_level=nivel_escucha,
     )
+
+    def preguntar_voz(pregunta: str) -> str:
+        """``Sesion.preguntar`` en modo manos libres: lo dice y escucha la respuesta.
+
+        No hace falta repetir la palabra de activacion -seguimos en el mismo
+        turno-, asi que graba directo con el propio microfono en vez de pasar
+        por el Listener. Sin voz de salida activa (``motor.speaker is None``)
+        este cierre no se usa: ``run_voz`` ya exige altavoz para arrancar.
+        """
+        motor.hud.set_state("hablando")
+        motor.speaker.say(pregunta)  # type: ignore[union-attr]
+        motor.speaker.wait(timeout=30)  # type: ignore[union-attr]
+        motor.hud.set_state("escuchando")
+        with mic.record_until_silence(on_level=nivel_escucha) as grabacion:
+            motor.hud.set_state("dormido")
+            if grabacion.parece_mudo:
+                return ""
+            return transcriber.transcribe(grabacion.path)
 
     try:
         with Memory(motor.embedder) as mem:
@@ -347,6 +367,7 @@ def run_voz(*, manual: bool = False) -> int:
                 motor.n8n,
                 motor.hud,
                 motor.speaker,
+                preguntar=preguntar_voz,
             )
             motor.hud.set_state("dormido")
             for oido in escucha.listen():
@@ -467,14 +488,15 @@ def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
             _atender(sesion, matcher, mem, entrada)
 
 
-def _montar_sesion(gen, mem, cfg, perfil, agente, n8n, hud, speaker) -> Sesion:
+def _montar_sesion(gen, mem, cfg, perfil, agente, n8n, hud, speaker, *, preguntar=input) -> Sesion:
     """Una sola Sesion para toda la conversacion, escrita o hablada.
 
     Los manejadores la mutan (que se guardo lo ultimo, que se respondio) y el
     bucle no necesita saber cuales de ellos lo hacen. Se saca aqui porque el
     modo texto y el de voz la construyen igual: lo unico que cambia entre
-    ellos es de donde sale ``entrada`` y a donde va la respuesta, y de eso ya
-    se encargan ``preguntar`` y ``responder``.
+    ellos es de donde sale ``entrada`` y a donde va la respuesta -de eso ya se
+    encargan ``preguntar`` y ``responder``-, y el modo escrito le basta con
+    ``input`` mientras que el hablado necesita decir la pregunta y escuchar.
     """
     sesion = Sesion(
         gen=gen,
@@ -487,7 +509,7 @@ def _montar_sesion(gen, mem, cfg, perfil, agente, n8n, hud, speaker) -> Sesion:
         hud=hud,
         responder=lambda prompt: _responder(sesion, prompt),
         con_contexto=lambda pregunta, *extra: _con_contexto(mem, pregunta, *extra),
-        preguntar=input,
+        preguntar=preguntar,
     )
     return sesion
 

@@ -11,5 +11,6 @@ que hasta ahora declaraba -con razon- que D.O.O.M no podia tocar nada.
 """
 
 from doombot.actions.claude_code import AgentResult, ClaudeCodeAgent
+from doombot.actions.n8n import N8nClient, WorkflowResult
 
-__all__ = ["AgentResult", "ClaudeCodeAgent"]
+__all__ = ["AgentResult", "ClaudeCodeAgent", "N8nClient", "WorkflowResult"]

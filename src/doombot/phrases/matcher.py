@@ -339,6 +339,12 @@ BASICAS = [
         description="Delega una tarea real en el agente de acciones",
     ),
     Command(
+        "flow",
+        ("activa el flujo",),
+        prefix=True,
+        description="Dispara un workflow de n8n de la lista blanca (D-030)",
+    ),
+    Command(
         "progress",
         ("anota el progreso", "apunta el progreso", "escribe el progreso"),
         prefix=True,

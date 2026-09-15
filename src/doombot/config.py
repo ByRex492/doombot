@@ -76,6 +76,19 @@ class Settings:
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
 
+    n8n_base_url: str = ""
+    """Raiz del servidor de n8n, ej. ``http://127.0.0.1:5678``. Vacio = sin n8n."""
+    n8n_workflows: tuple[tuple[str, str], ...] = ()
+    """Lista blanca: nombre hablado -> ruta del webhook (D-030).
+
+    Tupla de pares y no ``dict`` por el mismo motivo que ``agent_allowed_tools``:
+    ``Settings`` es ``frozen`` y un campo mutable rompe esa garantia. Un
+    webhook de n8n no tiene modo "plan" -ejecuta en cuanto llega la peticion-,
+    asi que a diferencia del agente de acciones aqui no hay nivel de permiso
+    que suavice la ejecucion: la unica salvaguarda es que el nombre hablado
+    tenga una entrada aqui.
+    """
+
     @property
     def is_remote_ollama(self) -> bool:
         """True si apuntamos al Ollama de otra maquina.
@@ -85,6 +98,22 @@ class Settings:
         vez de dejar que parezca que el modelo va lento.
         """
         return not any(x in self.ollama_host for x in ("127.0.0.1", "localhost", "::1"))
+
+
+def _parse_n8n_workflows(raw: str) -> tuple[tuple[str, str], ...]:
+    """``"backup:webhook/x,riego:webhook/y"`` -> ``(("backup","webhook/x"), ...)``.
+
+    Un par mal formado -sin ``:``, o con el nombre o la ruta vacios- se
+    descarta en vez de fallar: un error de sintaxis en ``.env`` no debe
+    impedir arrancar D.O.O.M, solo dejar ese workflow fuera de la lista.
+    """
+    pares = []
+    for trozo in raw.split(","):
+        nombre, _, ruta = trozo.strip().partition(":")
+        nombre, ruta = nombre.strip(), ruta.strip()
+        if nombre and ruta:
+            pares.append((nombre, ruta))
+    return tuple(pares)
 
 
 @lru_cache(maxsize=1)
@@ -101,4 +130,6 @@ def settings() -> Settings:
         llm_backend=os.environ.get("DOOMBOT_LLM_BACKEND", "ollama").strip().lower(),
         anthropic_api_key=os.environ.get("DOOMBOT_ANTHROPIC_API_KEY", "").strip(),
         anthropic_model=os.environ.get("DOOMBOT_ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
+        n8n_base_url=os.environ.get("DOOMBOT_N8N_BASE_URL", "").strip().rstrip("/"),
+        n8n_workflows=_parse_n8n_workflows(os.environ.get("DOOMBOT_N8N_WORKFLOWS", "").strip()),
     )

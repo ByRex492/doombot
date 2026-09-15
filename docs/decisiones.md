@@ -985,3 +985,47 @@ programa por algo que `gen.is_available()` ya comprobó por encima una línea an
 comprobando que `_arrancar()` lo recarga solo, con el tiempo real impreso: 9,2 s, antes de que
 aparezca el mensaje de "Escribe /ayuda...". Sin esto, esos mismos 9 s los habría pagado la
 primera vez que alguien le preguntara algo por voz.
+
+---
+
+## D-030 — n8n: D.O.O.M dispara workflows, nunca al revés
+
+**Contexto.** Idea anotada desde la sesión de Linux del 31/08 y dejada sin decidir a propósito:
+n8n corre en ese equipo (`~/n8n`, Docker, puerto 5678) con automatizaciones reales conectadas
+—no un entorno de pruebas—, y había dos direcciones posibles: D.O.O.M dispara *workflows* de
+n8n, o n8n dispara acciones de D.O.O.M por *webhook*.
+
+**Decisión.** Solo la primera dirección, por ahora. D.O.O.M expone una orden de voz nueva,
+`"activa el flujo: <nombre>"` (`phrases/matcher.py`, orden `flow`), que llama a un webhook de
+n8n vía `actions/n8n.py` (`N8nClient`). n8n nunca inicia nada en D.O.O.M: no hay servidor HTTP
+nuevo escuchando entradas ajenas, solo un cliente que sale.
+
+**Por qué esta dirección y no la otra.** La dirección contraria —n8n disparando acciones de
+D.O.O.M— exige que D.O.O.M reaccione a eventos externos sin que nadie lo haya pedido por voz: si
+suena por sí solo estando el usuario delante o no, en qué máquina, y qué hace si nadie contesta
+son preguntas de producto reales, no solo técnicas, y no estaban respondidas. La dirección
+elegida no las plantea: el usuario sigue siendo quien inicia todo, igual que con `act` (D-014).
+
+**El problema real: un webhook no tiene modo `plan`.** El agente de acciones (D-014) tiene un
+modo por defecto que propone sin ejecutar, pensado exactamente para esto: una orden de voz mal
+reconocida no debe disparar algo real. Un webhook de n8n no tiene ese punto intermedio —en
+cuanto llega la petición, el *workflow* corre—, así que la misma salvaguarda no se puede
+replicar ahí.
+
+**La salvaguarda es una lista blanca, no la URL construida del nombre dicho.** `N8nClient`
+resuelve el nombre hablado contra `DOOMBOT_N8N_WORKFLOWS` (`.env`, pares `nombre:ruta`) y solo
+llama al webhook si hay una entrada exacta, tras normalizar igual que el resto de órdenes de voz
+(`phrases.matcher.normalize`, D-013 y anteriores: sin tildes, mayúsculas ni puntuación, tolerante
+a lo que devuelve Whisper). Construir la URL directamente del nombre dicho —`{base_url}/webhook/
+{nombre}`— se descartó: un fallo de reconocimiento podría entonces disparar cualquier webhook
+cuyo nombre coincidiera por casualidad, sin que existiera ningún punto donde decir que no.
+
+**Por qué no vive dentro de `claude_code.py`.** Son dos formas de "actuar" con perfiles de
+riesgo distintos —una tiene modo `plan`, la otra no puede tenerlo— y mezclarlas en una sola clase
+habría ocultado esa diferencia. `actions/n8n.py` es su propio módulo, con su propia orden
+(`flow`, separada de `act`) y su propio manejador en `actions/orders.py`; ambos comparten paquete
+porque los dos son la capa que toca el mundo real, no porque compartan implementación.
+
+**Verificado sin n8n real delante**, con el mismo criterio que `test_ollama.py`: un cliente HTTP
+falso en `tests/test_n8n.py` comprueba la resolución contra la lista blanca, el aviso cuando el
+nombre no está en ella, y que no se construye ninguna URL a partir de texto sin verificar.

@@ -19,6 +19,7 @@ from typing import Any
 
 from doombot import profiles
 from doombot.actions.claude_code import ClaudeCodeAgent
+from doombot.actions.n8n import N8nClient
 from doombot.backends.anthropic import AnthropicGenerator
 from doombot.backends.base import BackendError, TextGenerator
 from doombot.backends.embeddings import FastEmbedder
@@ -64,6 +65,7 @@ Escribe lo que quieras. Se reconocen ordenes:
   que sabes sobre <algo>   lo busca y responde con lo que encuentre
   olvida eso               borra el ultimo recuerdo guardado
   ejecuta esto <tarea>     delega una tarea real en el agente de acciones
+  activa el flujo <nombre>  dispara un workflow de n8n de la lista blanca
   apunta el progreso <algo>  anade una nota al vault de Obsidian
   lee el archivo <cual>    lee un fichero del buzon y responde sobre el
   lee lo ultimo que te deje   el mas reciente que hayas soltado ahi
@@ -160,6 +162,7 @@ class _Motor:
     gen: TextGenerator
     embedder: FastEmbedder
     agente: ClaudeCodeAgent
+    n8n: N8nClient
     matcher: PhraseMatcher
     hud: ServidorHUD
     speaker: Speaker | None
@@ -208,6 +211,10 @@ def _arrancar() -> _Motor | None:
     # Construirlo no lanza ningun proceso -eso solo pasa en .run()-, asi que se
     # crea siempre, se use o no en esta sesion.
     agente = ClaudeCodeAgent.from_config(cfg)
+    # Mismo criterio: construir el cliente no dispara ningun webhook. Sin
+    # DOOMBOT_N8N_BASE_URL, la orden "flow" avisa con un mensaje claro en vez
+    # de fallar al arrancar (D-030).
+    n8n = N8nClient.from_config(cfg)
 
     # El HUD es opcional en los dos sentidos: sin el extra `hud` instalado no se
     # intenta siquiera (disponible=False), y si el puerto esta ocupado start()
@@ -230,7 +237,7 @@ def _arrancar() -> _Motor | None:
 
     print(f"D.O.O.M. · perfil {perfil.name} · {cfg.llm_backend}/{gen.model_name}")
     print(f"memoria en {memory_db()}")
-    return _Motor(perfil, cfg, gen, embedder, agente, matcher, hud, speaker, barge_in)
+    return _Motor(perfil, cfg, gen, embedder, agente, n8n, matcher, hud, speaker, barge_in)
 
 
 def run() -> int:
@@ -245,6 +252,7 @@ def run() -> int:
             motor.gen,
             motor.embedder,
             motor.agente,
+            motor.n8n,
             motor.matcher,
             motor.perfil,
             motor.cfg,
@@ -331,7 +339,14 @@ def run_voz(*, manual: bool = False) -> int:
     try:
         with Memory(motor.embedder) as mem:
             sesion = _montar_sesion(
-                motor.gen, mem, motor.cfg, motor.perfil, motor.agente, motor.hud, motor.speaker
+                motor.gen,
+                mem,
+                motor.cfg,
+                motor.perfil,
+                motor.agente,
+                motor.n8n,
+                motor.hud,
+                motor.speaker,
             )
             motor.hud.set_state("dormido")
             for oido in escucha.listen():
@@ -393,6 +408,7 @@ def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
     gen: TextGenerator,
     embedder: FastEmbedder,
     agente: ClaudeCodeAgent,
+    n8n: N8nClient,
     matcher: PhraseMatcher,
     perfil: Profile,
     cfg: Settings,
@@ -400,7 +416,7 @@ def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
     speaker: Speaker | None,
 ) -> int:
     with Memory(embedder) as mem:
-        sesion = _montar_sesion(gen, mem, cfg, perfil, agente, hud, speaker)
+        sesion = _montar_sesion(gen, mem, cfg, perfil, agente, n8n, hud, speaker)
         hud.set_state("dormido")
         while True:
             try:
@@ -451,7 +467,7 @@ def _bucle(  # noqa: C901 - es un despachador, la longitud es la propia lista
             _atender(sesion, matcher, mem, entrada)
 
 
-def _montar_sesion(gen, mem, cfg, perfil, agente, hud, speaker) -> Sesion:
+def _montar_sesion(gen, mem, cfg, perfil, agente, n8n, hud, speaker) -> Sesion:
     """Una sola Sesion para toda la conversacion, escrita o hablada.
 
     Los manejadores la mutan (que se guardo lo ultimo, que se respondio) y el
@@ -466,6 +482,7 @@ def _montar_sesion(gen, mem, cfg, perfil, agente, hud, speaker) -> Sesion:
         cfg=cfg,
         perfil=perfil,
         agente=agente,
+        n8n=n8n,
         speaker=speaker,
         hud=hud,
         responder=lambda prompt: _responder(sesion, prompt),

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from doombot.actions.claude_code import ClaudeCodeAgent
+    from doombot.actions.n8n import N8nClient
     from doombot.backends.base import TextGenerator
     from doombot.config import Settings
     from doombot.hud_server import ServidorHUD
@@ -47,6 +48,10 @@ class Sesion:
     # ninguna de las dos. Quien las tenga las usa; quien no, las ve a None.
     speaker: Speaker | None = None
     hud: ServidorHUD | None = None
+
+    # n8n tambien es opcional: sin DOOMBOT_N8N_BASE_URL, la orden "flow" avisa
+    # en vez de fallar (D-030).
+    n8n: N8nClient | None = None
 
     entrada: str = ""  # lo que se escribió tal cual, sin recortar la orden
     ultimo_guardado: int | None = None

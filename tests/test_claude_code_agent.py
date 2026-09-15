@@ -79,7 +79,9 @@ def test_el_comando_lleva_los_flags_correctos():
         capturado["kwargs"] = kwargs
         return ProcesoFalso(stdout=json.dumps({"result": "ok", "is_error": False}))
 
-    agente = ClaudeCodeAgent(runner=runner_falso(handler))
+    # resolver=lambda *_: None para que el test no dependa de si "claude" esta
+    # de verdad en el PATH de la maquina que lo corre.
+    agente = ClaudeCodeAgent(runner=runner_falso(handler), resolver=lambda _: None)
     agente.run("arregla el bug de X")
 
     cmd = capturado["cmd"]
@@ -89,6 +91,51 @@ def test_el_comando_lleva_los_flags_correctos():
     assert "--permission-mode" in cmd and "plan" in cmd
     assert capturado["kwargs"]["capture_output"] is True
     assert capturado["kwargs"]["text"] is True
+
+
+def test_binario_se_resuelve_con_pathext():
+    """En Windows, `claude` (sin extension) resuelve a `claude.cmd` via PATHEXT.
+
+    CreateProcess no prueba extensiones por su cuenta -a diferencia de cmd.exe-,
+    asi que sin esta resolucion `subprocess.run(["claude", ...])` falla con
+    FileNotFoundError aunque `claude.cmd` este en el PATH y funcione desde una
+    consola interactiva. shutil.which() (aqui, un resolver falso que imita su
+    contrato) es quien conoce PATHEXT.
+    """
+    capturado = {}
+
+    def handler(cmd, kwargs):
+        capturado["cmd"] = cmd
+        return ProcesoFalso(stdout=json.dumps({"result": "ok", "is_error": False}))
+
+    ruta_resuelta = r"C:\Users\migue\AppData\Roaming\npm\claude.cmd"
+    agente = ClaudeCodeAgent(
+        runner=runner_falso(handler),
+        resolver=lambda binario: ruta_resuelta if binario == "claude" else None,
+    )
+    agente.run("x")
+    assert capturado["cmd"][0] == ruta_resuelta
+
+
+def test_binario_no_resoluble_se_deja_tal_cual():
+    """Ruta absoluta ya dada, o binario que no existe: sin tocar, como antes.
+
+    run() sigue traduciendo el FileNotFoundError resultante a un mensaje
+    legible (ver test_binario_ausente_apunta_a_la_variable_de_entorno).
+    """
+    capturado = {}
+
+    def handler(cmd, kwargs):
+        capturado["cmd"] = cmd
+        return ProcesoFalso(stdout=json.dumps({"result": "ok", "is_error": False}))
+
+    agente = ClaudeCodeAgent(
+        binary="/opt/claude/claude",
+        runner=runner_falso(handler),
+        resolver=lambda _: None,
+    )
+    agente.run("x")
+    assert capturado["cmd"][0] == "/opt/claude/claude"
 
 
 def test_sin_allowed_tools_no_manda_el_flag():

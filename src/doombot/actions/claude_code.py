@@ -22,6 +22,7 @@ no algo que este modulo decida por el.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,13 +65,23 @@ class ClaudeCodeAgent:
         allowed_tools: list[str] | None = None,
         timeout: float = _TIMEOUT_DEFECTO,
         runner: Callable[..., Any] | None = None,
+        resolver: Callable[[str], str | None] | None = None,
     ) -> None:
         if permission_mode not in _MODOS_VALIDOS:
             raise ValueError(
                 f"permission_mode={permission_mode!r} no es valido. "
                 f"Opciones: {', '.join(_MODOS_VALIDOS)}."
             )
-        self._binary = binary
+        # CreateProcess (lo que usa subprocess.run sin shell=True en Windows) no
+        # prueba las extensiones de PATHEXT como hace cmd.exe: "claude" no
+        # resuelve a "claude.cmd" aunque este en el PATH y funcione desde una
+        # consola interactiva. shutil.which() si conoce PATHEXT, asi que
+        # resolvemos aqui, una vez, y pasamos el nombre ya completo a
+        # subprocess.run. Si no encuentra nada -ruta absoluta ya dada, binario
+        # ausente de verdad- se deja tal cual: run() lo intenta igual y traduce
+        # el FileNotFoundError a un mensaje legible.
+        self._resolver = resolver or shutil.which
+        self._binary = self._resolver(binary) or binary
         self._cwd = cwd
         self._permission_mode = permission_mode
         self._allowed_tools = allowed_tools

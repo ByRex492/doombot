@@ -205,7 +205,10 @@ def test_entre_varias_apis_prefiere_wasapi(monkeypatch):
             InputDevice(55, "auriculares (A50 Mic)", "Windows WDM-KS", 1),
         ],
     )
-    assert Microphone("a50").device == 32
+    # opener presente: _capta_algo() no sondea sounddevice de verdad (ver su
+    # docstring), asi que el orden que decide es el de _resolve(), no lo que
+    # capte cada indice en esta maquina.
+    assert Microphone("a50", opener=lambda **kw: None).device == 32
 
 
 def test_sin_wasapi_entre_los_candidatos_se_queda_con_el_primero(monkeypatch):
@@ -217,7 +220,7 @@ def test_sin_wasapi_entre_los_candidatos_se_queda_con_el_primero(monkeypatch):
             InputDevice(10, "auriculares (A50 Mic)", "Windows DirectSound", 1),
         ],
     )
-    assert Microphone("a50").device == 1
+    assert Microphone("a50", opener=lambda **kw: None).device == 1
 
 
 class SdFalso:

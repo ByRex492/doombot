@@ -67,7 +67,7 @@ def test_iniciar_dice_con_que_cerebro_se_queda():
     puente, _ = puente_con()
     info = puente.iniciar()
     assert info["ok"] and info["modelos"] == ["guion/guion"]
-    assert info["herramientas"] == 15
+    assert info["herramientas"] == 16  # las 15 del agente + mostrar_visual, porque hay pantalla
     puente._cerrar()
 
 

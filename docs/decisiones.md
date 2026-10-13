@@ -1358,3 +1358,53 @@ que ya era la de las etiquetas de "lo abierto", y enmarcaba sus rótulos.
 **Sin verificar.** En Windows (WebView2) y el rendimiento en un equipo más lento: el núcleo se
 redibuja entero en cada fotograma.
 
+---
+
+## D-037 — Enseñar en vez de contar: el núcleo se transforma en gráficas, esquemas o dibujos
+
+**Contexto.** 13/10/2026. El usuario pidió al agente representar unos vectores y, sin forma de
+dibujar, el agente acabó escribiendo un script de matplotlib. Pedido: que si se le dice
+"represéntamelo", el núcleo cambie a una gráfica o un esquema, y no solo para matemáticas
+("dibújame un caballo"). Con una condición explícita: no cargar mucho la aplicación.
+
+**Decisión.**
+
+1. **Una herramienta, `mostrar_visual`, que solo existe donde hay pantalla.** `montar()` la añade
+   si recibe `pantalla` -la ventana se la pasa; consola y voz, no-, y el prompt gana una línea que
+   le dice al modelo cuándo usarla. Familia `visual`: el núcleo pasa al modo "representando".
+2. **Dos formas, según lo que haya que enseñar.**
+   - `grafica`: el modelo describe ejes, vectores, puntos, segmentos y funciones; la ventana los
+     dibuja con precisión (rejilla con paso "bonito", flechas, etiquetas, leyenda). El modelo da
+     coordenadas, no píxeles: los vectores quedan donde tienen que estar. Las funciones se
+     evalúan con un intérprete propio de fórmulas (`+ - * / ^`, paréntesis, `sin cos tan sqrt abs
+     exp log ln`, `pi`, `e`), nunca con `eval`.
+   - `svg`: dibujos y esquemas libres. Los modelos escriben SVG razonablemente bien, y un
+     `stroke="currentColor"` toma el color del tema.
+3. **El SVG se reconstruye desde cero con lista blanca** (`agent/visual.py`, `limpiar_svg`):
+   solo formas, texto, degradados y marcadores; fuera `script`, `foreignObject`, `image`, `a`,
+   `style`, cualquier `on*`, `href`, y `url()` que no apunte dentro del propio dibujo. Motivo: la
+   ventana tiene `js_api` hacia Python; un dibujo con código -de un modelo equivocado o de una
+   página que le coló instrucciones- podría pedir cosas al agente. Se rechaza todo `DOCTYPE`
+   antes de leer el XML, lo que corta XXE y la expansión de entidades sin añadir `defusedxml`. La
+   ventana además lo importa como XML (nunca como HTML) y vuelve a quitar lo peligroso.
+4. **Ligero, como se pidió**: ninguna librería nueva. Mientras hay un visual, el núcleo se queda
+   de fondo y deja de redibujarse. "Ampliar" usa también el sitio del registro; "Núcleo" vuelve;
+   una orden nueva devuelve el núcleo, y cada visual queda en el registro con "Ver".
+
+**Arreglos en el mismo cambio, vistos con las claves reales del usuario.**
+- *Gemini 3 rechazaba la conversación* ("missing a thought_signature"): firma su razonamiento en
+  `tool_calls[].extra_content.google.thought_signature` y exige recibirlo de vuelta. Ahora
+  `LlamadaHerramienta.extra` lo guarda y `openai_compat` lo devuelve; a las llamadas de otro
+  modelo de la cadena se les pone el valor de relleno documentado por Google,
+  `skip_thought_signature_validator`.
+- *Groq se quedaba "sin cuota" a los pocos pasos*: su límite gratuito es por minuto (~8.000
+  tokens). Si responde 429 con `Retry-After` de pocos segundos, se espera y se reintenta una vez;
+  el agente reenvía menos de lo leído (3.500 caracteres por resultado, 3 resultados enteros); y si
+  todos los modelos están sin cuota, se dice claro en vez de un volcado de errores.
+- *Gemini saturado* (503, "high demand") cuenta como pasajero, igual que un 429, y el tiempo
+  máximo de respuesta baja de 120 a 60 s: mejor el siguiente de la cadena que esperar.
+
+**Verificado.** 489 tests (filtro de SVG con scripts, manejadores, enlaces, `foreignObject`,
+`DOCTYPE`, entidades; gráficas; firma de Gemini; reintento). En la vista previa: la gráfica de
+vectores con sus etiquetas y el caballo, normal y ampliado.
+

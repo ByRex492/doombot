@@ -311,3 +311,91 @@ def test_la_segunda_opinion_acompana_a_la_pregunta():
     agente.ejecutar("abre firefox")
 
     assert preguntas == ["¿Borro x?\n      Segunda opinion: OJO: no encaja con «abre firefox»"]
+
+
+# -- Gemini 3: firma de razonamiento ------------------------------------------------
+def test_la_firma_de_gemini_se_guarda_y_se_devuelve():
+    firma = {"google": {"thought_signature": "abc123"}}
+    enviado, c = respuesta(
+        {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "g1",
+                    "function": {"name": "abrir_aplicacion", "arguments": "{}"},
+                    "extra_content": firma,
+                }
+            ],
+        }
+    )
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="gemini", client=c
+    )
+    paso = g.paso(["abre"], [])
+    assert paso.llamadas[0].extra == {"extra_content": firma}
+
+    g.paso(["abre", paso, ResultadoHerramienta("g1", "abrir_aplicacion", "ok")], [])
+    llamada = enviado["cuerpo"]["messages"][1]["tool_calls"][0]
+    assert llamada["extra_content"] == firma
+
+
+def test_a_gemini_las_llamadas_de_otro_modelo_le_llegan_con_la_firma_de_relleno():
+    enviado, c = respuesta({"content": "ok"})
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="gemini", client=c
+    )
+    de_groq = PasoModelo("", (LlamadaHerramienta("call_1", "buscar", {"p": "x"}),))
+    g.paso(["busca", de_groq, ResultadoHerramienta("call_1", "buscar", "nada")], [])
+    llamada = enviado["cuerpo"]["messages"][1]["tool_calls"][0]
+    assert llamada["extra_content"] == {
+        "google": {"thought_signature": "skip_thought_signature_validator"}
+    }
+
+
+def test_a_otros_proveedores_no_les_llega_nada_raro():
+    enviado, c = respuesta({"content": "ok"})
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq", client=c)
+    g.paso(["x", PasoModelo("", (LlamadaHerramienta("c", "b", {}),))], [])
+    assert "extra_content" not in enviado["cuerpo"]["messages"][1]["tool_calls"][0]
+
+
+# -- limite por minuto ------------------------------------------------------------------
+def test_si_el_limite_es_de_segundos_espera_y_reintenta():
+    respuestas = [
+        httpx.Response(429, headers={"retry-after": "3"}, json={"error": {"message": "rate"}}),
+        httpx.Response(200, json={"choices": [{"message": {"content": "listo"}}]}),
+    ]
+    c = cliente(lambda req: respuestas.pop(0))
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq", client=c)
+    esperas = []
+    g._dormir = esperas.append
+    assert g.generate("x") == "listo"
+    assert esperas == [3.5]
+
+
+def test_si_hay_que_esperar_mucho_no_se_espera():
+    c = cliente(lambda req: httpx.Response(429, headers={"retry-after": "60"}, json={}))
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq", client=c)
+    g._dormir = lambda s: pytest.fail("no deberia esperar 60 s")
+    with pytest.raises(LimiteAlcanzado):
+        g.generate("x")
+
+
+def test_si_todos_estan_sin_cuota_lo_dice_claro():
+    cadena = Cadena(
+        [
+            Juguete("a", fallo=LimiteAlcanzado("a: limite")),
+            Juguete("b", fallo=LimiteAlcanzado("b: limite")),
+        ]
+    )
+    with pytest.raises(LimiteAlcanzado, match="han llegado a su limite"):
+        cadena.generate("x")
+
+
+def test_saturado_cuenta_como_pasajero():
+    c = cliente(lambda req: httpx.Response(503, json={"error": {"message": "high demand"}}))
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="gemini", client=c
+    )
+    with pytest.raises(LimiteAlcanzado, match="saturado"):
+        g.generate("x")

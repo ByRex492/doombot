@@ -13,7 +13,7 @@ no arrastra dependencias hacia quien lo cumple.
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -199,6 +199,10 @@ class LlamadaHerramienta:
     id: str
     nombre: str
     argumentos: dict
+    extra: dict = field(default_factory=dict, compare=False)
+    """Datos propios del proveedor que hay que devolverle tal cual en el turno
+    siguiente. Hoy, la firma de razonamiento de Gemini 3 (``extra_content``):
+    sin ella, Gemini rechaza la conversacion entera. El bucle no lo mira."""
 
 
 @dataclass(frozen=True)

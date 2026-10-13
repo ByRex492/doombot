@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Iterator, Sequence
 from typing import Any
 
@@ -31,10 +32,19 @@ from doombot.backends.base import (
     Turno,
 )
 
-_TIMEOUT = httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0)
+# Un modelo gratuito que tarda mas de un minuto suele estar saturado: mejor
+# pasar al siguiente de la cadena que dejar al usuario esperando.
+_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0)
 # Algunos modelos de razonamiento (qwen3, deepseek) devuelven su pensamiento
 # dentro del texto. No es respuesta para el usuario.
 _PENSAMIENTO = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+# Valor que Google documenta para llamadas a herramientas que no genero Gemini.
+_FIRMA_AJENA = "skip_thought_signature_validator"
+# Si el proveedor pide esperar menos que esto, se espera y se reintenta una vez
+# en vez de dar el modelo por agotado: el limite gratuito de Groq es por minuto.
+_ESPERA_MAXIMA = 12.0
 
 
 class LimiteAlcanzado(BackendError):
@@ -64,6 +74,8 @@ class OpenAICompatGenerator:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._client = client or httpx.Client(timeout=_TIMEOUT)
+        # Inyectable para que los tests no esperen de verdad.
+        self._dormir = time.sleep
 
     # -- el contrato ---------------------------------------------------------
     @property
@@ -116,17 +128,7 @@ class OpenAICompatGenerator:
             elif isinstance(m, PasoModelo):
                 mensaje: dict[str, Any] = {"role": "assistant", "content": m.texto or None}
                 if m.llamadas:
-                    mensaje["tool_calls"] = [
-                        {
-                            "id": ll.id,
-                            "type": "function",
-                            "function": {
-                                "name": ll.nombre,
-                                "arguments": json.dumps(ll.argumentos, ensure_ascii=False),
-                            },
-                        }
-                        for ll in m.llamadas
-                    ]
+                    mensaje["tool_calls"] = self._llamadas_salientes(m.llamadas)
                 mensajes.append(mensaje)
             elif isinstance(m, ResultadoHerramienta):
                 mensajes.append({"role": "tool", "tool_call_id": m.id, "content": m.contenido})
@@ -161,9 +163,38 @@ class OpenAICompatGenerator:
                     id=str(ll.get("id") or f"llamada_{i}"),
                     nombre=str(funcion.get("name", "")),
                     argumentos=argumentos if isinstance(argumentos, dict) else {},
+                    extra={"extra_content": ll["extra_content"]} if ll.get("extra_content") else {},
                 )
             )
         return PasoModelo(texto=texto, llamadas=tuple(llamadas))
+
+    def _llamadas_salientes(self, llamadas: Sequence[LlamadaHerramienta]) -> list[dict[str, Any]]:
+        """Las llamadas de un turno anterior, en formato OpenAI, con su firma si la hay.
+
+        Gemini 3 firma su razonamiento en ``extra_content.google.thought_signature``
+        y exige recibirlo de vuelta; sin firma responde 400 y rechaza la
+        conversacion entera. Las llamadas que no hizo Gemini -las de otro modelo
+        de la cadena- no tienen firma: para esas Google documenta un valor de
+        relleno que salta la comprobacion, a costa de que Gemini no recuerde ese
+        razonamiento (que de todos modos no era suyo).
+        """
+        firmadas = any("extra_content" in ll.extra for ll in llamadas)
+        salida = []
+        for ll in llamadas:
+            item: dict[str, Any] = {
+                "id": ll.id,
+                "type": "function",
+                "function": {
+                    "name": ll.nombre,
+                    "arguments": json.dumps(ll.argumentos, ensure_ascii=False),
+                },
+            }
+            if "extra_content" in ll.extra:
+                item["extra_content"] = ll.extra["extra_content"]
+            elif self.proveedor == "gemini" and not firmadas:
+                item["extra_content"] = {"google": {"thought_signature": _FIRMA_AJENA}}
+            salida.append(item)
+        return salida
 
     # -- extras --------------------------------------------------------------
     def is_available(self) -> bool:
@@ -199,11 +230,16 @@ class OpenAICompatGenerator:
             )
         return {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
 
-    def _post(self, cuerpo: dict[str, Any]) -> dict[str, Any]:
+    def _post(self, cuerpo: dict[str, Any], *, reintento: bool = True) -> dict[str, Any]:
         try:
             r = self._client.post(self._url, json=cuerpo, headers=self._headers())
         except httpx.HTTPError as e:
             raise self._error(e) from e
+        if r.status_code == 429 and reintento:
+            espera = _segundos(r.headers.get("retry-after"))
+            if espera is not None and espera <= _ESPERA_MAXIMA:
+                self._dormir(espera + 0.5)
+                return self._post(cuerpo, reintento=False)
         if r.status_code >= 400:
             raise self._error_http(r)
         return r.json()
@@ -218,6 +254,9 @@ class OpenAICompatGenerator:
         quien = self.model_name
         if r.status_code == 429:
             return LimiteAlcanzado(f"{quien}: limite de uso gratuito alcanzado por ahora.")
+        if r.status_code == 503:
+            # "Demasiada demanda": pasajero, como el 429. Que la cadena lo aparte un rato.
+            return LimiteAlcanzado(f"{quien}: saturado ahora mismo, prueba en un momento.")
         if r.status_code in (401, 403):
             return BackendError(
                 f"{quien}: clave rechazada. Revisa DOOMBOT_{self.proveedor.upper()}_API_KEY."
@@ -235,3 +274,11 @@ class OpenAICompatGenerator:
 
     def __repr__(self) -> str:
         return f"OpenAICompatGenerator({self.model_name!r})"
+
+
+def _segundos(cabecera: str | None) -> float | None:
+    """``Retry-After`` en segundos, o None si no viene o no es un numero."""
+    try:
+        return max(0.0, float(cabecera)) if cabecera is not None else None
+    except ValueError:
+        return None

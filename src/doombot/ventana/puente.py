@@ -179,7 +179,11 @@ class Puente:
 
                 _releer_env()
             try:
-                self._montaje = montar(narrar=self._narrar, confirmar=self._confirmar)
+                self._montaje = montar(
+                    narrar=self._narrar,
+                    confirmar=self._confirmar,
+                    pantalla=lambda datos: self._emitir("visual", **datos),
+                )
             except ValueError as e:
                 return {"ok": False, "error": str(e)}
             self._montaje.agente.observar = lambda evento, datos: self._emitir(evento, **datos)

@@ -65,8 +65,10 @@ class Agente:
         system: str | None = None,
         revisar: Callable[[str, str], str] | None = None,
         max_pasos: int = 20,
-        max_resultado: int = 6000,
-        ventana: int = 4,
+        # Con las capas gratuitas el limite es de tokens por minuto (Groq: unos
+        # 8.000): cada paso reenvia todo, asi que lo leido se recorta mas.
+        max_resultado: int = 3500,
+        ventana: int = 3,
     ) -> None:
         self.cerebro = cerebro
         self.herramientas = {h.nombre: h for h in herramientas}

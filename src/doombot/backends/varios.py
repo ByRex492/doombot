@@ -144,8 +144,13 @@ class Cadena:
             self.avisar(f"sigo con {etiqueta(g)}")
         self.ultimo = g
 
-    @staticmethod
-    def _ninguno(fallos: list[str]) -> BackendError:
+    def _ninguno(self, fallos: list[str]) -> BackendError:
+        if self._apartados and len(self._apartados) == len(self.generadores):
+            return LimiteAlcanzado(
+                "Todos los modelos gratuitos han llegado a su limite por ahora (suele ser por "
+                "minuto). Espera un poco y vuelve a pedirlo, o añade otro proveedor en "
+                "Primeros pasos.\n  " + "\n  ".join(fallos)
+            )
         return BackendError("Ningun modelo ha respondido:\n  " + "\n  ".join(fallos))
 
     def __repr__(self) -> str:

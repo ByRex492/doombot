@@ -135,6 +135,21 @@
   #rotulo::before, #rotulo::after { content: "◢"; font-size: 8px; color: var(--c1-60); }
   #rotulo::after { content: "◣"; }
 
+  /* -- visuales: lo que sustituye al nucleo (D-037) ----------------------------------- */
+  #visual { position: absolute; inset: 0 0 34px 0; display: flex; flex-direction: column; z-index: 2; }
+  #visual[hidden] { display: none; }
+  #visual .cab-marco button { padding: 5px 9px; font-size: 9.5px; }
+  #lienzo-visual { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px 12px; color: var(--c1); }
+  #lienzo-visual svg { width: 100%; height: 100%; filter: drop-shadow(0 0 calc(3px * var(--luz)) var(--c1-60)); }
+  #visual.entrando #lienzo-visual { animation: revelar .9s ease-out; }
+  @keyframes revelar { from { clip-path: inset(0 0 100% 0); opacity: .3; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+  #zona-nucleo #nucleo { transition: opacity .5s; }
+  #zona-nucleo.con-visual #nucleo { opacity: .14; }
+  /* main.hud > *:not(#circuitos) pesa como un id: hace falta otro tanto para ganarle. */
+  main.hud > #zona-nucleo.amplio { grid-row: 1 / 3; z-index: 3; }
+  #zona-nucleo.amplio #visual { background: rgba(2, 6, 12, .97); }
+  .ver-visual { padding: 3px 8px; margin-left: 8px; font-size: 9px; }
+
   /* -- paneles laterales -------------------------------------------------------------- */
   .lateral { display: flex; flex-direction: column; overflow: hidden; }
   .lateral .cuerpo-panel { padding: 10px 12px 14px; overflow-y: auto; min-height: 0; flex: 1; }
@@ -311,9 +326,15 @@
       </div>
     </aside>
 
-    <section id="zona-nucleo" aria-hidden="true">
-      <canvas id="nucleo"></canvas>
-      <div id="rotulo"><span id="rotulo-t">iniciando</span></div>
+    <section id="zona-nucleo">
+      <canvas id="nucleo" aria-hidden="true"></canvas>
+      <div id="visual" class="marco" role="region" aria-label="Representación" hidden>
+        <div class="cab-marco"><span class="etq" id="visual-titulo">Visual</span><span class="barra"></span>
+          <button id="visual-ampliar" title="Ocupar también el espacio del registro">Ampliar</button>
+          <button id="visual-cerrar" title="Volver al núcleo">Núcleo</button></div>
+        <div id="lienzo-visual"></div>
+      </div>
+      <div id="rotulo" aria-hidden="true"><span id="rotulo-t">iniciando</span></div>
     </section>
 
     <section id="marco-registro" class="marco" aria-label="Conversación">
@@ -417,16 +438,17 @@ const MODOS = {
   terminal: { energia: 0.80, etiqueta: "terminal" },
   permiso:  { energia: 0.45, etiqueta: "esperando permiso" },
   hablando: { energia: 0.50, etiqueta: "respondiendo" },
+  visual:   { energia: 0.45, etiqueta: "representando" },
   error:    { energia: 0.35, etiqueta: "fallo" },
 };
-const FAMILIAS = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal" };
+const FAMILIAS = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal", visual: "visual" };
 
 const nucleo = { modo: "reposo", color: hexRgb(DEFECTO.c1), energia: 0.12, pulso: 0, t: 0, giro: 0, desde: 0 };
 
 function colorDeModo(m) {
   if (m === "permiso" || m === "error") return COLOR_MODO[m];
   if (prefs.por_herramienta && COLOR_MODO[m]) return COLOR_MODO[m];
-  if (m === "pensando" || m === "hablando") return prefs.c2;
+  if (m === "pensando" || m === "hablando" || m === "visual") return prefs.c2;
   return prefs.c1;
 }
 function ponerModo(nombre, soloColor) {
@@ -739,7 +761,8 @@ function fotograma(ahora) {
   nucleo.energia += (MODOS[nucleo.modo].energia - nucleo.energia) * k;
   nucleo.pulso *= Math.exp(-dt * 3);
   nucleo.giro += dt * (0.15 + 1.1 * nucleo.energia) * prefs.velocidad;
-  dibujarNucleo(dt);
+  // Con un visual delante, el nucleo queda de fondo, quieto: no se gasta en redibujarlo.
+  if (!visualActivo) dibujarNucleo(dt);
   dibujarCircuitos(dt);
   if ((cuentaBarras += dt) > 0.12) {
     cuentaBarras = 0;
@@ -837,6 +860,175 @@ function ponerAbiertas(lista) {
 }
 
 /* ==========================================================================
+   4b. VISUALES (D-037): el nucleo se aparta para ensenar una grafica o un dibujo
+   ========================================================================== */
+const zonaNucleo = document.getElementById("zona-nucleo"), panelVisual = document.getElementById("visual");
+const lienzoVisual = document.getElementById("lienzo-visual");
+const visuales = [];
+let visualActivo = false;
+const SVGNS = "http://www.w3.org/2000/svg";
+
+function nodoSvg(etiqueta, atributos, texto) {
+  const n = document.createElementNS(SVGNS, etiqueta);
+  for (const [k, v] of Object.entries(atributos || {})) n.setAttribute(k, v);
+  if (texto !== undefined) n.textContent = texto;
+  return n;
+}
+
+// Interprete de formulas propio: + - * / ^, parentesis, x, pi, e y unas pocas
+// funciones. Nada de eval(): una formula es un dato, no codigo.
+function compilar(fuente) {
+  const toks = String(fuente).toLowerCase().match(/\d+\.?\d*|\.\d+|[a-z]+|[-+*\/^(),]/g) || [];
+  let i = 0;
+  const ver = () => toks[i], tomar = () => toks[i++];
+  const FUN = { sin: Math.sin, cos: Math.cos, tan: Math.tan, sqrt: Math.sqrt, abs: Math.abs, exp: Math.exp, log: Math.log10, ln: Math.log };
+  const CTE = { pi: Math.PI, e: Math.E };
+  const expr = () => {
+    let f = termino();
+    while (ver() === "+" || ver() === "-") { const op = tomar(), a = f, b = termino(); f = op === "+" ? x => a(x) + b(x) : x => a(x) - b(x); }
+    return f;
+  };
+  const termino = () => {
+    let f = unario();
+    for (;;) {
+      const t = ver();
+      if (t === "*" || t === "/") { tomar(); const a = f, b = unario(); f = t === "*" ? x => a(x) * b(x) : x => a(x) / b(x); }
+      else if (t !== undefined && (t === "(" || /^[a-z\d.]/.test(t))) { const a = f, b = unario(); f = x => a(x) * b(x); }  // 2x, 3(x+1)
+      else return f;
+    }
+  };
+  const unario = () => {
+    if (ver() === "-") { tomar(); const a = unario(); return x => -a(x); }
+    if (ver() === "+") { tomar(); return unario(); }
+    return potencia();
+  };
+  const potencia = () => {
+    const base = primario();
+    if (ver() === "^") { tomar(); const ex = unario(); return x => Math.pow(base(x), ex(x)); }
+    return base;
+  };
+  const primario = () => {
+    const t = tomar();
+    if (t === undefined) throw new Error("fórmula incompleta");
+    if (/^[\d.]/.test(t)) { const v = parseFloat(t); return () => v; }
+    if (t === "x") return x => x;
+    if (t in CTE) { const v = CTE[t]; return () => v; }
+    if (t === "(" || t in FUN) {
+      if (t !== "(" && tomar() !== "(") throw new Error(`falta "(" tras ${t}`);
+      const a = expr();
+      if (tomar() !== ")") throw new Error('falta ")"');
+      const f = FUN[t];
+      return f ? x => f(a(x)) : a;
+    }
+    throw new Error(`no entiendo «${t}»`);
+  };
+  const f = expr();
+  if (i < toks.length) throw new Error(`sobra «${toks[i]}»`);
+  return f;
+}
+
+function pasoBonito(rango) {
+  const bruto = rango / 10, mag = Math.pow(10, Math.floor(Math.log10(bruto))), r = bruto / mag;
+  return mag * (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10);
+}
+
+// Una grafica descrita por el agente (ya validada en Python) dibujada con precision.
+function svgDeGrafica(g) {
+  const W = 400, H = 300, M = 30, [x0, x1] = g.x, [y0, y1] = g.y;
+  const X = x => M + (x - x0) / (x1 - x0) * (W - 2 * M), Y = y => H - M - (y - y0) / (y1 - y0) * (H - 2 * M);
+  const colores = [prefs.c1, prefs.c2, "#ffc23d", "#3dff9a", "#b48bff", "#ff6b7a"];
+  let n = 0; const siguiente = () => colores[n++ % colores.length];
+  const svg = nodoSvg("svg", { viewBox: `0 0 ${W} ${H}`, "font-family": "monospace" });
+  const capa = nodoSvg("g", { "font-size": "9", fill: "currentColor" });
+  svg.appendChild(capa);
+  const pasoX = pasoBonito(x1 - x0), pasoY = pasoBonito(y1 - y0);
+  for (let v = Math.ceil(x0 / pasoX) * pasoX; v <= x1 + 1e-9; v += pasoX) {
+    capa.appendChild(nodoSvg("line", { x1: X(v), y1: Y(y0), x2: X(v), y2: Y(y1), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .7 : .12 }));
+    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: X(v), y: Math.min(H - M + 12, Math.max(M, Y(0) + 12)), "text-anchor": "middle", opacity: .6 }, +v.toFixed(6)));
+  }
+  for (let v = Math.ceil(y0 / pasoY) * pasoY; v <= y1 + 1e-9; v += pasoY) {
+    capa.appendChild(nodoSvg("line", { x1: X(x0), y1: Y(v), x2: X(x1), y2: Y(v), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .7 : .12 }));
+    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: Math.max(M - 4, Math.min(W - M, X(0) - 4)), y: Y(v) + 3, "text-anchor": "end", opacity: .6 }, +v.toFixed(6)));
+  }
+  const leyenda = [];
+  for (const f of g.funciones) {
+    const color = siguiente();
+    let fn; try { fn = compilar(f.f); } catch (err) { leyenda.push([color, `${f.nombre || "f"}: ${err.message}`]); continue; }
+    let d = "", pluma = false;
+    for (let k = 0; k <= 300; k++) {
+      const x = x0 + (x1 - x0) * k / 300, y = fn(x);
+      const fuera = !isFinite(y) || y < y0 - (y1 - y0) * 2 || y > y1 + (y1 - y0) * 2;
+      if (fuera) { pluma = false; continue; }
+      d += `${pluma ? "L" : "M"}${X(x).toFixed(1)} ${Y(y).toFixed(1)}`; pluma = true;
+    }
+    capa.appendChild(nodoSvg("path", { d, fill: "none", stroke: color, "stroke-width": 2 }));
+    leyenda.push([color, `${f.nombre ? f.nombre + "(x) = " : ""}${f.f}`]);
+  }
+  for (const s of g.segmentos) {
+    const color = siguiente();
+    capa.appendChild(nodoSvg("line", { x1: X(s.de[0]), y1: Y(s.de[1]), x2: X(s.a[0]), y2: Y(s.a[1]), stroke: color, "stroke-width": 1.6, "stroke-dasharray": "5 4" }));
+    if (s.nombre) capa.appendChild(nodoSvg("text", { x: (X(s.de[0]) + X(s.a[0])) / 2 + 4, y: (Y(s.de[1]) + Y(s.a[1])) / 2 - 4, fill: color }, s.nombre));
+  }
+  for (const v of g.vectores) {
+    const color = siguiente(), ax = X(v.de[0]), ay = Y(v.de[1]), bx = X(v.a[0]), by = Y(v.a[1]);
+    const ang = Math.atan2(by - ay, bx - ax), L = 9;
+    capa.appendChild(nodoSvg("line", { x1: ax, y1: ay, x2: bx - Math.cos(ang) * L * 0.7, y2: by - Math.sin(ang) * L * 0.7, stroke: color, "stroke-width": 2.2 }));
+    capa.appendChild(nodoSvg("polygon", { fill: color, points: [[bx, by], [bx - L * Math.cos(ang - 0.4), by - L * Math.sin(ang - 0.4)], [bx - L * Math.cos(ang + 0.4), by - L * Math.sin(ang + 0.4)]].map(p => p.join(",")).join(" ") }));
+    // La etiqueta va en mitad del vector, apartada hacia un lado: en la punta
+    // se pisarian las de dos vectores que acaban en el mismo sitio (u+v y v).
+    const etiqueta = v.nombre ? `${v.nombre} (${+(v.a[0] - v.de[0]).toFixed(4)}, ${+(v.a[1] - v.de[1]).toFixed(4)})` : "";
+    if (etiqueta) {
+      const mx = (ax + bx) / 2 - Math.sin(ang) * 12, my = (ay + by) / 2 + Math.cos(ang) * 12;
+      capa.appendChild(nodoSvg("text", { x: mx, y: my, fill: color, "font-size": 11, "font-weight": "bold", "text-anchor": "middle" }, etiqueta));
+    }
+  }
+  for (const p of g.puntos) {
+    const color = siguiente();
+    capa.appendChild(nodoSvg("circle", { cx: X(p.en[0]), cy: Y(p.en[1]), r: 3.5, fill: color }));
+    if (p.nombre) capa.appendChild(nodoSvg("text", { x: X(p.en[0]) + 6, y: Y(p.en[1]) - 6, fill: color, "font-size": 11 }, `${p.nombre} (${p.en[0]}, ${p.en[1]})`));
+  }
+  leyenda.forEach(([color, texto], k) => capa.appendChild(nodoSvg("text", { x: M + 4, y: M + 4 + k * 13, fill: color, "font-size": 10.5 }, texto)));
+  return svg;
+}
+
+// Un dibujo libre: ya viene limpio de Python (lista blanca), y aun asi se
+// importa como XML -nunca como HTML- y se repasa por si acaso.
+function svgDeTexto(texto) {
+  const doc = new DOMParser().parseFromString(texto, "image/svg+xml");
+  const raiz = doc.documentElement;
+  if (!raiz || raiz.nodeName.toLowerCase() !== "svg" || doc.getElementsByTagName("parsererror").length) return null;
+  raiz.querySelectorAll("script, foreignObject, image, use, a, style, iframe").forEach(n => n.remove());
+  for (const n of [raiz, ...raiz.querySelectorAll("*")])
+    for (const a of [...n.attributes]) if (/^on|href/i.test(a.name)) n.removeAttribute(a.name);
+  return document.importNode(raiz, true);
+}
+
+function mostrarVisual(v) {
+  const dibujo = v.grafica ? svgDeGrafica(v.grafica) : svgDeTexto(v.svg || "");
+  lienzoVisual.innerHTML = "";
+  if (!dibujo) { lienzoVisual.appendChild(el("div", "fallo", "No he podido mostrar este dibujo.")); }
+  else lienzoVisual.appendChild(dibujo);
+  document.getElementById("visual-titulo").textContent = v.titulo || "Visual";
+  panelVisual.hidden = false; visualActivo = true;
+  zonaNucleo.classList.add("con-visual");
+  panelVisual.classList.remove("entrando"); void panelVisual.offsetWidth; panelVisual.classList.add("entrando");
+  ponerModo("visual");
+}
+function ocultarVisual() {
+  if (!visualActivo) return;
+  panelVisual.hidden = true; visualActivo = false;
+  zonaNucleo.classList.remove("con-visual", "amplio");
+  document.getElementById("visual-ampliar").textContent = "Ampliar";
+  calcularTrazas();
+}
+document.getElementById("visual-cerrar").addEventListener("click", () => { ocultarVisual(); if (!ocupado) ponerModo("reposo"); });
+document.getElementById("visual-ampliar").addEventListener("click", ev => {
+  const amplio = zonaNucleo.classList.toggle("amplio");
+  ev.target.textContent = amplio ? "Reducir" : "Ampliar";
+  calcularTrazas();
+});
+
+/* ==========================================================================
    5. LOS EVENTOS DE PYTHON
    ========================================================================== */
 const DOOM = window.DOOM = {
@@ -844,7 +1036,7 @@ const DOOM = window.DOOM = {
     switch (e.tipo) {
       case "estado":
         if (e.estado === "pensando") {
-          ponerModo("pensando"); latido(0.8); pasosOrden = 0;
+          ocultarVisual(); ponerModo("pensando"); latido(0.8); pasosOrden = 0;
           document.getElementById("act-pasos").textContent = "0";
         }
         break;
@@ -873,6 +1065,15 @@ const DOOM = window.DOOM = {
       case "resultado": registro.appendChild(linea("resultado", "└", e.texto)); alFondo(); break;
       case "error": quitarPensando(); registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo(); break;
       case "abiertas": ponerAbiertas(e.lista || []); break;
+      case "visual": {
+        const v = { titulo: e.titulo, svg: e.svg, grafica: e.grafica };
+        visuales.push(v); mostrarVisual(v); latido(0.9);
+        const l = linea("accion", "◆", "", colorDeModo("visual")), cuerpo = l.querySelector(".cuerpo");
+        cuerpo.append(el("span", "chip", "visual"), document.createTextNode(e.titulo));
+        const ver = el("button", "ver-visual", "Ver"); ver.addEventListener("click", () => mostrarVisual(v));
+        cuerpo.appendChild(ver); registro.appendChild(l); alFondo();
+        break;
+      }
       case "permiso":
         quitarPensando(); ponerModo("permiso"); latido(0.6);
         document.getElementById("act-permisos").textContent = `${++permisos} pedido${permisos > 1 ? "s" : ""}`;
@@ -1152,6 +1353,17 @@ new ResizeObserver(() => calcularTrazas()).observe(document.querySelector("main.
 /* ==========================================================================
    10. DEMO (#demo): una orden simulada, para disenar sin agente
    ========================================================================== */
+const CABALLO_DEMO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M110 150 C 120 120, 220 115, 270 130 C 285 135, 290 150, 285 170 C 280 185, 250 190, 230 188 L 150 188 C 125 188, 105 175, 110 150 Z"/>
+  <path d="M265 135 C 275 110, 285 85, 300 70 L 318 62 C 330 58, 340 66, 338 78 L 335 92 C 333 100, 325 100, 320 96 L 308 90 C 300 105, 292 125, 285 150"/>
+  <circle cx="322" cy="72" r="2.5" fill="currentColor"/>
+  <path d="M300 70 L 296 56 L 306 64"/>
+  <path d="M298 74 C 288 88, 279 104, 271 122" stroke-dasharray="4 5"/>
+  <path d="M135 186 L 128 230 L 132 262 M 160 188 L 162 232 L 158 262 M 240 186 L 248 230 L 244 262 M 265 178 L 272 228 L 270 262"/>
+  <path d="M125 262 h12 M151 262 h12 M237 262 h12 M263 262 h12" stroke-width="5"/>
+  <path d="M112 152 C 90 150, 78 170, 80 200 C 82 215, 76 225, 70 230"/>
+  <line x1="40" y1="266" x2="360" y2="266" stroke-width="1.5" opacity=".4"/>
+</svg>`;
 if (location.hash === "#demo") {
   const t = (ms, f) => setTimeout(f, ms);
   document.body.prepend(el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS"));
@@ -1183,6 +1395,19 @@ if (location.hash === "#demo") {
     enviar: (texto) => {
       const E = e => DOOM.evento(e);
       E({ tipo: "estado", estado: "pensando" }); E({ tipo: "pensando", paso: 1 });
+      const visual = /vector|gr[aá]fic|funci/i.test(texto) ? {
+        titulo: "Suma de vectores u + v",
+        grafica: { x: [-1, 7], y: [-1, 6], vectores: [{ de: [0, 0], a: [4, 1], nombre: "u" }, { de: [4, 1], a: [5, 4], nombre: "v" }, { de: [0, 0], a: [5, 4], nombre: "u+v" }],
+                   puntos: [], segmentos: [], funciones: [{ f: "0.8x", nombre: "r" }] },
+      } : /caballo|dibuj/i.test(texto) ? { titulo: "Caballo", svg: CABALLO_DEMO } : null;
+      if (visual) {
+        t(900, () => E({ tipo: "error", texto: `SIMULACIÓN: no hay agente detrás; esto es un ejemplo fijo para ver cómo se representa («${texto}»).` }));
+        t(1300, () => E({ tipo: "comentario", texto: "Lo represento para que se vea mejor." }));
+        t(1600, () => { E({ tipo: "herramienta", nombre: "mostrar_visual", familia: "visual" }); E({ tipo: "accion", texto: `Lo represento: ${visual.titulo}` }); });
+        t(2000, () => { E(Object.assign({ tipo: "visual" }, visual)); E({ tipo: "resultado", texto: `Mostrado en la pantalla del usuario: «${visual.titulo}».` }); });
+        t(2600, () => { E({ tipo: "respuesta", texto: "(Simulación.) Así se vería: el núcleo se aparta y en su lugar queda la representación; con «Núcleo» vuelves.", completo: true, abiertas: [] }); E({ tipo: "estado", estado: "reposo" }); });
+        return Promise.resolve({ ok: true });
+      }
       t(900, () => E({ tipo: "error", texto: `SIMULACIÓN: no hay agente detrás. Tu orden («${texto}») no llega a ningún sitio; lo que sigue es un guion fijo para ver el diseño.` }));
       t(1200, () => E({ tipo: "comentario", texto: "Voy a buscar el tiempo en Madrid en mi navegador y luego abro la calculadora." }));
       t(1500, () => { E({ tipo: "herramienta", nombre: "navegar", familia: "web" }); E({ tipo: "accion", texto: "Navego a el tiempo en Madrid" }); });

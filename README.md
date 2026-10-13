@@ -345,6 +345,11 @@ Las claves son de tu cuenta, no del equipo: la misma vale en cualquier
 ordenador, pero `.env` no se sube a GitHub, así que en cada equipo se pegan
 de nuevo.
 
+**Representar.** Si le pides que represente, dibuje o explique algo con un
+esquema ("represéntame los vectores u y v", "dibújame un caballo"), el núcleo
+se aparta y en su sitio aparece la gráfica o el dibujo; con **Ampliar** ocupa
+también el registro, y **Núcleo** vuelve (D-037).
+
 Necesita el extra `hud` (`pywebview`). En Linux usa el GTK y el WebKit del
 sistema; como el `.venv` no ve los paquetes del sistema, se enlazan una vez:
 

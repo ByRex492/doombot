@@ -100,7 +100,7 @@
   /* -- la rejilla principal --------------------------------------------------------- */
   main.hud {
     min-height: 0; display: grid; column-gap: 18px; row-gap: 14px; padding: 14px 16px 14px;
-    grid-template-columns: 220px minmax(0, 1fr) 220px;
+    grid-template-columns: 250px minmax(0, 1fr) 220px;
     grid-template-rows: minmax(220px, 44%) minmax(0, 1fr) auto;
   }
   #circuitos { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
@@ -114,7 +114,7 @@
   #pasos[hidden], #marco-registro[hidden], .entrada[hidden] { display: none; }
   .solo-estrecho { display: none; }
   @media (max-width: 1120px) {
-    main.hud { grid-template-columns: 200px minmax(0, 1fr) 0; column-gap: 14px; }
+    main.hud { grid-template-columns: 240px minmax(0, 1fr) 0; column-gap: 14px; }
     #panel-der { display: none; }
   }
   @media (max-width: 820px) {
@@ -149,6 +149,56 @@
   main.hud > #zona-nucleo.amplio { grid-row: 1 / 3; z-index: 3; }
   #zona-nucleo.amplio #visual { background: rgba(2, 6, 12, .97); }
   .ver-visual { padding: 3px 8px; margin-left: 8px; font-size: 9px; }
+
+  /* -- conversaciones y modos (D-038) ------------------------------------------------- */
+  .cab-marco.pestanas { padding: 0; gap: 0; }
+  .pestana { flex: 1; clip-path: none; border: 0; border-bottom: 2px solid transparent; background: transparent;
+             padding: 10px 6px 8px; color: var(--muy-tenue); }
+  .pestana.activa { color: var(--c1); border-bottom-color: var(--c1); text-shadow: 0 0 calc(8px * var(--luz)) var(--c1-60); }
+  .pestana:hover:not(.activa) { background: var(--c1-06); box-shadow: none; }
+  #vista-conv[hidden], #vista-sys[hidden] { display: none; }
+  .barra-conv { display: flex; gap: 6px; margin-bottom: 10px; }
+  .barra-conv button { flex: 1; padding: 7px 4px; font-size: 9px; letter-spacing: .08em; white-space: nowrap; }
+  .carpeta-cab { display: flex; align-items: center; gap: 6px; padding: 6px 4px 4px; font: 600 10px/1.2 var(--mono);
+                 letter-spacing: .12em; text-transform: uppercase; color: var(--tenue); cursor: pointer; user-select: none; }
+  .carpeta-cab:hover { color: var(--c1); }
+  .carpeta-cab .flecha { width: 10px; flex: none; }
+  .carpeta-cab .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .carpeta-cab .num { color: var(--muy-tenue); flex: none; }
+  .acc { margin-left: auto; padding: 2px 7px; font-size: 12px; letter-spacing: 0; clip-path: none; border-color: transparent;
+         background: transparent; opacity: 0; flex: none; }
+  .carpeta-cab:hover .acc, .conv:hover .acc, .conv.actual .acc, .acc:focus-visible { opacity: 1; }
+  .conv { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 16px; border: 1px solid transparent; cursor: pointer;
+          font: 12.5px/1.3 var(--sans); color: var(--texto); }
+  .conv:hover { background: var(--c1-06); border-color: var(--c1-10); }
+  .conv.actual { background: var(--c1-10); border-color: var(--c1-40); }
+  .conv:focus-visible { outline: 2px solid var(--c1); outline-offset: 1px; }
+  .conv .punto { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .conv .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv .f { font: 9.5px/1 var(--mono); color: var(--muy-tenue); flex: none; }
+  .vacio { color: var(--muy-tenue); font-size: 11.5px; padding: 3px 16px 6px; font-style: italic; }
+  .nombre-en-linea { width: 100%; background: rgba(0,0,0,.6); color: var(--texto); border: 1px solid var(--c1-40);
+                     padding: 4px 6px; font: 12.5px/1.2 var(--sans); letter-spacing: 0; text-transform: none; }
+  .menu { position: fixed; z-index: 70; min-width: 190px; max-width: 300px; max-height: 70vh; overflow-y: auto;
+          background: rgba(3,9,16,.97); border: 1px solid var(--c1-40); box-shadow: 0 0 calc(16px * var(--luz)) var(--c1-20);
+          padding: 4px; display: flex; flex-direction: column; }
+  .menu button { clip-path: none; border: 0; text-align: left; padding: 8px 10px; font: 12.5px/1.25 var(--sans);
+                 letter-spacing: 0; text-transform: none; color: var(--texto); background: transparent; }
+  .menu button:hover { background: var(--c1-10); color: #fff; box-shadow: none; }
+  .menu button.peligro { color: var(--mal); }
+  .menu .titulo-menu { font: 600 9.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muy-tenue); padding: 9px 10px 5px; }
+  .menu .modo-op { display: grid; grid-template-columns: 10px 1fr; column-gap: 9px; align-items: baseline; }
+  .menu .modo-op .p { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+  .menu .modo-op .d { grid-column: 2; font-size: 11px; color: var(--tenue); margin-top: 2px; }
+  .menu .modo-op.actual { background: var(--c1-10); }
+  .menu .nota { display: flex; gap: 6px; align-items: flex-start; padding: 3px 10px; font-size: 11.5px; color: var(--tenue); }
+  .menu .nota span { flex: 1; }
+  .menu .nota button { padding: 0 5px; color: var(--mal); flex: none; }
+  .menu .sin-notas { padding: 3px 10px 8px; font-size: 11.5px; color: var(--muy-tenue); font-style: italic; }
+  .modo-boton { height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; white-space: nowrap;
+                color: var(--skill, var(--c1)); border-color: var(--skill, var(--c1-40)); }
+  .punto-modo { width: 8px; height: 8px; border-radius: 50%; background: var(--skill, var(--c1));
+                box-shadow: 0 0 calc(8px * var(--luz)) var(--skill, var(--c1)); }
 
   /* -- paneles laterales -------------------------------------------------------------- */
   .lateral { display: flex; flex-direction: column; overflow: hidden; }
@@ -307,18 +357,29 @@
     <div class="cab-botones">
       <button id="boton-pasos" title="Qué necesita el agente y cómo ponerlo">Primeros pasos</button>
       <button id="boton-ajustes" title="Colores, luz y efectos">Personalizar</button>
-      <button id="nueva" title="Olvida la conversación y empieza de cero">Nueva</button>
+      <button id="nueva" title="Empieza una conversación nueva">Nueva</button>
     </div>
   </header>
 
   <main class="hud">
     <canvas id="circuitos" aria-hidden="true"></canvas>
 
-    <aside id="panel-izq" class="marco lateral" aria-label="Sistema">
-      <div class="cab-marco"><span class="etq">Sistema</span><span class="barra"></span><span class="codigo">SYS-01</span></div>
-      <div class="cuerpo-panel">
+    <aside id="panel-izq" class="marco lateral" aria-label="Conversaciones y sistema">
+      <div class="cab-marco pestanas" role="tablist">
+        <button class="pestana activa" id="tab-conv" role="tab" aria-selected="true" aria-controls="vista-conv">Conversaciones</button>
+        <button class="pestana" id="tab-sys" role="tab" aria-selected="false" aria-controls="vista-sys">Sistema</button>
+      </div>
+      <div class="cuerpo-panel" id="vista-conv" role="tabpanel" aria-labelledby="tab-conv">
+        <div class="barra-conv">
+          <button id="conv-nueva" title="Empieza una conversación nueva">+ Conversación</button>
+          <button id="carpeta-nueva" title="Crea una carpeta para ordenar conversaciones">+ Carpeta</button>
+        </div>
+        <div id="arbol" aria-label="Historial de conversaciones"></div>
+      </div>
+      <div class="cuerpo-panel" id="vista-sys" role="tabpanel" aria-labelledby="tab-sys" hidden>
         <div class="dato"><div class="reloj" id="sys-reloj">--:--:--</div><div class="codigo" id="sys-fecha"></div></div>
         <div class="dato"><span class="etq">Estado</span><div class="valor grande" id="sys-estado">iniciando</div></div>
+        <div class="dato"><span class="etq">Modo</span><div class="valor" id="sys-modo">Global</div></div>
         <div class="dato"><span class="etq">Carga</span><div class="barras" id="sys-carga"></div></div>
         <div class="dato"><span class="etq">Modelos</span><ul class="lista-mini" id="sys-modelos"><li class="apagado">—</li></ul></div>
         <div class="dato"><span class="etq">Segunda opinión</span><div class="valor" id="sys-revisor">—</div></div>
@@ -344,6 +405,8 @@
 
     <section class="entrada marco" aria-label="Orden">
       <div class="fila-orden">
+        <button id="modo-boton" class="modo-boton" aria-haspopup="menu" title="Modo de conversación: qué experto te atiende">
+          <span class="punto-modo"></span><span id="modo-nombre">Global</span> ▾</button>
         <span class="prompt" aria-hidden="true">›</span>
         <textarea id="orden" rows="1" placeholder="Dime qué hago…  (Intro ejecuta · Mayús+Intro salto de línea)" aria-label="Orden para D.O.O.M"></textarea>
         <button id="enviar">Ejecutar</button>
@@ -1213,9 +1276,14 @@ const DOOM = window.DOOM = {
         break;
       case "permiso_fin": {
         const t = registro.querySelector(`.permiso[data-id="${e.id}"]`);
-        if (t) t.querySelectorAll("button").forEach(b => b.disabled = true);
+        if (t) {
+          t.querySelectorAll("button").forEach(b => b.disabled = true);
+          // Sin respuesta a tiempo, o con "Detener": queda dicho que no se hizo.
+          if (!t.querySelector(".hecho")) t.appendChild(el("div", "hecho", e.si ? "✓ AUTORIZADO" : "✗ NO AUTORIZADO"));
+        }
         break;
       }
+      case "historial": refrescarHistorial(); break;
       case "respuesta": {
         quitarPensando(); ponerModo("hablando");
         document.getElementById("act-herr").textContent = "ninguna";
@@ -1270,16 +1338,258 @@ async function mandar() {
   orden.value = ""; crecer();
   const r = await api("enviar", texto);
   if (r && r.ok === false && r.error) { registro.appendChild(el("div", "fallo", r.error)); alFondo(); }
+  else if (r && r.id && hist.actual !== r.id) { hist.actual = r.id; refrescarHistorial(); }
 }
 orden.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); mandar(); } });
 orden.addEventListener("input", () => { crecer(); latido(0.05); });
 botonEnviar.addEventListener("click", mandar);
-document.getElementById("nueva").addEventListener("click", () => {
-  if (ocupado) return;
-  api("nuevo"); registro.innerHTML = ""; ponerAbiertas([]); permisos = 0;
+document.getElementById("nueva").addEventListener("click", () => nuevaConversacion(""));
+
+/* ==========================================================================
+   6b. CONVERSACIONES Y MODOS (D-038)
+   El historial por carpetas, a la izquierda, y el selector de modo junto a la
+   linea de ordenes. Todo vive en Python (ventana/historial.py, agent/skills.py):
+   aqui solo se pinta y se piden cambios.
+   ========================================================================== */
+const arbol = document.getElementById("arbol"), botonModo = document.getElementById("modo-boton");
+let hist = { carpetas: [], conversaciones: [], actual: null }, catalogoModos = [], modoActual = "global";
+const plegadas = new Set();
+const datosModo = id => catalogoModos.find(m => m.id === id) || { id: "global", titulo: "Global", descripcion: "", color: "" };
+const colorModo = id => datosModo(id).color || prefs.c1;
+
+function cerrarMenu() { document.querySelectorAll(".menu").forEach(m => m.remove()); }
+function abrirMenu(ancla, construir, arriba) {
+  cerrarMenu();
+  const m = el("div", "menu"); m.setAttribute("role", "menu");
+  construir(m);
+  document.body.appendChild(m);
+  const r = ancla.getBoundingClientRect();
+  const x = Math.min(r.left, innerWidth - m.offsetWidth - 8);
+  const y = arriba ? r.top - m.offsetHeight - 6 : Math.min(r.bottom + 4, innerHeight - m.offsetHeight - 8);
+  m.style.left = `${Math.max(8, x)}px`; m.style.top = `${Math.max(8, y)}px`;
+  const fuera = ev => { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener("mousedown", fuera, true); } };
+  setTimeout(() => document.addEventListener("mousedown", fuera, true), 0);
+  const primero = m.querySelector("button"); if (primero) primero.focus();
+  return m;
+}
+function opcion(menu, texto, accion, clase) {
+  const b = el("button", clase || "", texto); b.setAttribute("role", "menuitem");
+  b.addEventListener("click", ev => { ev.stopPropagation(); accion(b); });
+  menu.appendChild(b); return b;
+}
+// Borrar se confirma en el propio menu: un primer clic avisa, el segundo borra.
+function opcionPeligrosa(menu, texto, accion) {
+  return opcion(menu, texto, b => {
+    if (b.dataset.seguro) { cerrarMenu(); accion(); }
+    else { b.dataset.seguro = "1"; b.textContent = "¿Seguro? Pulsa otra vez"; }
+  }, "peligro");
+}
+// Un nombre se edita en su sitio: Intro guarda, Escape deja como estaba.
+function pedirNombre(contenedor, inicial, alAceptar) {
+  const i = el("input", "nombre-en-linea"); i.value = inicial || ""; i.maxLength = 80;
+  contenedor.replaceChildren(i); i.focus(); i.select();
+  let hecho = false;
+  const fin = ok => {
+    if (hecho) return; hecho = true;
+    if (ok && i.value.trim() && i.value.trim() !== inicial) alAceptar(i.value.trim()); else pintarArbol();
+  };
+  i.addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Enter") fin(true); if (ev.key === "Escape") fin(false); });
+  i.addEventListener("click", ev => ev.stopPropagation());
+  i.addEventListener("blur", () => fin(true));
+}
+function fechaCorta(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
+
+function pintarArbol() {
+  arbol.innerHTML = "";
+  const grupos = new Map(hist.carpetas.map(c => [c, []])), sueltas = [];
+  for (const c of hist.conversaciones) {
+    if (!c.carpeta) { sueltas.push(c); continue; }
+    if (!grupos.has(c.carpeta)) grupos.set(c.carpeta, []);
+    grupos.get(c.carpeta).push(c);
+  }
+  for (const [nombre, lista] of grupos) arbol.appendChild(grupo(nombre, lista));
+  arbol.appendChild(grupo("", sueltas));
+}
+function grupo(nombre, lista) {
+  const g = el("div", "carpeta"), cab = el("div", "carpeta-cab"), plegada = plegadas.has(nombre);
+  const titulo = el("span", "n", nombre || "Sin carpeta");
+  cab.append(el("span", "flecha", plegada ? "▸" : "▾"), titulo, el("span", "num", String(lista.length)));
+  cab.addEventListener("click", () => { if (plegada) plegadas.delete(nombre); else plegadas.add(nombre); pintarArbol(); });
+  const acc = el("button", "acc", "⋯"); acc.title = "Opciones"; acc.setAttribute("aria-label", `Opciones de ${nombre || "Sin carpeta"}`);
+  acc.addEventListener("click", ev => {
+    ev.stopPropagation();
+    abrirMenu(acc, m => {
+      opcion(m, "Conversación nueva aquí", () => { cerrarMenu(); nuevaConversacion(nombre); });
+      if (!nombre) return;
+      opcion(m, "Renombrar carpeta", () => {
+        cerrarMenu(); pedirNombre(titulo, nombre, async v => { await api("renombrar_carpeta", nombre, v); refrescarHistorial(); });
+      });
+      opcionPeligrosa(m, "Borrar carpeta (sus conversaciones se quedan)", async () => { await api("borrar_carpeta", nombre); refrescarHistorial(); });
+    });
+  });
+  cab.appendChild(acc); g.appendChild(cab);
+  if (!plegada) {
+    if (!lista.length) g.appendChild(el("div", "vacio", nombre ? "vacía" : "nada todavía"));
+    for (const c of lista) g.appendChild(itemConversacion(c));
+  }
+  return g;
+}
+function itemConversacion(c) {
+  const fila = el("div", `conv${c.id === hist.actual ? " actual" : ""}`);
+  fila.tabIndex = 0; fila.setAttribute("role", "button");
+  const punto = el("span", "punto"); punto.style.background = colorModo(c.modo); punto.title = `Modo ${datosModo(c.modo).titulo}`;
+  const t = el("span", "t", c.titulo); t.title = c.titulo;
+  const acc = el("button", "acc", "⋯"); acc.title = "Opciones"; acc.setAttribute("aria-label", `Opciones de ${c.titulo}`);
+  fila.append(punto, t, el("span", "f", fechaCorta(c.actualizada)), acc);
+  fila.addEventListener("click", () => abrirConversacion(c.id));
+  fila.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === fila) abrirConversacion(c.id); });
+  acc.addEventListener("click", ev => {
+    ev.stopPropagation();
+    abrirMenu(acc, m => {
+      opcion(m, "Renombrar", () => {
+        cerrarMenu(); pedirNombre(t, c.titulo, async v => { await api("renombrar_conversacion", c.id, v); refrescarHistorial(); });
+      });
+      opcion(m, "Mover a…", () => abrirMenu(acc, m2 => {
+        m2.appendChild(el("div", "titulo-menu", "Mover a"));
+        for (const carpeta of [...hist.carpetas, ""]) {
+          if (carpeta === c.carpeta) continue;
+          opcion(m2, carpeta || "Sin carpeta", async () => { cerrarMenu(); await api("mover_conversacion", c.id, carpeta); refrescarHistorial(); });
+        }
+      }));
+      opcionPeligrosa(m, "Borrar conversación", async () => {
+        await api("borrar_conversacion", c.id);
+        if (c.id === hist.actual) limpiarRegistro("Conversación borrada. Empiezas una nueva.");
+        refrescarHistorial();
+      });
+    });
+  });
+  return fila;
+}
+async function refrescarHistorial() {
+  const h = await api("historial");
+  if (h) { hist = h; pintarArbol(); }
+}
+function limpiarRegistro(aviso) {
+  ocultarVisual(); registro.innerHTML = ""; ponerAbiertas([]); permisos = 0;
   document.getElementById("act-permisos").textContent = "0 pedidos";
-  registro.appendChild(el("div", "sistema", "Conversación nueva: no recuerdo nada de lo anterior."));
+  if (aviso) registro.appendChild(el("div", "sistema", aviso));
+}
+async function nuevaConversacion(carpeta) {
+  if (ocupado) return;
+  const r = await api("nuevo", carpeta || "");
+  if (r && r.ok === false) { registro.appendChild(el("div", "fallo", r.error)); alFondo(); return; }
+  if (enPasos) ocultarPasos();
+  const modo = datosModo(modoActual).titulo;
+  limpiarRegistro(carpeta ? `Conversación nueva en «${carpeta}». Modo ${modo}.` : `Conversación nueva. Modo ${modo}.`);
+  hist.actual = null; pintarArbol(); orden.focus();
+}
+async function abrirConversacion(id) {
+  if (ocupado || id === hist.actual) return;
+  const r = await api("abrir_conversacion", id);
+  if (!r || !r.ok) { registro.appendChild(el("div", "fallo", (r && r.error) || "No se pudo abrir.")); alFondo(); return; }
+  if (enPasos) ocultarPasos();
+  reproducir(r.registro || []);
+  ponerModoConversacion(r.modo);
+  hist.actual = r.id; pintarArbol(); orden.focus();
+}
+// Vuelve a pintar una conversacion guardada, sin animaciones ni cambios del nucleo.
+function reproducir(eventos) {
+  limpiarRegistro();
+  const decisiones = new Map(eventos.filter(e => e.tipo === "permiso_fin").map(e => [e.id, e.si]));
+  let familia = "";
+  for (const e of eventos) {
+    switch (e.tipo) {
+      case "tu": registro.appendChild(el("div", "tu", e.texto)); break;
+      case "comentario": registro.appendChild(linea("piensa", "◇", e.texto)); break;
+      case "herramienta": familia = e.familia || ""; break;
+      case "accion": {
+        const l = linea("accion", "▸", "", familia ? colorDeModo(familia) : null), cuerpo = l.querySelector(".cuerpo");
+        if (FAMILIAS[familia]) cuerpo.appendChild(el("span", "chip", FAMILIAS[familia]));
+        conEnlaces(cuerpo, e.texto); registro.appendChild(l); break;
+      }
+      case "resultado": registro.appendChild(linea("resultado", "└", e.texto)); break;
+      case "error": registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); break;
+      case "permiso": {
+        const t = tarjetaPermiso(e.id, e.pregunta, e.opinion), si = decisiones.get(e.id);
+        t.querySelectorAll("button").forEach(b => b.disabled = true);
+        t.appendChild(el("div", "hecho", si ? "✓ AUTORIZADO" : "✗ NO AUTORIZADO"));
+        registro.appendChild(t); break;
+      }
+      case "respuesta": registro.appendChild(conEnlaces(el("div", "respuesta"), e.texto)); break;
+      case "fallo": registro.appendChild(el("div", "fallo", e.texto)); break;
+      case "visual": {
+        const v = { titulo: e.titulo, grafica: e.grafica, estadistica: e.estadistica };
+        const l = linea("accion", "◆", "", colorDeModo("visual")), cuerpo = l.querySelector(".cuerpo");
+        cuerpo.append(el("span", "chip", "visual"), document.createTextNode(e.titulo));
+        const ver = el("button", "ver-visual", "Ver"); ver.addEventListener("click", () => mostrarVisual(v));
+        cuerpo.appendChild(ver); registro.appendChild(l); break;
+      }
+      default: break;
+    }
+  }
+  alFondo();
+}
+
+function ponerModoConversacion(id) {
+  modoActual = id || "global";
+  const m = datosModo(modoActual);
+  document.documentElement.style.setProperty("--skill", colorModo(modoActual));
+  document.getElementById("modo-nombre").textContent = m.titulo;
+  document.getElementById("sys-modo").textContent = m.titulo;
+}
+async function cambiarModo(id) {
+  cerrarMenu();
+  if (ocupado || id === modoActual) return;
+  const r = await api("poner_modo", id);
+  if (!r || !r.ok) { registro.appendChild(el("div", "fallo", (r && r.error) || "No se pudo cambiar de modo.")); alFondo(); return; }
+  ponerModoConversacion(r.modo);
+  const m = datosModo(r.modo);
+  registro.appendChild(el("div", "sistema", `Modo ${m.titulo}${m.descripcion ? ": " + m.descripcion : ""}`)); alFondo();
+  document.getElementById("sys-herr").textContent = `${r.herramientas} disponibles`;
+  latido(0.6); refrescarHistorial();
+}
+botonModo.addEventListener("click", async ev => {
+  ev.stopPropagation();
+  if (document.querySelector(".menu")) { cerrarMenu(); return; }
+  const aprendido = (await api("aprendido", modoActual)) || { notas: [] };
+  abrirMenu(botonModo, m => {
+    m.appendChild(el("div", "titulo-menu", "Modo de conversación"));
+    for (const modo of catalogoModos) {
+      const b = opcion(m, "", () => cambiarModo(modo.id), `modo-op${modo.id === modoActual ? " actual" : ""}`);
+      const p = el("span", "p"); p.style.background = modo.color || prefs.c1;
+      b.append(p, el("span", "", modo.titulo), el("span", "d", modo.descripcion));
+    }
+    m.appendChild(el("div", "titulo-menu", `Aprendido en ${datosModo(modoActual).titulo}`));
+    if (!aprendido.notas.length) m.appendChild(el("div", "sin-notas", "Nada todavía. Dile «recuerda que prefiero…» y lo apuntará."));
+    aprendido.notas.forEach((nota, i) => {
+      const fila = el("div", "nota"), quitar = el("button", "", "✕");
+      quitar.title = "Olvidar esto"; quitar.setAttribute("aria-label", `Olvidar: ${nota}`);
+      quitar.addEventListener("click", async e2 => {
+        e2.stopPropagation(); await api("olvidar_aprendido", modoActual, i); cerrarMenu(); botonModo.click();
+      });
+      fila.append(el("span", "", nota), quitar); m.appendChild(fila);
+    });
+  }, true);
 });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") cerrarMenu(); });
+document.getElementById("conv-nueva").addEventListener("click", () => nuevaConversacion(""));
+document.getElementById("carpeta-nueva").addEventListener("click", () => {
+  const hueco = el("div", "conv");
+  arbol.prepend(hueco);
+  pedirNombre(hueco, "", async v => { await api("crear_carpeta", v); refrescarHistorial(); });
+});
+for (const [tab, vista, otra, otraVista] of [["tab-conv", "vista-conv", "tab-sys", "vista-sys"], ["tab-sys", "vista-sys", "tab-conv", "vista-conv"]]) {
+  document.getElementById(tab).addEventListener("click", () => {
+    document.getElementById(vista).hidden = false; document.getElementById(otraVista).hidden = true;
+    document.getElementById(tab).classList.add("activa"); document.getElementById(otra).classList.remove("activa");
+    document.getElementById(tab).setAttribute("aria-selected", "true"); document.getElementById(otra).setAttribute("aria-selected", "false");
+  });
+}
 
 /* ==========================================================================
    7. PRIMEROS PASOS
@@ -1463,6 +1773,9 @@ async function arrancar() {
   document.getElementById("sys-herr").textContent = `${info.herramientas} disponibles`;
   document.getElementById("pie-info").textContent =
     `${info.modelos.length} modelo${info.modelos.length > 1 ? "s" : ""} · ${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión" : "");
+  catalogoModos = info.modos || [];
+  ponerModoConversacion(info.actual || "global");
+  refrescarHistorial();
   orden.disabled = botonEnviar.disabled = false;
   if (!bienvenida) {
     bienvenida = true;
@@ -1485,6 +1798,19 @@ new ResizeObserver(() => calcularTrazas()).observe(document.querySelector("main.
 /* ==========================================================================
    10. DEMO (#demo): una orden simulada, para disenar sin agente
    ========================================================================== */
+const MODOS_DEMO = [
+  { id: "global", titulo: "Global", descripcion: "Todo a la vez: todas las herramientas y los expertos.", color: "" },
+  { id: "ciencias", titulo: "Ciencias", descripcion: "Matemáticas, física, química y estadística paso a paso.", color: "#ffc23d" },
+  { id: "diseno", titulo: "Diseño", descripcion: "Diseño visual e interfaces.", color: "#b48bff" },
+  { id: "investigacion", titulo: "Investigación", descripcion: "Conversación e investigación en internet.", color: "#2bd9ff" },
+  { id: "programacion", titulo: "Programación", descripcion: "Lee, explica, modifica y prueba código.", color: "#3dff9a" },
+];
+const HIST_DEMO = { actual: null, carpetas: ["Estudios", "Proyecto D.O.O.M"], conversaciones: [
+  { id: "1", titulo: "Energía cinética de una pelota", carpeta: "Estudios", modo: "ciencias", actualizada: new Date().toISOString() },
+  { id: "2", titulo: "Refactor del puente de la ventana", carpeta: "Proyecto D.O.O.M", modo: "programacion", actualizada: new Date().toISOString() },
+  { id: "3", titulo: "Paleta para el HUD", carpeta: "Proyecto D.O.O.M", modo: "diseno", actualizada: "2026-10-11T18:00:00" },
+  { id: "4", titulo: "¿Qué tiempo hace en Madrid?", carpeta: "", modo: "investigacion", actualizada: "2026-10-10T09:30:00" },
+] };
 if (location.hash === "#demo") {
   const t = (ms, f) => setTimeout(f, ms);
   document.body.prepend(el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS"));
@@ -1494,7 +1820,20 @@ if (location.hash === "#demo") {
   window.DEMO = {
     preferencias: () => Promise.resolve(prefsDemo),
     guardar_preferencias: (p) => { prefsDemo = Object.assign({}, p); return Promise.resolve(prefsDemo); },
-    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 15, revisor: true }),
+    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 19, revisor: true,
+      actual: "global", modos: MODOS_DEMO }),
+    historial: () => Promise.resolve(HIST_DEMO),
+    abrir_conversacion: (id) => { HIST_DEMO.actual = id; const c = HIST_DEMO.conversaciones.find(x => x.id === id);
+      return Promise.resolve({ ok: true, id, titulo: c.titulo, modo: c.modo, registro: [
+        { tipo: "tu", texto: c.titulo }, { tipo: "comentario", texto: "(Simulación) Así se ve una conversación guardada al reabrirla." },
+        { tipo: "herramienta", nombre: "calcular", familia: "" }, { tipo: "accion", texto: "Calculo 9.81 * 2.5^2 / 2" },
+        { tipo: "resultado", texto: "9.81 * 2.5^2 / 2 = 30.65625" }, { tipo: "respuesta", texto: "La energía es 30,66 J (simulado)." }] }); },
+    poner_modo: (id) => Promise.resolve({ ok: true, modo: id, herramientas: id === "global" ? 19 : 7 }),
+    aprendido: () => Promise.resolve({ notas: ["2026-10-13 Prefiere las respuestas con unidades del SI", "2026-10-13 Quiere los pasos numerados"] }),
+    olvidar_aprendido: () => Promise.resolve({ ok: true }),
+    crear_carpeta: (n) => { HIST_DEMO.carpetas.push(n); return Promise.resolve({ ok: true }); },
+    renombrar_conversacion: () => Promise.resolve({ ok: true }), mover_conversacion: () => Promise.resolve({ ok: true }),
+    borrar_conversacion: () => Promise.resolve({ ok: true }), renombrar_carpeta: () => Promise.resolve({ ok: true }), borrar_carpeta: () => Promise.resolve({ ok: true }),
     nuevo: () => Promise.resolve(null), parar: () => Promise.resolve(null), abrir_enlace: () => Promise.resolve(null),
     configuracion: () => Promise.resolve({
       proveedores: [

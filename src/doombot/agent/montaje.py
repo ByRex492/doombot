@@ -15,11 +15,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from doombot.agent.apps import Aplicaciones
 from doombot.agent.bucle import Agente, Narrador
+from doombot.agent.calculo import herramientas as herramientas_calculo
 from doombot.agent.graficas import Graficas
 from doombot.agent.sistema import herramientas as herramientas_sistema
+from doombot.agent.skills import GLOBAL, Modos
 from doombot.agent.web import Web
 from doombot.backends.base import ToolCaller
 from doombot.config import Settings, settings
@@ -112,6 +115,14 @@ class Montaje:
     web: Web
     avisos: list[str] = dataclasses.field(default_factory=list)
     """Modelos de DOOMBOT_MODELOS que no se pudieron montar, y por que."""
+    # Lo que necesita un modo para reconfigurar el agente (D-038): el prompt sin
+    # skill, todas las herramientas, la cadena de modelos sin reordenar y la
+    # configuracion (para montar los modelos preferidos de una skill).
+    system_base: str = ""
+    todas: dict = dataclasses.field(default_factory=dict)
+    cadena: Any = None
+    cfg: Any = None
+    modos: Any = None
 
     def abiertas(self) -> list[str]:
         """Lo que el agente ha abierto en esta sesion: apps y paginas."""
@@ -141,13 +152,15 @@ def montar(
     web = Web()
     # mostrar_grafica solo existe donde hay donde pintar (la ventana, D-037).
     graficas = Graficas(pantalla).herramientas() if pantalla is not None else []
-    agente = Agente(
-        cerebro_,
-        [*herramientas_sistema(), *apps.herramientas(), *web.herramientas(), *graficas],
-        narrar=narrar,
-        confirmar=confirmar,
-        system=system_prompt(con_pantalla=pantalla is not None),
-    )
+    todas = [
+        *herramientas_sistema(),
+        *apps.herramientas(),
+        *web.herramientas(),
+        *herramientas_calculo(),
+        *graficas,
+    ]
+    system_base = system_prompt(con_pantalla=pantalla is not None)
+    agente = Agente(cerebro_, todas, narrar=narrar, confirmar=confirmar, system=system_base)
 
     from doombot.backends.varios import Cadena
 
@@ -159,4 +172,17 @@ def montar(
             from doombot.agent.revision import revisor
 
             agente.revisar = revisor(cerebro_)
-    return Montaje(agente, apps, web, avisos)
+    montaje = Montaje(
+        agente,
+        apps,
+        web,
+        avisos,
+        system_base=system_base,
+        todas={h.nombre: h for h in todas},
+        cadena=cerebro_,
+        cfg=cfg,
+    )
+    # Arranca en el modo global: todas las herramientas y los expertos (D-038).
+    montaje.modos = Modos(montaje)
+    montaje.modos.aplicar(GLOBAL)
+    return montaje

@@ -28,6 +28,8 @@ PROFILES_FILE: Path = PROJECT_ROOT / "profiles.toml"
 ENV_FILE: Path = PROJECT_ROOT / ".env"
 ENV_EXAMPLE: Path = PROJECT_ROOT / ".env.example"
 DOCS_DIR: Path = PROJECT_ROOT / "docs"
+SKILLS_DIR: Path = PROJECT_ROOT / "skills"
+"""Las skills de D.O.O.M que se versionan (D-038). Las personales, en ``data_dir()/skills``."""
 UI_DIR: Path = PROJECT_ROOT / "ui"
 """Interfaces: el HUD (``ui/prototipo``) y la ventana de la aplicacion (``ui/ventana``)."""
 

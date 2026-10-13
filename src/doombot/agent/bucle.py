@@ -85,7 +85,7 @@ class Agente:
         # antes de ejecutar una. La consola no lo necesita y lo deja a None.
         self.observar: Callable[[str, dict[str, Any]], None] | None = None
         self._parar = False
-        self._system = system
+        self.system = system
         self._max_pasos = max_pasos
         self._max_resultado = max_resultado
         self._ventana = ventana
@@ -118,7 +118,7 @@ class Agente:
             if self._parar:
                 return self._parado(informe)
             self._avisar("pensando", {"paso": n + 1})
-            paso = self.cerebro.paso(self._vista(), especs, system=self._system)
+            paso = self.cerebro.paso(self._vista(), especs, system=self.system)
             self.conversacion.append(paso)
             informe.pasos += 1
 

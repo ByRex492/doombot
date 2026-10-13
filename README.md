@@ -353,6 +353,14 @@ con recta de regresión. Las medias, porcentajes y demás los calcula D.O.O.M
 con exactitud, no el modelo. **Ampliar** ocupa también el registro y
 **Núcleo** vuelve (D-037).
 
+**Modos y conversaciones.** Junto a la línea de órdenes se elige el modo: *Global* (todo, con
+los expertos a mano) o una skill -Diseño, Investigación, Programación, Ciencias-, cada una con
+sus instrucciones, sus herramientas y sus modelos. Cuando le dices algo como "recuerda que
+prefiero…", lo apunta (tras confirmarlo) y lo tiene en cuenta en ese modo y en el global; en el
+mismo selector se ve lo aprendido y se puede olvidar. Las skills son carpetas en `skills/`
+(formato agentskills.io): una nueva es una carpeta nueva. A la izquierda, en *Conversaciones*,
+el historial por carpetas: se retoma cualquier conversación donde se dejó, con su modo.
+
 **Icono en el menú y en el dock (Linux):**
 
 ```bash

@@ -59,9 +59,22 @@ def _releer_env() -> None:
     config.settings.cache_clear()
 
 
+# Lo que se guarda de una conversacion para volver a pintarla al abrirla: lo
+# que se ve en el registro. Los cambios de estado del nucleo no hacen falta.
+_PERSISTIBLES = frozenset({
+    "comentario", "herramienta", "accion", "resultado", "error", "permiso", "permiso_fin",
+    "respuesta", "fallo", "visual",
+})  # fmt: skip
+
+
 class Puente:
-    def __init__(self, montar: Callable[..., Any] | None = None) -> None:
+    def __init__(self, montar: Callable[..., Any] | None = None, historial: Any = None) -> None:
         self._montar = montar
+        # La conversacion abierta (None = una nueva, que se crea al primer
+        # mensaje) y la carpeta donde ira esa nueva. Ver ventana/historial.py.
+        self._historial_inyectado = historial
+        self._conv: dict[str, Any] | None = None
+        self._carpeta_nueva = ""
         self._ventana: Any = None
         self._montaje: Any = None
         self._hilo = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agente")
@@ -88,8 +101,16 @@ class Puente:
         if self._ocupado.is_set():
             return {"ok": False, "error": "Sigo con la orden anterior."}
         self._ocupado.set()
+        nueva = self._conv is None
+        if nueva:
+            modo = self._montaje.modos.actual if self._montaje.modos else "global"
+            self._conv = self._historial.nueva(texto, self._carpeta_nueva, modo)
+        self._conv["registro"].append({"tipo": "tu", "texto": texto})
+        if nueva:
+            # Que aparezca en la lista ya, no al acabar la orden.
+            self._historial.guardar(self._conv)
         self._hilo.submit(self._ejecutar, texto)
-        return {"ok": True}
+        return {"ok": True, "id": self._conv["id"]}
 
     def responder(self, id_: int, si: bool) -> None:
         cola = self._permisos.get(int(id_))
@@ -104,9 +125,129 @@ class Puente:
         for cola in list(self._permisos.values()):
             cola.put(False)
 
-    def nuevo(self) -> None:
+    def nuevo(self, carpeta: str = "") -> dict[str, Any]:
+        """Conversacion nueva, que se guardara en ``carpeta`` al primer mensaje."""
+        if self._ocupado.is_set():
+            return {"ok": False, "error": "Sigo con la orden anterior."}
+        self._conv = None
+        self._carpeta_nueva = carpeta or ""
         if self._montaje is not None:
-            self._hilo.submit(self._montaje.agente.olvidar)
+            self._hilo.submit(self._montaje.agente.olvidar).result()
+        return {"ok": True}
+
+    # -- historial (D-038) --------------------------------------------------------
+    @property
+    def _historial(self) -> Any:
+        if self._historial_inyectado is None:
+            from doombot.ventana.historial import Historial
+
+            self._historial_inyectado = Historial()
+        return self._historial_inyectado
+
+    def historial(self) -> dict[str, Any]:
+        return {
+            "carpetas": self._historial.carpetas(),
+            "conversaciones": self._historial.lista(),
+            "actual": self._conv["id"] if self._conv else None,
+        }
+
+    def abrir_conversacion(self, id_: str) -> dict[str, Any]:
+        """La retoma donde se dejo: el registro para pintarlo, y el agente con su estado y modo."""
+        if self._ocupado.is_set():
+            return {"ok": False, "error": "Sigo con la orden anterior."}
+        try:
+            conv = self._historial.leer(id_)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        if conv is None:
+            return {"ok": False, "error": "Esa conversacion ya no existe."}
+
+        def retomar() -> str:
+            from doombot.ventana.historial import deserializar
+
+            self._montaje.agente.conversacion = deserializar(conv.get("agente", []))
+            return self._montaje.modos.aplicar(conv.get("modo", "global"))
+
+        modo = self._hilo.submit(retomar).result() if self._montaje is not None else "global"
+        self._conv = conv
+        return {
+            "ok": True,
+            "id": conv["id"],
+            "titulo": conv["titulo"],
+            "modo": modo,
+            "registro": conv.get("registro", []),
+        }
+
+    def _historial_op(self, operacion: Callable[[], Any]) -> dict[str, Any]:
+        try:
+            operacion()
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
+
+    def renombrar_conversacion(self, id_: str, titulo: str) -> dict[str, Any]:
+        resultado = self._historial_op(lambda: self._historial.renombrar(id_, titulo))
+        if self._conv and self._conv["id"] == id_ and resultado["ok"]:
+            self._conv["titulo"] = " ".join(titulo.split())[:80]
+        return resultado
+
+    def mover_conversacion(self, id_: str, carpeta: str) -> dict[str, Any]:
+        resultado = self._historial_op(lambda: self._historial.mover(id_, carpeta))
+        if self._conv and self._conv["id"] == id_ and resultado["ok"]:
+            self._conv["carpeta"] = carpeta
+        return resultado
+
+    def borrar_conversacion(self, id_: str) -> dict[str, Any]:
+        if self._conv and self._conv["id"] == id_:
+            if self._ocupado.is_set():
+                return {"ok": False, "error": "Sigo con la orden anterior."}
+            self.nuevo()
+        return self._historial_op(lambda: self._historial.borrar(id_))
+
+    def crear_carpeta(self, nombre: str) -> dict[str, Any]:
+        return self._historial_op(lambda: self._historial.crear_carpeta(nombre))
+
+    def renombrar_carpeta(self, vieja: str, nueva: str) -> dict[str, Any]:
+        resultado = self._historial_op(lambda: self._historial.renombrar_carpeta(vieja, nueva))
+        if self._conv and self._conv.get("carpeta") == vieja and resultado["ok"]:
+            self._conv["carpeta"] = nueva
+        return resultado
+
+    def borrar_carpeta(self, nombre: str) -> dict[str, Any]:
+        resultado = self._historial_op(lambda: self._historial.borrar_carpeta(nombre))
+        if self._conv and self._conv.get("carpeta") == nombre:
+            self._conv["carpeta"] = ""
+        return resultado
+
+    # -- modos (D-038) ------------------------------------------------------------
+    def modos(self) -> dict[str, Any]:
+        if self._montaje is None or self._montaje.modos is None:
+            return {"modos": [], "actual": "global"}
+        return {"modos": self._montaje.modos.catalogo(), "actual": self._montaje.modos.actual}
+
+    def poner_modo(self, modo: str) -> dict[str, Any]:
+        if self._montaje is None:
+            return {"ok": False, "error": "El agente no esta montado."}
+        if self._ocupado.is_set():
+            return {"ok": False, "error": "Sigo con la orden anterior."}
+        actual = self._hilo.submit(self._montaje.modos.aplicar, str(modo)).result()
+        if self._conv is not None:
+            self._conv["modo"] = actual
+            self._historial.guardar(self._conv)
+        return {"ok": True, "modo": actual, "herramientas": len(self._montaje.agente.herramientas)}
+
+    def aprendido(self, modo: str) -> dict[str, Any]:
+        if self._montaje is None:
+            return {"notas": []}
+        try:
+            return {"notas": self._montaje.modos.notas.leer(str(modo))}
+        except ValueError:
+            return {"notas": []}
+
+    def olvidar_aprendido(self, modo: str, indice: int) -> dict[str, Any]:
+        if self._montaje is None:
+            return {"ok": False}
+        return self._historial_op(lambda: self._montaje.modos.notas.borrar(str(modo), int(indice)))
 
     # -- aspecto -----------------------------------------------------------------
     def preferencias(self) -> dict[str, Any]:
@@ -210,6 +351,7 @@ class Puente:
             "avisos": list(getattr(self._montaje, "avisos", [])),
             "herramientas": len(self._montaje.agente.herramientas),
             "revisor": self._montaje.agente.revisar is not None,
+            **self.modos(),
         }
 
     def _ejecutar(self, texto: str) -> None:
@@ -229,8 +371,23 @@ class Puente:
                 abiertas=self._montaje.abiertas()[antes:],
             )
         finally:
+            self._guardar_conversacion()
             self._ocupado.clear()
             self._emitir("estado", estado="reposo")
+
+    def _guardar_conversacion(self) -> None:
+        if self._conv is None or self._montaje is None:
+            return
+        from doombot.ventana.historial import serializar
+
+        self._conv["agente"] = serializar(self._montaje.agente.conversacion)
+        self._conv["modo"] = self._montaje.modos.actual if self._montaje.modos else "global"
+        try:
+            self._historial.guardar(self._conv)
+        except OSError as e:
+            self._emitir("error", texto=f"No he podido guardar la conversacion: {e}")
+            return
+        self._emitir("historial", actual=self._conv["id"])
 
     def _narrar(self, tipo: str, texto: str) -> None:
         self._emitir(tipo, texto=texto)
@@ -247,15 +404,19 @@ class Puente:
         # ventana la pinta aparte, debajo.
         pregunta, _, opinion = pregunta.partition("\n      Segunda opinion: ")
         self._emitir("permiso", id=id_, pregunta=pregunta.strip(), opinion=opinion.strip())
+        decision = False
         try:
-            return cola.get(timeout=_ESPERA_PERMISO)
+            decision = cola.get(timeout=_ESPERA_PERMISO)
+            return decision
         except queue.Empty:
             return False
         finally:
             self._permisos.pop(id_, None)
-            self._emitir("permiso_fin", id=id_)
+            self._emitir("permiso_fin", id=id_, si=decision)
 
     def _emitir(self, tipo: str, **datos: Any) -> None:
+        if tipo in _PERSISTIBLES and self._conv is not None:
+            self._conv["registro"].append({"tipo": tipo, **datos})
         if self._ventana is None:
             return
         carga = json.dumps({"tipo": tipo, **datos})

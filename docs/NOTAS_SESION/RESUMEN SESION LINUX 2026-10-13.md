@@ -116,6 +116,20 @@ abrió la Calculadora con las herramientas reales y lo contó en el registro.
 **Sin verificar**: con modelo real, en Windows (WebView2) y como ejecutable. Y la voz: el planeta
 aún no reacciona al micrófono ni a Kokoro como el HUD; juntar los dos es lo siguiente.
 
+## 5. Lo que vino después, el mismo día (D-035 a D-038)
+
+- **HUD propio estilo JARVIS** (D-036): núcleo holográfico, paneles, circuitos, Personalizar.
+- **Gráficas y estadística** (D-037): `mostrar_grafica`, con los cálculos en Python. Los dibujos
+  libres se probaron y se quitaron: los modelos gratuitos no dibujan con precisión suficiente.
+- **Arreglos con claves reales**: firma de razonamiento de Gemini 3, límite por minuto de Groq,
+  503 y tiempo agotado como pasajeros, cierre inmediato al cerrar la ventana.
+- **Primeros pasos** (pegar y probar claves) e **icono en el dock** (`python -m doombot lanzador`).
+- **Skills como modos que aprenden + historial por carpetas** (D-038), con la calculadora exacta.
+- `tests/conftest.py`: todos los tests escriben en una carpeta de datos temporal.
+
+**En este portátil**: claves de Groq y Gemini en `.env`; acceso en el dock; Gemini saturado buena
+parte del día (no se pudo verificar en real su firma de razonamiento ni su dibujo).
+
 ## Qué hacer primero en el sobremesa
 
 1. Fusionar `tarea/agente-local` (`git merge --no-ff`), revisar los ficheros de integración de
@@ -131,8 +145,10 @@ aún no reacciona al micrófono ni a Kokoro como el HUD; juntar los dos es lo si
    - "borra la carpeta X" (debe preguntar; contestar no y ver que no insiste)
    Anotar cuántas resuelve cada cerebro: eso decide el valor por defecto de `DOOMBOT_AGENT_BRAIN`.
 4. En Windows: comprobar que "abre la calculadora" encuentra el acceso del menú Inicio.
-5. `python -m doombot ventana` en Windows: que abre con WebView2, que el planeta se ve (WebGL) y
-   que el navegador propio funciona desde la ventana (Playwright en el hilo del agente).
+5. `python -m doombot ventana` en Windows: que abre con WebView2, que el núcleo se ve y que el
+   navegador propio funciona desde la ventana (Playwright en el hilo del agente).
+6. Probar los modos con modelos reales (y con `ollama:gemma4:12b` en la cadena) y el historial.
+7. Pendiente: acceso directo de Windows (el de Linux ya existe).
 
 ## Ideas que quedan para después
 - El agente por voz: la orden `agente` ya pasa por `Sesion.decir`/`preguntar`, falta oírlo.

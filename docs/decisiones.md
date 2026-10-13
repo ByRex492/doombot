@@ -1460,3 +1460,61 @@ ventana a su icono. El icono (`ui/ventana/doom.svg`) es el núcleo del HUD. Veri
 `.desktop` pasa `desktop-file-validate` y la ventana abierta desde él tiene `WM_CLASS` `doombot`.
 Pendiente: el equivalente en Windows (acceso en el menú Inicio).
 
+---
+
+## D-038 — Skills como modos de conversación que aprenden, y conversaciones por carpetas
+
+**Contexto.** 13/10/2026. Pedido del usuario: "agentes profesionales con distintas utilidades"
+-diseño, conversación e investigación en internet, programación, ciencias- que sean las propias
+skills de D.O.O.M y funcionen como modos de conversación, pero que a la vez realimenten a la IA;
+poder elegir uno según la tarea o usar una versión global de todo. Y un historial de
+conversaciones por temas o carpetas, como Claude Code.
+
+**Decisión.**
+
+1. **Skills en el estándar de D-014, por fin.** Una carpeta por skill con su `SKILL.md`
+   (agentskills.io): `name`, `description` e instrucciones; lo propio de D.O.O.M en `metadata`
+   (`titulo`, `color`, `modelos` preferidos) y en `allowed-tools`. Viven en `skills/` del
+   repositorio y, las personales, en `data_dir()/skills` (una personal sustituye a la del mismo
+   nombre). Cuatro de serie: `diseno`, `investigacion`, `programacion`, `ciencias`. Añadir una es
+   añadir una carpeta, sin código.
+2. **Un modo reconfigura el agente, no crea otro** (`agent/skills.py`, `Modos.aplicar`): sus
+   instrucciones (las de la skill más lo aprendido), sus herramientas (las de `allowed-tools`) y el
+   orden de los modelos (los preferidos delante, montándolos aparte si no estaban en la cadena).
+   El parser del frontmatter es propio y mínimo: no se añade PyYAML para leer `clave: valor`.
+3. **El modo global lo tiene todo** y ve el catálogo de skills (nombre y descripción: la
+   "divulgación progresiva" del estándar, unos 20 tokens por skill), con `consultar_skill` para
+   pedirle una respuesta a un experto con sus instrucciones y sus modelos.
+4. **Realimentación: `aprender`.** En cualquier modo, el agente apunta una preferencia o corrección
+   del usuario en el ámbito del modo (`data_dir()/aprendizajes/<modo>.md`, texto legible). Cada
+   modo lee lo suyo y lo global; el modo global lee un resumen de todos -lo que enseñas a
+   Programación lo sabe también la IA general-, pero un modo no ve lo de los demás. **Apuntar se
+   confirma** con un clic: lo apuntado entra en el prompt de todas las conversaciones futuras, y
+   una página con instrucciones ocultas podría intentar que el agente "aprendiera" algo suyo.
+   Desde el selector de modo se ve lo aprendido y se puede olvidar nota a nota.
+5. **`calcular`**, en todos los modos: aritmética de verdad con `math`, analizada con `ast` y una
+   lista blanca (números, operadores, unas constantes y funciones), nunca `eval`, con topes para
+   que una potencia o un factorial enormes no cuelguen el proceso. El modo Ciencias obliga a usarla.
+6. **Historial por carpetas** (`ventana/historial.py`): un JSON por conversación en
+   `data_dir()/conversaciones` -estado privado, fuera del repositorio-, con lo que se ve en el
+   registro (para volver a pintarlo) y el estado del agente (para retomarla, no solo releerla),
+   incluida la firma de Gemini de cada llamada. Carpetas que existen aunque estén vacías.
+   Crear, renombrar, mover y borrar conversaciones y carpetas desde la ventana; borrar una carpeta
+   no borra sus conversaciones. Los identificadores que llegan de la ventana se validan contra un
+   patrón antes de ser nombre de fichero.
+
+**En la ventana**: pestañas *Conversaciones* / *Sistema* a la izquierda, con el árbol de carpetas;
+selector de modo junto a la línea de órdenes, con el color de cada skill; una conversación se
+crea al primer mensaje, se guarda al acabar cada orden y se reproduce sin animaciones al abrirla.
+
+**Un error propio, visto y cerrado.** Los primeros tests del puente guardaron conversaciones de
+prueba en la carpeta de datos real del usuario. Se borraron, y `tests/conftest.py` dirige ahora
+`DOOMBOT_DATA_DIR` a una carpeta temporal en todos los tests: ninguno puede volver a escribir en
+los datos de quien los ejecuta.
+
+**Verificado.** 529 tests (skills reales y de prueba, modos, lo aprendido, calculadora con
+intentos de ejecutar código, historial con identificadores maliciosos, puente creando, guardando y
+retomando conversaciones). La ventana, en la vista previa con datos simulados: árbol, selector de
+modo con lo aprendido, conversación reabierta. **Sin verificar**: con modelos reales eligiendo
+herramientas en cada modo.
+

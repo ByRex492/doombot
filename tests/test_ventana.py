@@ -67,7 +67,8 @@ def test_iniciar_dice_con_que_cerebro_se_queda():
     puente, _ = puente_con()
     info = puente.iniciar()
     assert info["ok"] and info["modelos"] == ["guion/guion"]
-    assert info["herramientas"] == 16  # las 15 del agente + mostrar_visual, porque hay pantalla
+    # 15 del agente + calcular + mostrar_grafica (hay pantalla) + aprender y consultar_skill
+    assert info["herramientas"] == 19
     puente._cerrar()
 
 
@@ -82,7 +83,7 @@ def test_una_orden_se_cuenta_paso_a_paso():
         herramientas=[eco],
     )
     puente.iniciar()
-    assert puente.enviar("repite hola") == {"ok": True}
+    assert puente.enviar("repite hola")["ok"]
     ventana.esperar("estado", estado="reposo")
 
     tipos = [e["tipo"] for e in ventana.eventos]
@@ -95,6 +96,7 @@ def test_una_orden_se_cuenta_paso_a_paso():
         "resultado",
         "pensando",
         "respuesta",
+        "historial",  # la conversacion se guarda al acabar la orden (D-038)
         "estado",
     ]
     assert ventana.esperar("herramienta")["familia"] == "web"
@@ -231,3 +233,55 @@ def test_cerrar_no_espera_a_un_agente_ocupado():
     inicio = time.monotonic()
     puente._cerrar()
     assert time.monotonic() - inicio < 1
+
+
+# -- historial y modos (D-038) -----------------------------------------------------------
+def test_una_orden_crea_su_conversacion_y_se_puede_retomar(tmp_path):
+    from doombot.ventana.historial import Historial
+
+    historial = Historial(tmp_path)
+
+    def montar_prueba(**kw):
+        return montar(cerebro_=Guion(PasoModelo("Hola."), PasoModelo("Sigo aqui.")), **kw)
+
+    puente = Puente(montar_prueba, historial=historial)
+    puente._conectar(VentanaFalsa())
+    puente.iniciar()
+    assert puente.nuevo("Trabajo") == {"ok": True}
+    assert puente.poner_modo("programacion")["modo"] == "programacion"
+    id_ = puente.enviar("primera orden")["id"]
+    puente._ventana.esperar("estado", estado="reposo")
+
+    guardada = historial.leer(id_)
+    assert guardada["titulo"] == "primera orden" and guardada["carpeta"] == "Trabajo"
+    assert guardada["modo"] == "programacion"
+    assert [e["tipo"] for e in guardada["registro"]] == ["tu", "respuesta"]
+
+    # Una nueva olvida; abrir la anterior la retoma con su estado y su modo.
+    puente.nuevo()
+    puente.poner_modo("global")
+    assert puente._montaje.agente.conversacion == []
+    abierta = puente.abrir_conversacion(id_)
+    assert abierta["ok"] and abierta["modo"] == "programacion"
+    assert puente._montaje.agente.conversacion[0] == "primera orden"
+    assert puente.historial()["actual"] == id_
+    puente._cerrar()
+
+
+def test_borrar_la_conversacion_abierta_empieza_una_nueva(tmp_path):
+    from doombot.ventana.historial import Historial
+
+    historial = Historial(tmp_path)
+    puente = Puente(
+        lambda **kw: montar(cerebro_=Guion(PasoModelo("ok")), **kw), historial=historial
+    )
+    puente._conectar(VentanaFalsa())
+    puente.iniciar()
+    id_ = puente.enviar("algo")["id"]
+    puente._ventana.esperar("estado", estado="reposo")
+
+    assert puente.borrar_conversacion(id_) == {"ok": True}
+    assert historial.lista() == []
+    assert puente.historial()["actual"] is None
+    assert puente.abrir_conversacion("../../x")["ok"] is False
+    puente._cerrar()

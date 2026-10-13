@@ -151,4 +151,4 @@ def test_solo_hay_herramienta_de_graficas_si_hay_pantalla():
     )
     assert "mostrar_grafica" not in sin.agente.herramientas
     assert con.agente.herramientas["mostrar_grafica"].familia == "visual"
-    assert "mostrar_grafica" in con.agente._system
+    assert "mostrar_grafica" in con.agente.system

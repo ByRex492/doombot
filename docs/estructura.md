@@ -50,17 +50,21 @@ doombot/
 │   │   ├── montaje.py   Elige el cerebro, junta las herramientas, escribe el prompt
 │   │   ├── revision.py  Segunda opinión de otro modelo antes de lo irreversible
 │   │   ├── graficas.py  mostrar_grafica: ejes y estadística, con los cálculos hechos aquí
+│   │   ├── calculo.py   calcular: aritmética exacta sin eval (D-038)
+│   │   ├── skills.py    Modos: leer SKILL.md, aplicar un modo, lo aprendido, expertos
 │   │   ├── consola.py   `python -m doombot agente`
 │   │   └── orders.py    `agent`, desde el chat
 │   ├── ventana/         La aplicación de escritorio: planeta, registro y chat (D-035)
 │   │   ├── puente.py    Ventana <-> agente: js_api, un hilo fijo, confirmaciones
 │   │   ├── primeros_pasos.py  Qué falta para funcionar; guardar y probar claves
 │   │   ├── preferencias.py    Colores, luz y efectos de la ventana (D-036)
+│   │   ├── historial.py Conversaciones en carpetas, guardadas y retomables (D-038)
 │   │   └── lanzador.py  Icono en el menú y en el dock de Linux
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon
 │       └── reader.py    Resuelve la referencia hablada y lo lee como texto
+├── skills/              Modos de D.O.O.M en formato agentskills.io (D-038)
 ├── native/doomkit/      Núcleo en Rust, opcional (ver native/README.md)
 ├── obsidian/            El vault en sí (se versiona, ver su README.md)
 └── tests/

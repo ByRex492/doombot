@@ -171,6 +171,79 @@ class Embedder(Protocol):
         ...
 
 
+# -- llamada a herramientas (D-033) ---------------------------------------------
+# Tipos neutros para el agente: ni el formato de Ollama ni el de Anthropic. El
+# bucle del agente (``doombot.agent``) solo conoce estos, y cada backend
+# traduce a su API al construir la peticion. Es lo que deja cambiar de cerebro
+# con una variable de .env, como ya pasa con ``TextGenerator``.
+
+
+@dataclass(frozen=True)
+class EspecHerramienta:
+    """Lo que el modelo ve de una herramienta: nombre, para que sirve, argumentos.
+
+    ``parametros`` es un JSON Schema de tipo ``object``: es lo que piden las
+    dos APIs, Ollama dentro de ``function.parameters`` y Anthropic como
+    ``input_schema``.
+    """
+
+    nombre: str
+    descripcion: str
+    parametros: dict
+
+
+@dataclass(frozen=True)
+class LlamadaHerramienta:
+    """Una herramienta que el modelo pide ejecutar."""
+
+    id: str
+    nombre: str
+    argumentos: dict
+
+
+@dataclass(frozen=True)
+class PasoModelo:
+    """Un turno del modelo: lo que dice y las herramientas que pide.
+
+    Sin ``llamadas``, el modelo ha terminado y ``texto`` es su respuesta final.
+    Con ellas, ``texto`` es el comentario que acompana a la accion -lo que el
+    agente va contando de lo que hace-, y puede venir vacio.
+    """
+
+    texto: str
+    llamadas: tuple[LlamadaHerramienta, ...] = ()
+
+
+@dataclass(frozen=True)
+class ResultadoHerramienta:
+    """Lo que devolvio una herramienta, para devolverselo al modelo."""
+
+    id: str
+    nombre: str
+    contenido: str
+
+
+# Una conversacion de agente: texto del usuario, pasos del modelo y resultados
+# de herramientas, en orden.
+MensajeAgente = str | PasoModelo | ResultadoHerramienta
+
+
+@runtime_checkable
+class ToolCaller(Protocol):
+    """Un modelo que puede pedir herramientas, no solo responder texto."""
+
+    def paso(
+        self,
+        conversacion: Sequence[MensajeAgente],
+        herramientas: Sequence[EspecHerramienta],
+        *,
+        system: str | None = None,
+    ) -> PasoModelo: ...
+
+    @property
+    def model_name(self) -> str: ...
+
+
 class BackendError(RuntimeError):
     """Fallo al hablar con un backend.
 

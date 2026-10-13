@@ -15,6 +15,7 @@ El paquete se organiza por responsabilidad, no por tecnologia:
 - ``tts``      sintesis de voz: convierte la respuesta en sonido
 - ``hud_server`` transporte del HUD por WebSocket, hacia ui/prototipo/hud.html
 - ``actions``  capa de acciones: delega tareas reales en Claude Code
+- ``agent``    agente local: cumple ordenes solo, con apps, navegador y ficheros
 - ``obsidian`` espejo legible de la memoria en el vault del proyecto
 - ``files``    ficheros que el usuario le deja en el buzon, como contexto
 """

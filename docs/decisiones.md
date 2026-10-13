@@ -1115,3 +1115,81 @@ sido el mismo mensaje escrito dos veces.
 **Verificado con dobles**: `tests/test_ask_claude_order.py` comprueba que se presta un
 `AnthropicGenerator` de verdad durante el turno, que el backend original vuelve después -incluso
 si `responder()` falla a medias-, y que sin argumento no se toca nada.
+
+---
+
+## D-033 — Agente local con bucle propio: cerebro intercambiable, autónomo salvo en lo irreversible
+
+**Contexto.** Se pidió un agente "como Claude": recibir órdenes escritas -de momento, no voz- y
+cumplirlas solo, contando lo que hace y qué aplicaciones abre, con acceso a todo el equipo:
+aplicaciones, navegadores, y un navegador que controle por dentro. Lo que había era
+`actions/claude_code.py`, que delega en `claude -p`: sirve para tareas de código en un
+repositorio, pero no abre aplicaciones ni maneja un navegador, depende de la nube y cuesta
+dinero por uso, en contra del "coste económico: ninguno" de `capa4-investigacion.md`.
+
+**Decisión.** Un paquete nuevo, `agent/`, con un bucle propio (pensar → herramienta → observar)
+y cuatro familias de herramientas: ficheros, comandos, aplicaciones instaladas y navegador. Tres
+elecciones las tomó el usuario explícitamente, el 13/10/2026:
+
+1. **Cerebro intercambiable.** El bucle habla con un `ToolCaller` nuevo de `backends/base.py`
+   con tipos neutros (`EspecHerramienta`, `LlamadaHerramienta`, `PasoModelo`,
+   `ResultadoHerramienta`); `OllamaGenerator` y `AnthropicGenerator` lo cumplen con un método
+   `paso()` cada uno, traduciendo a su formato -Ollama con rol `tool`, Anthropic con bloques
+   `tool_use`/`tool_result`-. `DOOMBOT_AGENT_BRAIN` elige, separado de `DOOMBOT_LLM_BACKEND`:
+   se puede conversar con Ollama y dejar que actúe Claude. Es el mismo patrón que D-032 aplicó a
+   `TextGenerator`.
+2. **Autónomo, confirma lo irreversible.** Abrir apps, navegar, leer y buscar van solos;
+   sobrescribir, cerrar una app, ejecutar un comando que no sea de solo lectura, enviar un
+   formulario o pulsar algo tipo comprar/enviar/aceptar, se preguntan. Es D-031 llevado de
+   "antes de toda acción" a "antes de lo que no se deshace", que es lo que hace usable un agente.
+3. **Navegador propio, aparte del del usuario.** Chromium por Playwright (extra `agent-web`) con
+   perfil en `data_dir()/navegador-agente`, con ventana para que se vea lo que hace. No tiene las
+   sesiones ni las contraseñas del usuario. Para enseñarle una página al usuario se usa su
+   navegador normal (`webbrowser`), donde el agente no lee nada.
+
+**Las salvaguardas viven en el bucle, no en las herramientas.** Lista blanca (lo que no está en
+el catálogo devuelve un error al modelo), confirmación, límite de 20 pasos, salidas truncadas
+(cabeza y cola con nota de continuación) y resultados viejos enmascarados en lo que se envía al
+modelo -no en lo guardado-, las dos técnicas del punto 4 de `capa4-investigacion.md`. Una
+negativa del usuario vuelve al modelo como resultado ("no la repitas"), para que no insista. Cada
+herramienta declara cuándo es irreversible en función de sus argumentos (`confirmar(args)`): el
+riesgo de `ejecutar_comando` depende del comando.
+
+**Ficheros sensibles: leer también se confirma.** Con navegador propio y comandos libres de
+solo lectura, una página con instrucciones ocultas podría pedir leer `~/.ssh/id_rsa` y llevarlo a
+una URL: navegar no se confirma. Así que leer claves, `.env`, credenciales o perfiles de
+navegador se pregunta, y crear ficheros de arranque automático (`.bashrc`, `autostart`,
+`Startup`) también, aunque no existieran. El agente no escribe en campos de contraseña: con
+Claude detrás, saldría de la máquina. Y todo lo leído de páginas y ficheros va marcado como datos,
+no órdenes, en el resultado y en el prompt.
+
+**Reconocer aplicaciones sin adivinar ejecutables.** Cada sistema ya tiene la lista: `.desktop`
+en Linux, accesos `.lnk` del menú Inicio en Windows, `.app` en macOS. Se busca por nombre, por
+nombre genérico, por palabras clave y por las categorías estándar (`WebBrowser`,
+`FileManager`...), con un diccionario corto español → categoría. Medido en el portátil Linux: sin
+categorías, "navegador" no encontraba Firefox y "archivos" no encontraba nada, porque GNOME
+traduce los nombres con gettext y no en el `.desktop`.
+
+**Descartado.**
+- *Seguir solo con `claude -p`.* No abre aplicaciones ni maneja un navegador, y ata la capa de
+  acciones a la nube. Se queda como está, para tareas de código (`act`).
+- *MCP para las herramientas.* Descartado ya por contexto en `capa4-investigacion.md`.
+- *Controlar el escritorio por capturas y clics* (lo que Anthropic llama *computer use*). Pide
+  un modelo con visión y es otro orden de riesgo; queda para una fase posterior, si hace falta
+  tras usar esto.
+- *El Chrome real del usuario.* Más potente, pero el agente actuaría con sus cuentas.
+
+**Relación con D-014.** Las herramientas de aquí son funciones, no *skills*. El estándar
+agentskills.io sigue vigente para cuando haga falta empaquetar procedimientos de varios pasos
+encima de ellas.
+
+**Verificado en el portátil Linux, sin modelo.** 408 tests sin hardware, con un cerebro de
+guion. Contra el escritorio real (GNOME, X11): descubre 55 aplicaciones, y un guion que abre la
+Calculadora, ve su ventana y la cierra -con su confirmación- funciona de punta a punta.
+**Sin medir:** ningún modelo real ha llevado este bucle todavía -ni Ollama ni Claude- y el
+navegador propio no se ha lanzado (Playwright no instalado aquí).
+
+**Pendiente.** Medir en el sobremesa con `gemma4:12b` cuántas órdenes resuelve bien, y con
+Claude como referencia, antes de decidir el cerebro por defecto. El agente por voz (la orden
+`agente` ya existe en el chat, falta probarla hablada). Que el HUD muestre los pasos.
+

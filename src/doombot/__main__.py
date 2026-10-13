@@ -2,6 +2,7 @@
 
     python -m doombot            diagnostico del equipo
     python -m doombot chat       modo interactivo, con memoria y ordenes
+    python -m doombot agente     agente que actua solo: apps, navegador, ficheros (D-033)
     python -m doombot "pregunta" se la lanza al modelo del perfil activo
     python -m doombot micro         lista los microfonos disponibles
     python -m doombot micro probar  graba con el configurado, mide y transcribe
@@ -218,6 +219,10 @@ def main() -> int:
         from doombot.chat import run
 
         return run()
+    if args and args[0] in ("agente", "agent"):
+        from doombot.agent.consola import run as run_agente
+
+        return run_agente()
     if args and args[0] in ("voz", "voice"):
         # El bucle manos libres: palabra de activacion -> escucha -> LLM -> voz.
         # "voz tecla" dispara pulsando en vez de diciendo la palabra, para

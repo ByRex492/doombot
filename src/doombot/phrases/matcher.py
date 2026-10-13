@@ -372,6 +372,12 @@ BASICAS = [
         description="Enruta esta pregunta a Claude, no al backend por defecto (D-032)",
     ),
     Command(
+        "agent",
+        ("agente", "hazlo tu"),
+        prefix=True,
+        description="El agente local cumple la orden solo, con herramientas (D-033)",
+    ),
+    Command(
         "progress",
         ("anota el progreso", "apunta el progreso", "escribe el progreso"),
         prefix=True,

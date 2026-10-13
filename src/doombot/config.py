@@ -76,6 +76,17 @@ class Settings:
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
 
+    agent_brain: str = ""
+    """Quien decide en el agente local (D-033): ``ollama`` o ``anthropic``.
+
+    Vacio = el mismo que ``llm_backend``. Va aparte porque elegir herramientas
+    pide mas modelo que conversar: con 3B se acerto 6 de 9 y dos fallos eran
+    acciones no pedidas (capa4-investigacion.md). Se puede charlar con Ollama
+    y dejar que actue Claude, o al reves.
+    """
+    agent_model: str = ""
+    """Modelo de Ollama para el agente, si no es el del perfil. Vacio = el del perfil."""
+
     n8n_base_url: str = ""
     """Raiz del servidor de n8n, ej. ``http://127.0.0.1:5678``. Vacio = sin n8n."""
     n8n_workflows: tuple[tuple[str, str], ...] = ()
@@ -130,6 +141,8 @@ def settings() -> Settings:
         llm_backend=os.environ.get("DOOMBOT_LLM_BACKEND", "ollama").strip().lower(),
         anthropic_api_key=os.environ.get("DOOMBOT_ANTHROPIC_API_KEY", "").strip(),
         anthropic_model=os.environ.get("DOOMBOT_ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
+        agent_brain=os.environ.get("DOOMBOT_AGENT_BRAIN", "").strip().lower(),
+        agent_model=os.environ.get("DOOMBOT_AGENT_MODEL", "").strip(),
         n8n_base_url=os.environ.get("DOOMBOT_N8N_BASE_URL", "").strip().rstrip("/"),
         n8n_workflows=_parse_n8n_workflows(os.environ.get("DOOMBOT_N8N_WORKFLOWS", "").strip()),
     )

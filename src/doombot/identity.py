@@ -93,7 +93,9 @@ def capabilities() -> list[Capability]:
             "actuar",
             _tiene_contenido("actions"),
             "delegar tareas de codigo reales -editar ficheros, ejecutar comandos- "
-            "en el agente de acciones, y disparar workflows de n8n ya dados de alta",
+            "en el agente de acciones, disparar workflows de n8n ya dados de alta, y, "
+            "con la orden 'agente', abrir aplicaciones, manejar un navegador y tocar "
+            "ficheros del equipo",
             "no puedes abrir programas, ni tocar ficheros, ni manejar el equipo",
         ),
         Capability(

@@ -80,6 +80,7 @@ extras se combinan según lo que necesites (ver `pyproject.toml`):
 | `voice-tts` | `kokoro-onnx` | Hablar en voz alta (D-021) |
 | `voice-aec` | Cancelación de eco + VAD | Barge-in: cortar a D.O.O.M hablándole encima (D-027) |
 | `hud` | `pywebview`, `websockets` | La ventana del HUD (D-016, D-022) |
+| `agent-web` | `playwright` | El navegador propio del agente (D-033); después, `python -m playwright install chromium` |
 
 Requiere **Python 3.12** exacto. Ni 3.13 ni 3.14: el stack de audio e IA no
 publica wheels para esas versiones.
@@ -285,6 +286,37 @@ D.O.O.M puede tocar el mundo real, de dos formas con riesgos distintos (ver
 
 Ambas piden confirmación hablada antes de ejecutar de verdad (D-031, ver
 Órdenes arriba).
+
+### El agente local
+
+```
+python -m doombot agente
+```
+
+Una consola al estilo de Claude Code: escribes lo que quieres y D.O.O.M lo
+hace solo, contando cada paso (D-033). Así se ve (ejemplo):
+
+```
+doom> abre el navegador y busca el tiempo en Madrid
+  · Abro tu navegador con la búsqueda.
+  → Abro el tiempo en Madrid en tu navegador
+    ✓ Abierta https://duckduckgo.com/?q=el+tiempo+en+Madrid en el navegador del usuario.
+D.O.O.M.: Te he abierto la búsqueda del tiempo en Madrid.
+```
+
+Reconoce las aplicaciones instaladas (por nombre o por tipo: "el navegador",
+"algo para música"), las abre y las cierra; abre páginas en tu navegador o las
+lee y maneja en uno propio, aparte del tuyo (extra `agent-web`); lee, busca y
+escribe ficheros; ejecuta comandos. **Pregunta antes de lo irreversible**:
+sobrescribir, cerrar una aplicación, cualquier comando que no sea de solo
+lectura, pulsar "comprar"/"enviar"/"aceptar", o leer ficheros con claves.
+
+El cerebro es intercambiable (`DOOMBOT_AGENT_BRAIN=ollama|anthropic`). Con
+Ollama todo se queda en el equipo, pero un modelo pequeño elige mal las
+herramientas; con Claude decide mucho mejor, a cambio de que la conversación
+-y lo que el agente lee- salga de la máquina. `/nuevo` olvida lo anterior,
+`/abiertas` lista lo que ha abierto, Ctrl+C corta la tarea. Desde
+`python -m doombot chat` es la orden `agente <lo que sea>`.
 
 ## Desarrollo
 

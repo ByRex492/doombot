@@ -38,6 +38,15 @@ doombot/
 │   │   ├── claude_code.py  Delega en `claude -p`, headless
 │   │   ├── n8n.py       Dispara workflows por webhook, lista blanca (D-030)
 │   │   └── orders.py    `act` y `flow`
+│   ├── agent/           Agente local: cumple órdenes solo, con herramientas (D-033)
+│   │   ├── bucle.py     Pensar, actuar, observar: confirmación, límites, enmascarado
+│   │   ├── herramientas.py  Qué es una herramienta: función + narración + riesgo
+│   │   ├── sistema.py   Ficheros y comandos; qué es "solo lectura" y qué es sensible
+│   │   ├── apps.py      Reconoce, abre y cierra las aplicaciones instaladas
+│   │   ├── web.py       Navegador propio (Playwright) y el navegador del usuario
+│   │   ├── montaje.py   Elige el cerebro, junta las herramientas, escribe el prompt
+│   │   ├── consola.py   `python -m doombot agente`
+│   │   └── orders.py    `agent`, desde el chat
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon
@@ -147,6 +156,26 @@ hay servidor nuevo escuchando entradas ajenas. Un webhook no tiene modo
 `plan` -ejecuta en cuanto llega la petición-, así que la salvaguarda no es un
 nivel de permiso sino una lista blanca en `.env`
 (`DOOMBOT_N8N_WORKFLOWS`): un nombre que no esté ahí no dispara nada.
+
+## El agente local
+
+`agent/` es la tercera forma de actuar, y la única con bucle propio (D-033):
+recibe una orden escrita y la cumple encadenando herramientas, contando cada
+paso. A diferencia de `actions/claude_code.py`, no delega en otro agente: el
+bucle es nuestro y el cerebro es cualquier `ToolCaller` de `backends/base.py`
+-Ollama o Claude, con la misma conversación neutra y cada backend traduciendo
+a su API-.
+
+**Las salvaguardas viven en el bucle, no en cada herramienta**, para que una
+herramienta nueva no pueda saltárselas por olvido: lista blanca (solo lo del
+catálogo), confirmación de lo irreversible, límite de pasos, salidas
+truncadas y resultados viejos enmascarados. Cada herramienta solo declara
+*cuándo* es irreversible, en función de sus argumentos: `ls` no se pregunta,
+`rm` sí.
+
+**Dónde va una herramienta nueva:** en el módulo de `agent/` que le toque, con
+su `narrar` (lo que ve el usuario) y su `confirmar` (cuándo pide permiso), y
+añadida a la lista de `montaje.montar()`.
 
 ## El vault de Obsidian
 

@@ -613,17 +613,28 @@ async function arrancar() {
   const info = await api("iniciar");
   const modelos = document.getElementById("modelos");
   modelos.innerHTML = "";
+  registro.querySelectorAll(".sin-modelo").forEach(n => n.remove());
   if (!info) { document.getElementById("pie-info").textContent = "sin conexión con el agente"; return; }
   if (!info.ok) {
     ponerModo("error");
-    registro.appendChild(el("div", "fallo", info.error));
-    registro.appendChild(el("div", "sistema",
-      "Para que pueda actuar necesito al menos un modelo: pon las claves gratuitas en .env " +
-      "(DOOMBOT_GROQ_API_KEY, DOOMBOT_GEMINI_API_KEY…) y vuelve a abrir la ventana."));
+    const caja = el("div", "sin-modelo");
+    caja.appendChild(el("div", "fallo", info.error));
+    const ayuda = el("div", "sistema",
+      "Para que pueda actuar necesito al menos un modelo. Pega una clave gratuita en el fichero " +
+      ".env del proyecto (por ejemplo en DOOMBOT_GROQ_API_KEY=), guárdalo y pulsa Reintentar.");
+    const reintentar = el("button", "", "Reintentar");
+    reintentar.style.marginTop = "10px";
+    reintentar.addEventListener("click", () => { reintentar.disabled = true; arrancar(); });
+    ayuda.appendChild(document.createElement("br"));
+    ayuda.appendChild(reintentar);
+    caja.appendChild(ayuda);
+    registro.appendChild(caja);
     orden.disabled = botonEnviar.disabled = true;
     orden.placeholder = "Sin modelo configurado";
     return;
   }
+  orden.disabled = botonEnviar.disabled = false;
+  orden.placeholder = "Dime qué hago…  (Intro envía, Mayús+Intro salto de línea)";
   for (const m of info.modelos) modelos.appendChild(el("span", "modelo", m));
   for (const a of info.avisos || []) modelos.appendChild(Object.assign(el("span", "modelo sin", a.split(":")[0].replace(/'/g, "")), { title: a }));
   document.getElementById("pie-info").textContent =

@@ -38,6 +38,25 @@ from doombot.backends.base import BackendError
 _ESPERA_PERMISO = 600.0
 
 
+def _releer_env() -> None:
+    """Vuelve a leer .env, para que "Reintentar" vea una clave recien pegada.
+
+    ``config.settings()`` se guarda en cache y ``load_env`` no pisa variables
+    ya puestas: una clave vacia leida al abrir la ventana taparia la nueva.
+    Se rellenan solo las que estan vacias -una variable puesta de verdad en
+    el entorno sigue mandando sobre el fichero, como en el resto del
+    proyecto- y se vacia la cache.
+    """
+    import os
+
+    from doombot import config
+
+    for clave, valor in config.load_env().items():
+        if valor and not os.environ.get(clave, "").strip():
+            os.environ[clave] = valor
+    config.settings.cache_clear()
+
+
 class Puente:
     def __init__(self, montar: Callable[..., Any] | None = None) -> None:
         self._montar = montar
@@ -112,6 +131,8 @@ class Puente:
             montar = self._montar
             if montar is None:
                 from doombot.agent.montaje import montar
+
+                _releer_env()
             try:
                 self._montaje = montar(narrar=self._narrar, confirmar=self._confirmar)
             except ValueError as e:

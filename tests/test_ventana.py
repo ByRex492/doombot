@@ -193,3 +193,25 @@ def test_pywebview_solo_ve_metodos():
     publicos = [n for n in vars(puente) if not n.startswith("_")]
     assert publicos == []
     puente._cerrar()
+
+
+def test_reintentar_ve_una_clave_pegada_despues_de_abrir(monkeypatch, tmp_path):
+    """La clave vacia leida al abrir no debe tapar la que se pega luego en .env."""
+    from doombot import config
+    from doombot.ventana import puente as modulo
+
+    env = tmp_path / ".env"
+    env.write_text("DOOMBOT_GROQ_API_KEY=\n", encoding="utf-8")
+    monkeypatch.setattr(config, "ENV_FILE", env)
+    monkeypatch.setenv("DOOMBOT_GROQ_API_KEY", "")
+    monkeypatch.setenv("DOOMBOT_GEMINI_API_KEY", "la-del-entorno")
+
+    env.write_text(
+        "DOOMBOT_GROQ_API_KEY=gsk_nueva\nDOOMBOT_GEMINI_API_KEY=la-del-fichero\n", encoding="utf-8"
+    )
+    modulo._releer_env()
+    try:
+        assert config.settings().clave("groq") == "gsk_nueva"
+        assert config.settings().clave("gemini") == "la-del-entorno"  # el entorno sigue mandando
+    finally:
+        config.settings.cache_clear()

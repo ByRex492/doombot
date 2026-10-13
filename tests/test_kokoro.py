@@ -11,9 +11,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from doombot.backends.base import SpeechSynthesizer
-from doombot.tts.dsp import recorte_graves, reverberacion_sala_pequena
-from doombot.tts.synth import VOZ_EN, KokoroSynthesizer, _frases, _idioma
+# synth.py importa kokoro_onnx (y dsp.py, scipy) al cargarse: sin el extra
+# voice-tts no hay nada que probar aqui, y el resto de la suite sigue.
+pytest.importorskip("kokoro_onnx")
+pytest.importorskip("scipy")
+
+from doombot.backends.base import SpeechSynthesizer  # noqa: E402
+from doombot.tts.dsp import recorte_graves, reverberacion_sala_pequena  # noqa: E402
+from doombot.tts.synth import VOZ_EN, KokoroSynthesizer, _frases, _idioma  # noqa: E402
 
 
 class KokoroFalso:

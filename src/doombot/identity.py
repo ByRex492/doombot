@@ -83,7 +83,9 @@ def capabilities() -> list[Capability]:
         ),
         Capability(
             "hablar",
-            _tiene_contenido("tts"),
+            # tts/ ya no importa Kokoro al cargarse (ver su __init__), asi que
+            # exponer algo publico no prueba nada: hay que mirar el motor.
+            _tiene_contenido("tts") and find_spec("kokoro_onnx") is not None,
             "responder en voz alta, no solo por pantalla",
             "no tienes voz: respondes escribiendo",
         ),

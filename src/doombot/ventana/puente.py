@@ -66,6 +66,7 @@ class Puente:
         self._ocupado = threading.Event()
         self._ids = itertools.count(1)
         self._permisos: dict[int, queue.Queue[bool]] = {}
+        self._cerrado = False
 
     def _conectar(self, ventana: Any) -> None:
         self._ventana = ventana
@@ -117,7 +118,14 @@ class Puente:
             webbrowser.open(str(url), new=2)
 
     def _cerrar(self, *_: Any) -> None:
-        """Al cerrar la ventana: el navegador propio se cierra en su hilo."""
+        """Al cerrar la ventana: el navegador propio se cierra en su hilo.
+
+        Puede llegar dos veces -el evento de cierre de la ventana y el
+        ``finally`` de ``abrir()`` tras un Ctrl+C-: la segunda no hace nada.
+        """
+        if self._cerrado:
+            return
+        self._cerrado = True
         self.parar()
         if self._montaje is not None:
             self._hilo.submit(self._montaje.cerrar)

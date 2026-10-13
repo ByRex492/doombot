@@ -49,5 +49,11 @@ def abrir(*, montar: Callable[..., Any] | None = None, depurar: bool = False) ->
     )
     puente._conectar(ventana)
     ventana.events.closed += puente._cerrar
-    webview.start(debug=depurar)
+    try:
+        webview.start(debug=depurar)
+    except KeyboardInterrupt:
+        # Ctrl+C en la terminal desde la que se abrio: es "cierra", no un fallo.
+        print("\nD.O.O.M cerrado.", file=sys.stderr)
+    finally:
+        puente._cerrar()
     return 0

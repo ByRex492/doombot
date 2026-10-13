@@ -215,3 +215,10 @@ def test_reintentar_ve_una_clave_pegada_despues_de_abrir(monkeypatch, tmp_path):
         assert config.settings().clave("gemini") == "la-del-entorno"  # el entorno sigue mandando
     finally:
         config.settings.cache_clear()
+
+
+def test_cerrar_dos_veces_no_rompe():
+    puente, _ = puente_con()
+    puente.iniciar()
+    puente._cerrar()
+    puente._cerrar()

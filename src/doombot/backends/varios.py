@@ -141,7 +141,12 @@ class Cadena:
 
     def _fallo(self, i: int, g: Any, e: BackendError, fallos: list[str]) -> None:
         if isinstance(e, LimiteAlcanzado):
-            g._doombot_apartado_hasta = self._reloj() + self._espera
+            # Cada fallo seguido dobla el tiempo apartado (1, 2, 4... hasta 15
+            # min): un Gemini saturado durante horas no debe costar una espera
+            # en cada orden. Al primer acierto vuelve a cero.
+            seguidos = getattr(g, "_doombot_fallos_seguidos", 0) + 1
+            g._doombot_fallos_seguidos = seguidos
+            g._doombot_apartado_hasta = self._reloj() + min(self._espera * 2 ** (seguidos - 1), 900)
         fallos.append(str(e))
         if self.avisar is not None and len(self.generadores) > 1:
             self.avisar(f"{etiqueta(g)} no responde ({str(e).split(': ', 1)[-1]})")
@@ -149,6 +154,7 @@ class Cadena:
     def _acierto(self, g: Any, fallos: list[str]) -> None:
         if fallos and self.avisar is not None:
             self.avisar(f"sigo con {etiqueta(g)}")
+        g._doombot_fallos_seguidos = 0
         self.ultimo = g
 
     def _ninguno(self, fallos: list[str]) -> BackendError:

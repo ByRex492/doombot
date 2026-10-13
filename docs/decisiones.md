@@ -1518,3 +1518,12 @@ retomando conversaciones). La ventana, en la vista previa con datos simulados: �
 modo con lo aprendido, conversación reabierta. **Sin verificar**: con modelos reales eligiendo
 herramientas en cada modo.
 
+**Ampliación de D-034, 13/10/2026 (tarde): más modelos con las mismas claves.** Cada modelo tiene
+su propia cuota gratuita, así que varios del mismo proveedor multiplican la capacidad sin cuentas
+nuevas. Probados con una herramienta, con las claves del usuario: funcionan `groq:qwen/qwen3.8-27b`,
+`groq:openai/gpt-oss-20b` y `gemini:gemini-3.5-flash-lite` (menos de 1 s); Gemini 3.5/3.6/3.7/3.8
+Flash, saturados ese día; Gemini 2.5, 404 para esta cuenta; `gemma-4-31b-it`, sin respuesta. La
+cadena por defecto pasa a cinco modelos, los saturados detrás. Y un modelo que sigue fallando se
+aparta cada vez más tiempo (1, 2, 4… hasta 15 min), volviendo a cero al primer acierto: con un
+minuto fijo, un Gemini saturado durante horas costaba una espera en cada orden.
+

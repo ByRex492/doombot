@@ -443,3 +443,16 @@ def test_un_apartado_vale_para_todas_las_cadenas_que_comparten_el_modelo():
     otra = Cadena([saturado, groq], reloj=lambda: reloj[0])  # la de otro modo
     otra.generate("2")
     assert len(saturado.llamadas) == 1  # no se le volvio a esperar
+
+
+def test_un_modelo_que_sigue_fallando_se_aparta_cada_vez_mas_y_al_acertar_vuelve_a_cero():
+    reloj = [0.0]
+    g, otro = Juguete("gemini", fallo=LimiteAlcanzado("gemini: saturado")), Juguete("groq")
+    cadena = Cadena([g, otro], espera_limite=60, reloj=lambda: reloj[0])
+    for esperado in (60, 120, 240):
+        cadena.generate("x")
+        assert g._doombot_apartado_hasta - reloj[0] == esperado
+        reloj[0] = g._doombot_apartado_hasta  # vuelve a intentarlo justo al acabar
+    g.fallo = None
+    cadena.generate("x")
+    assert g._doombot_fallos_seguidos == 0

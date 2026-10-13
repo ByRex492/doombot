@@ -353,6 +353,17 @@ con recta de regresión. Las medias, porcentajes y demás los calcula D.O.O.M
 con exactitud, no el modelo. **Ampliar** ocupa también el registro y
 **Núcleo** vuelve (D-037).
 
+**Icono en el menú y en el dock (Linux):**
+
+```bash
+.venv/bin/python -m doombot lanzador
+```
+
+Crea `~/.local/share/applications/doombot.desktop` con el icono del núcleo
+y lo fija al final del dock; desde ahí se abre sin terminal, y lo que escriba
+la aplicación va a `ventana.log` en la carpeta de datos. `--sin-dock` no lo
+fija. Para quitarlo, basta con borrar ese fichero.
+
 Necesita el extra `hud` (`pywebview`). En Linux usa el GTK y el WebKit del
 sistema; como el `.venv` no ve los paquetes del sistema, se enlazan una vez:
 

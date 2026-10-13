@@ -3,7 +3,8 @@
     python -m doombot            diagnostico del equipo
     python -m doombot chat       modo interactivo, con memoria y ordenes
     python -m doombot agente     agente que actua solo: apps, navegador, ficheros (D-033)
-    python -m doombot ventana    la aplicacion: planeta, registro del agente y chat (D-035)
+    python -m doombot ventana    la aplicacion: nucleo, registro del agente y chat (D-035)
+    python -m doombot lanzador   crea el acceso en el menu y lo fija en el dock (Linux)
     python -m doombot "pregunta" se la lanza al modelo del perfil activo
     python -m doombot micro         lista los microfonos disponibles
     python -m doombot micro probar  graba con el configurado, mide y transcribe
@@ -220,6 +221,12 @@ def main() -> int:
         from doombot.chat import run
 
         return run()
+    if args and args[0] in ("lanzador", "acceso"):
+        from doombot.ventana.lanzador import instalar
+
+        for linea in instalar(fijar_en_dock="--sin-dock" not in args):
+            print(linea)
+        return 0
     if args and args[0] in ("ventana", "app"):
         from doombot.ventana import abrir
 

@@ -55,7 +55,8 @@ doombot/
 │   ├── ventana/         La aplicación de escritorio: planeta, registro y chat (D-035)
 │   │   ├── puente.py    Ventana <-> agente: js_api, un hilo fijo, confirmaciones
 │   │   ├── primeros_pasos.py  Qué falta para funcionar; guardar y probar claves
-│   │   └── preferencias.py    Colores, luz y efectos de la ventana (D-036)
+│   │   ├── preferencias.py    Colores, luz y efectos de la ventana (D-036)
+│   │   └── lanzador.py  Icono en el menú y en el dock de Linux
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon

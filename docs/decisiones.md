@@ -1451,3 +1451,12 @@ SVG, el encuadre automático, `DOOMBOT_MODELO_DIBUJO`-, y la herramienta pasó a
 Verificado: 488 tests (estadísticos exactos: histograma de 1..10 en 5 intervalos de 2, regresión de
 `y = 2x + 1` con `r = 1`); los cinco tipos pintados en la vista previa.
 
+**Ampliación: icono propio.** `python -m doombot lanzador` escribe un `.desktop` en la carpeta de
+aplicaciones del usuario -no del sistema: sin sudo, se quita borrando un fichero- que apunta al
+Python del `.venv`, y lo añade al final de los favoritos del dock de GNOME. La ventana se llama
+`doombot` para el escritorio (`GLib.set_prgname` antes de arrancar GTK; antes era un
+`__main__.py` genérico) y el `.desktop` lo declara en `StartupWMClass`: así el dock asocia la
+ventana a su icono. El icono (`ui/ventana/doom.svg`) es el núcleo del HUD. Verificado: el
+`.desktop` pasa `desktop-file-validate` y la ventana abierta desde él tiene `WM_CLASS` `doombot`.
+Pendiente: el equivalente en Windows (acceso en el menú Inicio).
+

@@ -48,9 +48,13 @@ def agente(s: Sesion, m: Match) -> None:
         s.aviso("¿que quieres que haga?")
         return
     if _montaje is None:
-        _montaje = montar(
-            narrar=_narrador(s), confirmar=_confirmador(s), cfg=s.cfg, perfil=s.perfil
-        )
+        try:
+            _montaje = montar(
+                narrar=_narrador(s), confirmar=_confirmador(s), cfg=s.cfg, perfil=s.perfil
+            )
+        except ValueError as e:
+            s.aviso(str(e))
+            return
         atexit.register(_montaje.cerrar)
     # Se reasignan en cada orden: la sesion es la que esta hablando ahora.
     _montaje.agente.narrar = _narrador(s)

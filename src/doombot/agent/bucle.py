@@ -24,6 +24,7 @@ from typing import Any
 
 from doombot.agent.herramientas import Herramienta, recortar, truncar
 from doombot.backends.base import (
+    BackendError,
     LlamadaHerramienta,
     MensajeAgente,
     ResultadoHerramienta,
@@ -62,6 +63,7 @@ class Agente:
         narrar: Narrador,
         confirmar: Callable[[str], bool],
         system: str | None = None,
+        revisar: Callable[[str, str], str] | None = None,
         max_pasos: int = 20,
         max_resultado: int = 6000,
         ventana: int = 4,
@@ -70,6 +72,11 @@ class Agente:
         self.herramientas = {h.nombre: h for h in herramientas}
         self.narrar = narrar
         self.confirmar = confirmar
+        # Segunda opinion antes de lo irreversible (D-034): otro modelo lee la
+        # orden y la accion propuesta y dice si encajan. No decide: su
+        # opinion acompana a la pregunta, y quien decide sigue siendo el usuario.
+        self.revisar = revisar
+        self._tarea = ""
         self._system = system
         self._max_pasos = max_pasos
         self._max_resultado = max_resultado
@@ -84,6 +91,7 @@ class Agente:
 
     # -- el bucle ---------------------------------------------------------------
     def ejecutar(self, tarea: str) -> Informe:
+        self._tarea = tarea
         self.conversacion.append(tarea)
         informe = Informe(respuesta="")
         especs = [h.espec() for h in self.herramientas.values()]
@@ -145,6 +153,12 @@ class Agente:
             pregunta = herramienta.pregunta(argumentos)
         except Exception as e:  # noqa: BLE001 - si no se sabe evaluar el riesgo, se pregunta
             pregunta = f"{herramienta.contar(argumentos)} (no he podido evaluar el riesgo: {e})"
+        if pregunta is not None and self.revisar is not None:
+            propuesta = f"{herramienta.nombre}({argumentos}) -> {herramienta.contar(argumentos)}"
+            try:
+                pregunta += f"\n      Segunda opinion: {self.revisar(self._tarea, propuesta)}"
+            except BackendError as e:
+                pregunta += f"\n      (sin segunda opinion: {e})"
         if pregunta is not None and not self.confirmar(pregunta):
             self.narrar("error", f"no autorizado: {herramienta.contar(argumentos)}")
             return NEGADA

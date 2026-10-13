@@ -318,6 +318,25 @@ herramientas; con Claude decide mucho mejor, a cambio de que la conversación
 `/abiertas` lista lo que ha abierto, Ctrl+C corta la tarea. Desde
 `python -m doombot chat` es la orden `agente <lo que sea>`.
 
+### Varios modelos gratuitos
+
+Para no depender de un solo modelo ni de un solo proveedor (D-034):
+
+```
+DOOMBOT_AGENT_BRAIN=varios
+DOOMBOT_MODELOS=groq:openai/gpt-oss-120b,gemini:gemini-3.8-flash,nvidia:nvidia/nemotron-3-super-120b-a12b
+DOOMBOT_GROQ_API_KEY=...
+```
+
+- **En cadena**: responde el primero; si falla o se le acaba la cuota gratuita, el siguiente.
+- **En consejo**: `/contrasta <pregunta>` (o `contrasta ...` en el chat) pregunta a todos a la
+  vez y un juez dice en qué coinciden y en qué no.
+- **Segunda opinión**: antes de algo irreversible, otro modelo distinto del que lo propuso dice
+  si encaja con lo que pediste; lo ves junto a la pregunta de confirmación.
+
+Las claves son gratuitas y sin tarjeta (ver `.env.example`). Ojo: con proveedores en la nube, lo
+que el agente lee sale del equipo.
+
 ## Desarrollo
 
 ```powershell

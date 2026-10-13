@@ -19,6 +19,9 @@ doombot/
 │   ├── chat.py          Modo interactivo: junta todas las capas en un bucle
 │   ├── hud_server.py    Transporte del HUD por WebSocket (D-022)
 │   ├── backends/        Contratos e implementaciones intercambiables
+│   │   ├── openai_compat.py  Cualquier API tipo OpenAI: Groq, Gemini, NVIDIA... (D-034)
+│   │   ├── proveedores.py    Catálogo: de "groq:modelo" a un generador
+│   │   └── varios.py    Cadena (si uno falla, otro) y Consejo (contrastar)
 │   ├── memory/          Qué recuerda D.O.O.M (+ orders.py)
 │   ├── phrases/         Frases textuales y órdenes: qué se puede decir
 │   ├── orders/          Registro: qué capa atiende cada orden
@@ -45,6 +48,7 @@ doombot/
 │   │   ├── apps.py      Reconoce, abre y cierra las aplicaciones instaladas
 │   │   ├── web.py       Navegador propio (Playwright) y el navegador del usuario
 │   │   ├── montaje.py   Elige el cerebro, junta las herramientas, escribe el prompt
+│   │   ├── revision.py  Segunda opinión de otro modelo antes de lo irreversible
 │   │   ├── consola.py   `python -m doombot agente`
 │   │   └── orders.py    `agent`, desde el chat
 │   ├── obsidian/        Espejo legible de la memoria en el vault

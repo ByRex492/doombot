@@ -16,8 +16,9 @@ from doombot.backends.base import BackendError
 from doombot.phrases.matcher import es_afirmacion
 
 AYUDA = (
-    "Escribe lo que quieres que haga. /nuevo olvida lo anterior, /abiertas lista lo que he "
-    "abierto, /salir termina. Ctrl+C corta la tarea en curso."
+    "Escribe lo que quieres que haga. /contrasta <pregunta> se la hace a todos los modelos y "
+    "compara, /nuevo olvida lo anterior, /abiertas lista lo que he abierto, /salir termina. "
+    "Ctrl+C corta la tarea en curso."
 )
 
 _FORMATO = {
@@ -48,24 +49,48 @@ def _forzar_utf8() -> None:
 
 
 def _cabecera(m: Montaje) -> str:
+    from doombot.backends.varios import Cadena, etiqueta
+
     cerebro = m.agente.cerebro
-    tipo = type(cerebro).__name__.removesuffix("Generator").lower()
-    aviso = ""
+    nombre = cerebro.model_name if isinstance(cerebro, Cadena) else etiqueta(cerebro)
+    lineas = [f"D.O.O.M agente · {len(m.agente.herramientas)} herramientas · cerebro {nombre}"]
+    if m.agente.revisar is not None:
+        lineas.append("  segunda opinion de otro modelo antes de lo irreversible: activada")
+    lineas += [f"  sin usar: {a}" for a in m.avisos]
     disponible = getattr(cerebro, "is_available", None)
     if disponible is not None and not disponible():
-        aviso = (
-            "\n  AVISO: el cerebro no responde (¿Ollama arrancado? ¿falta "
-            "DOOMBOT_ANTHROPIC_API_KEY?). Ajusta DOOMBOT_AGENT_BRAIN en .env."
+        lineas.append(
+            "  AVISO: el cerebro no responde (¿Ollama arrancado? ¿falta una clave?). "
+            "Ajusta DOOMBOT_AGENT_BRAIN y DOOMBOT_MODELOS en .env."
         )
-    return (
-        f"D.O.O.M agente · cerebro {tipo}/{cerebro.model_name} · "
-        f"{len(m.agente.herramientas)} herramientas{aviso}"
-    )
+    return "\n".join(lineas)
+
+
+def _contrastar(pregunta: str) -> None:
+    """``/contrasta``: la misma pregunta a todos los modelos, y un juez que compara."""
+    from doombot.backends.proveedores import construir_todos
+    from doombot.backends.varios import Consejo
+    from doombot.config import settings
+
+    generadores, _ = construir_todos(settings())
+    if len(generadores) < 2:
+        print("  Para contrastar hacen falta al menos dos modelos en DOOMBOT_MODELOS con su clave.")
+        return
+    print(f"  Preguntando a {len(generadores)} modelos a la vez...")
+    veredicto = Consejo(generadores).consultar(pregunta)
+    for o in veredicto.opiniones:
+        marca = "✗" if o.fallo else "·"
+        print(f"  {marca} {o.modelo}: {' '.join(o.texto.split())[:200]}")
+    print(f"D.O.O.M.: {veredicto.final}")
 
 
 def run() -> int:
     _forzar_utf8()
-    m = montar(narrar=narrar, confirmar=confirmar)
+    try:
+        m = montar(narrar=narrar, confirmar=confirmar)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 1
     print(_cabecera(m))
     print(AYUDA)
     try:
@@ -85,6 +110,16 @@ def run() -> int:
                 continue
             if orden == "/abiertas":
                 print("  " + (", ".join(m.abiertas()) or "nada todavia"))
+                continue
+            if orden.startswith("/contrasta"):
+                pregunta = orden.removeprefix("/contrasta").strip()
+                if not pregunta:
+                    print("  Uso: /contrasta <pregunta>")
+                    continue
+                try:
+                    _contrastar(pregunta)
+                except BackendError as e:
+                    print(f"  {e}", file=sys.stderr)
                 continue
 
             antes = len(m.abiertas())

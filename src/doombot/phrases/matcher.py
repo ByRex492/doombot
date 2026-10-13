@@ -378,6 +378,12 @@ BASICAS = [
         description="El agente local cumple la orden solo, con herramientas (D-033)",
     ),
     Command(
+        "crosscheck",
+        ("contrasta", "contrastalo", "comprueba con varios modelos"),
+        prefix=True,
+        description="La misma pregunta a varios modelos y un juez que compara (D-034)",
+    ),
+    Command(
         "progress",
         ("anota el progreso", "apunta el progreso", "escribe el progreso"),
         prefix=True,

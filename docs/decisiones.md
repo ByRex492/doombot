@@ -1193,3 +1193,64 @@ navegador propio no se ha lanzado (Playwright no instalado aquí).
 Claude como referencia, antes de decidir el cerebro por defecto. El agente por voz (la orden
 `agente` ya existe en el chat, falta probarla hablada). Que el HUD muestre los pasos.
 
+---
+
+## D-034 — Varios modelos gratuitos: en cadena para no depender de uno, en consejo para contrastar
+
+**Contexto.** Pedido del usuario, 13/10/2026: usar modelos **gratuitos**, buenos, y **varios**,
+para tener comprobaciones de modelos distintos y no depender de uno. Sin GPU en el portátil,
+"gratis" no puede ser solo Ollama local: las capas gratuitas de proveedores en la nube son lo
+que da modelos grandes aquí.
+
+**Estado de las capas gratuitas, a 13/10/2026** (cambian a menudo; verificar en cada panel):
+
+| Proveedor | Gratis | Herramientas | Nota |
+|---|---|---|---|
+| Groq | ~30 peticiones/min, ~1.000/día por modelo | Sí, en todos sus modelos (documentado) | `openai/gpt-oss-120b`, `llama-3.3-70b-versatile`, `qwen/qwen3.8-27b` |
+| Gemini (Google AI Studio) | Límites en el panel de AI Studio | Sí, por su capa compatible con OpenAI (beta) | Puede usar las peticiones gratuitas para mejorar sus productos fuera del EEE |
+| NVIDIA NIM | ~40/min por modelo | No verificado | Requiere programa de desarrolladores |
+| OpenRouter (`:free`) | 20/min, **50/día** | Según modelo | Demasiado poco para un agente; solo de reserva |
+| Mistral | Créditos mensuales | Sí | El plan gratuito pide aceptar entrenamiento con tus datos |
+
+Fuentes: documentación de Groq (modelos y *tool use*) y de Gemini (compatibilidad OpenAI),
+comparativas de OpenRouter y dev.to de octubre de 2026.
+
+**Decisión.**
+
+1. **Un solo backend para todos**: `backends/openai_compat.py`. Casi todos los proveedores
+   gratuitos hablan el formato de OpenAI (`/chat/completions` con `tools`), así que una clase
+   cubre Groq, Gemini, OpenRouter, NVIDIA, Mistral, Cerebras y GitHub Models. Cumple
+   `TextGenerator` y `ToolCaller`. El catálogo (URL y dónde se saca la clave) está en
+   `backends/proveedores.py`; la configuración es `DOOMBOT_MODELOS=proveedor:modelo,...` y una
+   `DOOMBOT_<PROVEEDOR>_API_KEY` por proveedor. Ollama y Anthropic entran en la misma lista con
+   sus backends propios (`ollama:gemma4:12b`).
+2. **`Cadena`: no depender de uno.** Responde el primero; si falla (sin conexión, clave mala, o
+   429 de cuota gratuita agotada), el siguiente, avisando del cambio. Un modelo sin cuota se
+   aparta 60 s para no gastar una petición en él en cada paso del agente, pero sigue al final por
+   si es el único. En *streaming*, solo se cambia antes del primer trozo. Es `varios` en
+   `DOOMBOT_LLM_BACKEND` y en `DOOMBOT_AGENT_BRAIN`.
+3. **`Consejo`: contrastar.** La misma pregunta a todos en paralelo, y un juez (la propia
+   cadena) que da la respuesta final diciendo en qué discrepan. `/contrasta` en la consola del
+   agente, `contrasta ...` en el chat. Si solo responde uno, se dice: "sin contraste".
+4. **Segunda opinión antes de lo irreversible.** En el agente, cuando una acción va a pedir
+   confirmación, un modelo **distinto del que la propuso** lee la orden del usuario y la acción
+   -no la página ni el fichero que la motivó- y dice "BIEN" u "OJO". Su opinión se añade a la
+   pregunta; no decide nada. El motivo: el modelo que propone es el peor juez de su propuesta,
+   sobre todo si una página le ha colado instrucciones; otro que no ha visto esa página no
+   arrastra el engaño.
+
+**Por qué no un voto automático en cada paso del agente.** Triplicaría las peticiones y la cuota
+gratuita se acaba antes; además, en la mayoría de pasos (abrir, leer, buscar) no hay nada que
+arbitrar. El contraste se gasta donde importa: preguntas de datos (`contrasta`) y acciones
+irreversibles (revisor).
+
+**Privacidad, dicho claro.** Con estos proveedores, lo que el agente lee -páginas, ficheros,
+títulos de ventanas- sale del equipo. Algunos planes gratuitos usan esas peticiones para entrenar.
+Para lo que no deba salir, `ollama:` en la lista, en el sobremesa.
+
+**Verificado sin claves**: 432 tests con transportes falsos y modelos de juguete; la consola con
+`varios` y sin claves dice exactamente cuáles faltan y dónde se crean. **Sin verificar**: ningún
+proveedor real todavía, ni los nombres exactos de modelo de Gemini y NVIDIA en sus capas
+gratuitas (`gemini-3.8-flash` sale de los ejemplos de la documentación de Google;
+`nvidia/nemotron-3-super-120b-a12b`, de una comparativa).
+

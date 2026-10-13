@@ -35,3 +35,31 @@ def preguntar_claude(s: Sesion, m: Match) -> None:
         s.responder(s.con_contexto(m.argument))
     finally:
         s.gen = original
+
+
+@orden("crosscheck")
+def contrastar(s: Sesion, m: Match) -> None:
+    """La misma pregunta a todos los modelos de DOOMBOT_MODELOS, y un juez que compara (D-034)."""
+    from doombot.backends.base import BackendError
+    from doombot.backends.proveedores import construir_todos
+    from doombot.backends.varios import Consejo
+
+    if not m.argument:
+        s.aviso("¿que quieres que contraste?")
+        return
+    generadores, avisos = construir_todos(s.cfg)
+    if len(generadores) < 2:
+        s.aviso("Para contrastar hacen falta al menos dos modelos en DOOMBOT_MODELOS con su clave.")
+        for aviso in avisos:
+            s.traza(aviso)
+        return
+    s.traza(f"preguntando a {len(generadores)} modelos a la vez...")
+    s.estado("pensando")
+    try:
+        veredicto = Consejo(generadores).consultar(s.con_contexto(m.argument))
+    except BackendError as e:
+        s.aviso(str(e))
+        return
+    for o in veredicto.opiniones:
+        s.traza(f"{'fallo ' if o.fallo else ''}{o.modelo}: {' '.join(o.texto.split())[:160]}")
+    s.decir(veredicto.final)

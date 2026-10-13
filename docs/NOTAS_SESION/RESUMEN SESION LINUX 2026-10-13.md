@@ -66,15 +66,42 @@ renumerar esta al fusionar.
 - **Ningún modelo real ha llevado el bucle.** Ni Ollama ni Claude. El formato de `tool_calls` de
   Ollama y el de `tool_use` de Anthropic están hechos según sus APIs y probados con transportes
   falsos, no contra el servidor real.
-- **El navegador propio no se ha lanzado**: Playwright no está instalado aquí.
+- ~~El navegador propio no se ha lanzado~~ — lanzado después, ver sección 3.
 - Windows: el descubrimiento por `.lnk`, `os.startfile` y `tasklist`/`taskkill` están escritos y
   con test de descubrimiento, pero no se han ejecutado en Windows.
+
+## 3. Varios modelos gratuitos (D-034) y navegador probado de verdad
+
+Mismo día, misma rama `tarea/agente-local`. Pedido: modelos gratuitos, varios, para contrastar
+y no depender de uno.
+
+- `backends/openai_compat.py`: una clase para todos los proveedores con API tipo OpenAI
+  (Groq, Gemini, NVIDIA, OpenRouter, Mistral, Cerebras, GitHub). Catálogo en
+  `backends/proveedores.py`, lista en `DOOMBOT_MODELOS=proveedor:modelo,...`.
+- `backends/varios.py`: `Cadena` (si uno falla o se queda sin cuota, el siguiente) y `Consejo`
+  (todos a la vez y un juez que compara). Backend `varios` en chat y agente; `/contrasta` y
+  "contrasta ..." para el consejo.
+- `agent/revision.py`: segunda opinión de otro modelo antes de lo irreversible.
+- Integración tocada además: `chat.py` (`_generador` acepta `varios`), `config.py`
+  (`modelos`, `claves`, `agent_revisor`), `phrases/matcher.py` (orden `crosscheck`).
+
+**Navegador propio, ya probado en real**: en este portátil hay `.venv` del proyecto (Python
+3.12, `.[dev,agent-web]`) y Chromium de Playwright (658 MB en `~/.cache/ms-playwright`, más de
+lo que estimé: trae también el *headless shell* y ffmpeg). Cargó example.com, leyó su texto,
+pulsó un enlace y volvió atrás.
+
+**`.env` creado en este portátil** (no se versiona) con `varios` en chat y agente. Faltan las
+claves: el usuario las crea (Groq, Google AI Studio, NVIDIA) y las pega.
+
+**Sin verificar**: ningún proveedor real, ni los IDs exactos de Gemini y NVIDIA en sus capas
+gratuitas.
 
 ## Qué hacer primero en el sobremesa
 
 1. Fusionar `tarea/agente-local` (`git merge --no-ff`), revisar los ficheros de integración de
    arriba, `pytest -m "not hardware"`.
-2. `pip install -e ".[agent-web]"` y `python -m playwright install chromium`.
+2. `pip install -e ".[agent-web]"` y `python -m playwright install chromium`. Copiar las claves
+   gratuitas del `.env` del portátil y añadir `ollama:gemma4:12b` al final de `DOOMBOT_MODELOS`.
 3. Probar `python -m doombot agente` con `gemma4:12b` (`DOOMBOT_AGENT_BRAIN=ollama`) y, si hay
    clave, con Claude (`DOOMBOT_AGENT_BRAIN=anthropic`), con órdenes como:
    - "abre el bloc de notas" / "abre el explorador de archivos en Descargas"

@@ -30,16 +30,27 @@ from doombot.profiles import Profile
 _CTX_MINIMO_AGENTE = 8192
 
 
-def cerebro(cfg: Settings, perfil: Profile) -> ToolCaller:
+def cerebro(cfg: Settings, perfil: Profile) -> tuple[ToolCaller, list[str]]:
     """El modelo que decide, segun ``DOOMBOT_AGENT_BRAIN`` (o el backend general).
 
-    Los dos cumplen ``ToolCaller``: cambiar de uno a otro es una linea de .env.
+    Todos cumplen ``ToolCaller``: cambiar de uno a otro es una linea de .env.
+    Con ``varios``, una ``Cadena`` con los de ``DOOMBOT_MODELOS`` (D-034); los
+    que no se pueden montar -falta su clave- quedan en ``avisos``.
     """
     eleccion = (cfg.agent_brain or cfg.llm_backend).lower()
+    if eleccion == "varios":
+        from doombot.backends.proveedores import construir_todos
+        from doombot.backends.varios import Cadena
+
+        generadores, avisos = construir_todos(cfg)
+        if not generadores:
+            detalle = "\n  ".join(avisos) or "DOOMBOT_MODELOS esta vacio en .env."
+            raise ValueError(f"Ningun modelo de DOOMBOT_MODELOS se puede usar:\n  {detalle}")
+        return Cadena(generadores), avisos
     if eleccion in ("anthropic", "claude"):
         from doombot.backends.anthropic import AnthropicGenerator
 
-        return AnthropicGenerator.from_config(cfg)
+        return AnthropicGenerator.from_config(cfg), []
 
     from doombot.backends.ollama import OllamaGenerator
 
@@ -48,7 +59,7 @@ def cerebro(cfg: Settings, perfil: Profile) -> ToolCaller:
         llm_model=cfg.agent_model or perfil.llm_model,
         llm_num_ctx=max(perfil.llm_num_ctx, _CTX_MINIMO_AGENTE),
     )
-    return OllamaGenerator.from_profile(perfil, cfg)
+    return OllamaGenerator.from_profile(perfil, cfg), []
 
 
 def _escritorio() -> str:
@@ -89,6 +100,8 @@ class Montaje:
     agente: Agente
     apps: Aplicaciones
     web: Web
+    avisos: list[str] = dataclasses.field(default_factory=list)
+    """Modelos de DOOMBOT_MODELOS que no se pudieron montar, y por que."""
 
     def abiertas(self) -> list[str]:
         """Lo que el agente ha abierto en esta sesion: apps y paginas."""
@@ -106,11 +119,13 @@ def montar(
     perfil: Profile | None = None,
     cerebro_: ToolCaller | None = None,
 ) -> Montaje:
+    """Monta el agente. ``ValueError`` si el cerebro elegido no se puede usar."""
     cfg = cfg or settings()
+    avisos: list[str] = []
     if cerebro_ is None:
         from doombot import profiles
 
-        cerebro_ = cerebro(cfg, perfil or profiles.current())
+        cerebro_, avisos = cerebro(cfg, perfil or profiles.current())
     apps = Aplicaciones()
     web = Web()
     agente = Agente(
@@ -120,4 +135,15 @@ def montar(
         confirmar=confirmar,
         system=system_prompt(),
     )
-    return Montaje(agente, apps, web)
+
+    from doombot.backends.varios import Cadena
+
+    if isinstance(cerebro_, Cadena):
+        # Por el atributo del agente y no por ``narrar`` directamente: la orden
+        # del chat reasigna el narrador en cada turno.
+        cerebro_.avisar = lambda texto: agente.narrar("error", texto)
+        if cfg.agent_revisor:
+            from doombot.agent.revision import revisor
+
+            agente.revisar = revisor(cerebro_)
+    return Montaje(agente, apps, web, avisos)

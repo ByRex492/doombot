@@ -87,6 +87,21 @@ class Settings:
     agent_model: str = ""
     """Modelo de Ollama para el agente, si no es el del perfil. Vacio = el del perfil."""
 
+    modelos: tuple[str, ...] = ()
+    """Varios modelos, en orden de preferencia: ``proveedor:modelo`` (D-034).
+
+    Los usa el backend ``varios``: se prueba el primero y, si falla o se queda
+    sin cuota gratuita, el siguiente. Y el consejo (``contrasta``) les pregunta
+    a todos lo mismo para comparar.
+    """
+    claves: tuple[tuple[str, str], ...] = ()
+    """Clave de cada proveedor, de ``DOOMBOT_<PROVEEDOR>_API_KEY``. Pares, no dict: frozen."""
+    agent_revisor: bool = True
+    """Antes de una accion irreversible, otro modelo da una segunda opinion (D-034)."""
+
+    def clave(self, proveedor: str) -> str:
+        return dict(self.claves).get(proveedor.lower(), "")
+
     n8n_base_url: str = ""
     """Raiz del servidor de n8n, ej. ``http://127.0.0.1:5678``. Vacio = sin n8n."""
     n8n_workflows: tuple[tuple[str, str], ...] = ()
@@ -127,6 +142,19 @@ def _parse_n8n_workflows(raw: str) -> tuple[tuple[str, str], ...]:
     return tuple(pares)
 
 
+def _claves_de_proveedores() -> tuple[tuple[str, str], ...]:
+    """Toda ``DOOMBOT_<X>_API_KEY`` con valor, como ``(x, clave)``.
+
+    Se leen todas las que haya en vez de una lista fija de proveedores: el
+    catalogo vive en ``backends/proveedores.py``, y esta capa no lo importa.
+    """
+    pares = []
+    for nombre, valor in os.environ.items():
+        if nombre.startswith("DOOMBOT_") and nombre.endswith("_API_KEY") and valor.strip():
+            pares.append((nombre[len("DOOMBOT_") : -len("_API_KEY")].lower(), valor.strip()))
+    return tuple(sorted(pares))
+
+
 @lru_cache(maxsize=1)
 def settings() -> Settings:
     load_env()
@@ -143,6 +171,12 @@ def settings() -> Settings:
         anthropic_model=os.environ.get("DOOMBOT_ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
         agent_brain=os.environ.get("DOOMBOT_AGENT_BRAIN", "").strip().lower(),
         agent_model=os.environ.get("DOOMBOT_AGENT_MODEL", "").strip(),
+        modelos=tuple(
+            m.strip() for m in os.environ.get("DOOMBOT_MODELOS", "").split(",") if m.strip()
+        ),
+        claves=_claves_de_proveedores(),
+        agent_revisor=os.environ.get("DOOMBOT_AGENT_REVISOR", "si").strip().lower()
+        not in ("no", "0", "false", "off"),
         n8n_base_url=os.environ.get("DOOMBOT_N8N_BASE_URL", "").strip().rstrip("/"),
         n8n_workflows=_parse_n8n_workflows(os.environ.get("DOOMBOT_N8N_WORKFLOWS", "").strip()),
     )

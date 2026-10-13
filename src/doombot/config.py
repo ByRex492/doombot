@@ -136,8 +136,6 @@ class Settings:
     """
     claves: tuple[tuple[str, str], ...] = ()
     """Clave de cada proveedor, de ``DOOMBOT_<PROVEEDOR>_API_KEY``. Pares, no dict: frozen."""
-    modelo_dibujo: str = ""
-    """Quien dibuja en la ventana (D-037), en orden: ``proveedor`` o ``proveedor:modelo``."""
     agent_revisor: bool = True
     """Antes de una accion irreversible, otro modelo da una segunda opinion (D-034)."""
 
@@ -217,7 +215,6 @@ def settings() -> Settings:
             m.strip() for m in os.environ.get("DOOMBOT_MODELOS", "").split(",") if m.strip()
         ),
         claves=_claves_de_proveedores(),
-        modelo_dibujo=os.environ.get("DOOMBOT_MODELO_DIBUJO", "").strip(),
         agent_revisor=os.environ.get("DOOMBOT_AGENT_REVISOR", "si").strip().lower()
         not in ("no", "0", "false", "off"),
         n8n_base_url=os.environ.get("DOOMBOT_N8N_BASE_URL", "").strip().rstrip("/"),

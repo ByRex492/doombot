@@ -345,10 +345,13 @@ Las claves son de tu cuenta, no del equipo: la misma vale en cualquier
 ordenador, pero `.env` no se sube a GitHub, así que en cada equipo se pegan
 de nuevo.
 
-**Representar.** Si le pides que represente, dibuje o explique algo con un
-esquema ("represéntame los vectores u y v", "dibújame un caballo"), el núcleo
-se aparta y en su sitio aparece la gráfica o el dibujo; con **Ampliar** ocupa
-también el registro, y **Núcleo** vuelve (D-037).
+**Gráficas.** Si le pides que represente datos, estadísticas, funciones o
+vectores ("represéntame u=(4,1) y v=(1,3)", "haz un histograma de estas
+notas", "compara las ventas de 2025 y 2026 en barras"), el núcleo se aparta y
+aparece la gráfica: ejes, barras, líneas, sectores, histograma o dispersión
+con recta de regresión. Las medias, porcentajes y demás los calcula D.O.O.M
+con exactitud, no el modelo. **Ampliar** ocupa también el registro y
+**Núcleo** vuelve (D-037).
 
 Necesita el extra `hud` (`pywebview`). En Linux usa el GTK y el WebKit del
 sistema; como el `.venv` no ve los paquetes del sistema, se enlazan una vez:

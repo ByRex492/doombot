@@ -1433,3 +1433,21 @@ bien pero sin números en los ejes, y "la silueta de un caballo" fue una mancha 
 objetos salen reconocibles pero sencillos, y alguno sale mal. Gemini, cuando no está saturado, o
 un modelo de pago dibujarían mejor.
 
+**Cambio de rumbo, mismo día: solo gráficas y estadística.** Probados en real, los dibujos libres
+no fueron lo bastante precisos ni con el dibujante, y el usuario decidió dejar la herramienta para
+gráficas y estadística. Se quitó todo lo de dibujo -el dibujante y sus instrucciones, el filtro de
+SVG, el encuadre automático, `DOOMBOT_MODELO_DIBUJO`-, y la herramienta pasó a ser
+`mostrar_grafica` (`agent/graficas.py`):
+
+- `grafica`: lo de antes, matemáticas en ejes.
+- `estadistica`: barras (también varias series), líneas, sectores, histograma y dispersión con
+  recta de regresión. **Los cálculos se hacen en Python, no en el modelo**: total, media, mediana,
+  desviación típica, máximos y mínimos con su categoría, porcentajes, intervalos del histograma
+  (regla de Sturges si no se dicen) y regresión lineal con `r`. La herramienta se los devuelve al
+  modelo con la indicación de usarlos al explicar: los modelos fallan en la aritmética, y así no
+  la necesitan. Los datos mal formados se rechazan con el motivo -"la serie X tiene 2 valores y
+  hay 3 categorías"- para que el modelo lo corrija en el paso siguiente.
+
+Verificado: 488 tests (estadísticos exactos: histograma de 1..10 en 5 intervalos de 2, regresión de
+`y = 2x + 1` con `r = 1`); los cinco tipos pintados en la vista previa.
+

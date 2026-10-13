@@ -49,7 +49,7 @@ doombot/
 │   │   ├── web.py       Navegador propio (Playwright) y el navegador del usuario
 │   │   ├── montaje.py   Elige el cerebro, junta las herramientas, escribe el prompt
 │   │   ├── revision.py  Segunda opinión de otro modelo antes de lo irreversible
-│   │   ├── visual.py    mostrar_visual: gráficas y dibujos en la ventana; filtro de SVG
+│   │   ├── graficas.py  mostrar_grafica: ejes y estadística, con los cálculos hechos aquí
 │   │   ├── consola.py   `python -m doombot agente`
 │   │   └── orders.py    `agent`, desde el chat
 │   ├── ventana/         La aplicación de escritorio: planeta, registro y chat (D-035)

@@ -18,8 +18,8 @@ from pathlib import Path
 
 from doombot.agent.apps import Aplicaciones
 from doombot.agent.bucle import Agente, Narrador
+from doombot.agent.graficas import Graficas
 from doombot.agent.sistema import herramientas as herramientas_sistema
-from doombot.agent.visual import DIBUJANTES_POR_DEFECTO, Visual, elegir_dibujante
 from doombot.agent.web import Web
 from doombot.backends.base import ToolCaller
 from doombot.config import Settings, settings
@@ -77,7 +77,10 @@ def system_prompt(ahora: datetime | None = None, *, con_pantalla: bool = False) 
     """Las reglas del agente, cortas: con un modelo local, cada token cuenta."""
     ahora = ahora or datetime.now()
     pantalla = (
-        ["- Si piden representar, dibujar o explicar algo con un esquema, usa mostrar_visual."]
+        [
+            "- Si piden representar o graficar datos, estadisticas, funciones o vectores, usa "
+            "mostrar_grafica."
+        ]
         if con_pantalla
         else []
     )
@@ -136,14 +139,11 @@ def montar(
         cerebro_, avisos = cerebro(cfg, perfil or profiles.current())
     apps = Aplicaciones()
     web = Web()
-    # mostrar_visual solo existe donde hay donde pintar (la ventana, D-037).
-    visual = []
-    if pantalla is not None:
-        dibujante = elegir_dibujante(cerebro_, cfg.modelo_dibujo or DIBUJANTES_POR_DEFECTO, cfg=cfg)
-        visual = Visual(pantalla, dibujante).herramientas()
+    # mostrar_grafica solo existe donde hay donde pintar (la ventana, D-037).
+    graficas = Graficas(pantalla).herramientas() if pantalla is not None else []
     agente = Agente(
         cerebro_,
-        [*herramientas_sistema(), *apps.herramientas(), *web.herramientas(), *visual],
+        [*herramientas_sistema(), *apps.herramientas(), *web.herramientas(), *graficas],
         narrar=narrar,
         confirmar=confirmar,
         system=system_prompt(con_pantalla=pantalla is not None),

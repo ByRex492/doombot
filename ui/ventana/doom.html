@@ -141,11 +141,6 @@
   #visual .cab-marco button { padding: 5px 9px; font-size: 9.5px; }
   #lienzo-visual { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px 12px; color: var(--c1); }
   #lienzo-visual svg { width: 100%; height: 100%; filter: drop-shadow(0 0 calc(3px * var(--luz)) var(--c1-60)); }
-  /* Red de seguridad: un dibujo en negro o blanco sobre este fondo seria una
-     mancha. El CSS manda sobre los atributos del SVG: se recolorea al tema. */
-  #lienzo-visual [fill="black"], #lienzo-visual [fill="#000"], #lienzo-visual [fill="#000000"],
-  #lienzo-visual [fill="white"], #lienzo-visual [fill="#fff"], #lienzo-visual [fill="#ffffff"] { fill: currentColor; fill-opacity: .25; }
-  #lienzo-visual [stroke="black"], #lienzo-visual [stroke="#000"], #lienzo-visual [stroke="#000000"] { stroke: currentColor; }
   #visual.entrando #lienzo-visual { animation: revelar .9s ease-out; }
   @keyframes revelar { from { clip-path: inset(0 0 100% 0); opacity: .3; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
   #zona-nucleo #nucleo { transition: opacity .5s; }
@@ -871,7 +866,7 @@ function ponerAbiertas(lista) {
 }
 
 /* ==========================================================================
-   4b. VISUALES (D-037): el nucleo se aparta para ensenar una grafica o un dibujo
+   4b. GRAFICAS (D-037): el nucleo se aparta para ensenar una grafica precisa
    ========================================================================== */
 const zonaNucleo = document.getElementById("zona-nucleo"), panelVisual = document.getElementById("visual");
 const lienzoVisual = document.getElementById("lienzo-visual");
@@ -1006,39 +1001,145 @@ function svgDeGrafica(g) {
   return svg;
 }
 
-// Un dibujo libre: ya viene limpio de Python (lista blanca), y aun asi se
-// importa como XML -nunca como HTML- y se repasa por si acaso.
-function svgDeTexto(texto) {
-  const doc = new DOMParser().parseFromString(texto, "image/svg+xml");
-  const raiz = doc.documentElement;
-  if (!raiz || raiz.nodeName.toLowerCase() !== "svg" || doc.getElementsByTagName("parsererror").length) return null;
-  raiz.querySelectorAll("script, foreignObject, image, use, a, style, iframe").forEach(n => n.remove());
-  for (const n of [raiz, ...raiz.querySelectorAll("*")])
-    for (const a of [...n.attributes]) if (/^on|href/i.test(a.name)) n.removeAttribute(a.name);
-  return document.importNode(raiz, true);
-}
+// Estadistica: barras, lineas, sectores, histograma y dispersion. Los numeros
+// ya vienen calculados de Python (media, mediana, intervalos, regresion,
+// porcentajes); aqui solo se dibujan, igual de precisos que los ejes.
+function svgDeEstadistica(e) {
+  const W = 400, H = 300, L = 46, R = 14, T = 26, B = 46;
+  const colores = [prefs.c1, "#ffc23d", "#b48bff", "#3dff9a", "#ff6b7a", prefs.c2, "#ff9f43", "#9ad0ff"];
+  const color = i => colores[i % colores.length];
+  const svg = nodoSvg("svg", { viewBox: `0 0 ${W} ${H}`, "font-family": "monospace" });
+  const capa = nodoSvg("g", { "font-size": "10", fill: "currentColor" });
+  svg.appendChild(capa);
+  const txt = (x, y, t, extra) => capa.appendChild(nodoSvg("text", Object.assign({ x, y }, extra || {}), t));
+  const fmt = n => (Math.abs(n) >= 1e5 || (Math.abs(n) < 0.01 && n !== 0)) ? n.toExponential(1) : +n.toFixed(2);
+  const leyenda = pares => {
+    let x = L + 2;
+    for (const [nombre, c] of pares) {
+      if (!nombre) continue;
+      capa.appendChild(nodoSvg("rect", { x, y: 7, width: 9, height: 9, fill: c }));
+      // Cabe la ecuacion entera de una recta de regresion: es el dato que importa.
+      const t = nombre.length > 40 ? nombre.slice(0, 39) + "…" : nombre;
+      txt(x + 13, 15, t, { fill: c }); x += 22 + t.length * 6.2;
+    }
+  };
+  const rangoBonito = (lo, hi) => {
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const p = pasoBonito(hi - lo); return [Math.floor(lo / p) * p, Math.ceil(hi / p) * p];
+  };
+  const ejeY = (v0, v1) => {
+    const paso = pasoBonito(v1 - v0 || 1), Y = v => H - B - (v - v0) / ((v1 - v0) || 1) * (H - T - B);
+    for (let v = Math.ceil(v0 / paso - 1e-9) * paso; v <= v1 + 1e-9; v += paso) {
+      capa.appendChild(nodoSvg("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .6 : .12 }));
+      txt(L - 5, Y(v) + 3.5, fmt(v), { "text-anchor": "end", opacity: .85 });
+    }
+    return Y;
+  };
+  const rotulos = () => {
+    if (e.eje_x) txt((L + W - R) / 2, H - 5, e.eje_x, { "text-anchor": "middle", "font-style": "italic", opacity: .9 });
+    const my = (T + H - B) / 2;
+    if (e.eje_y) txt(11, my, e.eje_y, { "text-anchor": "middle", "font-style": "italic", opacity: .9, transform: `rotate(-90 11 ${my})` });
+  };
+  const etiquetasX = (cats, xc) => {
+    const rotar = cats.length > 6 || cats.some(c => c.length > 7);
+    cats.forEach((c, i) => {
+      const t = c.length > 14 ? c.slice(0, 13) + "…" : c, y = H - B + 14;
+      txt(xc(i), y, t, rotar ? { "text-anchor": "end", transform: `rotate(-35 ${xc(i)} ${y})` } : { "text-anchor": "middle" });
+    });
+  };
 
-// Encuadre automatico de los dibujos: el modelo no siempre centra ni usa
-// bien el lienzo (a veces dibuja medio fuera). Se mide lo que hay dibujado y
-// el viewBox se ajusta a eso, con un margen. Las graficas no: sus ejes ya
-// estan donde tienen que estar.
-function encuadrar(svg) {
-  try {
-    const b = svg.getBBox();
-    if (!(b.width > 1 && b.height > 1)) return;
-    const m = Math.max(b.width, b.height) * 0.08;
-    svg.setAttribute("viewBox", `${b.x - m} ${b.y - m} ${b.width + 2 * m} ${b.height + 2 * m}`);
-  } catch (e) { /* sin medidas (no visible aun): se queda como venia */ }
+  if (e.tipo === "barras" || e.tipo === "lineas") {
+    const todos = e.series.flatMap(s => s.valores);
+    const [v0, v1] = rangoBonito(Math.min(0, ...todos), Math.max(0, ...todos));
+    const Y = ejeY(v0, v1), n = e.categorias.length, banda = (W - L - R) / n, xc = i => L + banda * (i + 0.5);
+    if (e.tipo === "barras") {
+      const k = e.series.length, ancho = banda * 0.78 / k;
+      e.series.forEach((s, j) => s.valores.forEach((v, i) => {
+        const x = L + banda * i + banda * 0.11 + j * ancho;
+        capa.appendChild(nodoSvg("rect", { x, y: Y(Math.max(v, 0)), width: Math.max(1, ancho - 1.5), height: Math.max(0.5, Math.abs(Y(v) - Y(0))),
+          fill: color(j), "fill-opacity": 0.7, stroke: color(j) }));
+        if (n * k <= 24) txt(x + ancho / 2, v >= 0 ? Y(v) - 4 : Y(v) + 11, fmt(v), { "text-anchor": "middle", fill: color(j), "font-size": 9 });
+      }));
+    } else {
+      e.series.forEach((s, j) => {
+        capa.appendChild(nodoSvg("polyline", { points: s.valores.map((v, i) => `${xc(i)},${Y(v)}`).join(" "), fill: "none", stroke: color(j), "stroke-width": 2 }));
+        s.valores.forEach((v, i) => capa.appendChild(nodoSvg("circle", { cx: xc(i), cy: Y(v), r: 3, fill: color(j) })));
+      });
+    }
+    etiquetasX(e.categorias, xc);
+    if (e.series.length > 1 || e.series[0].nombre) leyenda(e.series.map((s, j) => [s.nombre, color(j)]));
+    rotulos();
+  } else if (e.tipo === "histograma") {
+    const bins = e.intervalos, lo = bins[0].desde, hi = bins[bins.length - 1].hasta;
+    const Y = ejeY(0, rangoBonito(0, Math.max(...bins.map(b => b.n)))[1]);
+    const X = v => L + (v - lo) / ((hi - lo) || 1) * (W - L - R);
+    for (const b of bins) capa.appendChild(nodoSvg("rect", { x: X(b.desde), y: Y(b.n), width: Math.max(1, X(b.hasta) - X(b.desde) - 1),
+      height: Y(0) - Y(b.n), fill: color(0), "fill-opacity": 0.6, stroke: color(0) }));
+    const cada = Math.ceil(bins.length / 8);
+    bins.forEach((b, i) => { if (i % cada === 0) txt(X(b.desde), H - B + 14, fmt(b.desde), { "text-anchor": "middle", opacity: .85 }); });
+    txt(X(hi), H - B + 14, fmt(hi), { "text-anchor": "middle", opacity: .85 });
+    const marcas = [[`media ${fmt(e.media)}`, e.media, color(5), "6 3"], [`mediana ${fmt(e.mediana)}`, e.mediana, color(1), "2 3"]];
+    for (const [, v, c, guion] of marcas) capa.appendChild(nodoSvg("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, stroke: c, "stroke-width": 1.8, "stroke-dasharray": guion }));
+    leyenda(marcas.map(([nombre, , c]) => [nombre, c]));
+    rotulos();
+  } else if (e.tipo === "dispersion") {
+    const pts = e.series.flatMap(s => s.puntos);
+    const [x0, x1] = rangoBonito(Math.min(...pts.map(p => p[0])), Math.max(...pts.map(p => p[0])));
+    const [y0, y1] = rangoBonito(Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[1])));
+    const Y = ejeY(y0, y1), X = v => L + (v - x0) / (x1 - x0) * (W - L - R), pasoX = pasoBonito(x1 - x0);
+    for (let v = x0; v <= x1 + 1e-9; v += pasoX) {
+      capa.appendChild(nodoSvg("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, stroke: "currentColor", "stroke-opacity": .12 }));
+      txt(X(v), H - B + 14, fmt(v), { "text-anchor": "middle", opacity: .85 });
+    }
+    const recorte = nodoSvg("clipPath", { id: "area-dispersion" });
+    recorte.appendChild(nodoSvg("rect", { x: L, y: T, width: W - L - R, height: H - T - B }));
+    svg.appendChild(recorte);
+    const pares = [];
+    e.series.forEach((s, j) => {
+      for (const p of s.puntos) capa.appendChild(nodoSvg("circle", { cx: X(p[0]), cy: Y(p[1]), r: 3, fill: color(j), "fill-opacity": 0.8 }));
+      let nombre = s.nombre;
+      if (s.regresion) {
+        const r = s.regresion, f = x => r.pendiente * x + r.ordenada;
+        capa.appendChild(nodoSvg("line", { x1: X(x0), y1: Y(f(x0)), x2: X(x1), y2: Y(f(x1)), stroke: color(j), "stroke-width": 1.6, "stroke-dasharray": "6 3", "clip-path": "url(#area-dispersion)" }));
+        nombre = `${s.nombre ? s.nombre + ": " : ""}y=${fmt(r.pendiente)}x${r.ordenada < 0 ? "−" : "+"}${fmt(Math.abs(r.ordenada))} r=${fmt(r.r)}`;
+      }
+      pares.push([nombre, color(j)]);
+    });
+    leyenda(pares);
+    rotulos();
+  } else if (e.tipo === "sectores") {
+    const total = e.valores.reduce((a, b) => a + b, 0), cx = 125, cy = 158, r = 108;
+    let a = -Math.PI / 2;
+    e.valores.forEach((v, i) => {
+      const da = v / total * Math.PI * 2;
+      if (da <= 0) return;
+      const atributos = { fill: color(i), "fill-opacity": 0.72, stroke: "#020409", "stroke-width": 1.5 };
+      if (da >= Math.PI * 2 - 1e-9) capa.appendChild(nodoSvg("circle", Object.assign({ cx, cy, r }, atributos)));
+      else {
+        const p1 = [cx + r * Math.cos(a), cy + r * Math.sin(a)], p2 = [cx + r * Math.cos(a + da), cy + r * Math.sin(a + da)];
+        capa.appendChild(nodoSvg("path", Object.assign({ d: `M${cx} ${cy}L${p1[0]} ${p1[1]}A${r} ${r} 0 ${da > Math.PI ? 1 : 0} 1 ${p2[0]} ${p2[1]}Z` }, atributos)));
+      }
+      if (da > 0.35) txt(cx + r * 0.62 * Math.cos(a + da / 2), cy + r * 0.62 * Math.sin(a + da / 2) + 4, `${e.porcentajes[i]}%`,
+        { "text-anchor": "middle", fill: "#ffffff", "font-weight": "bold", "font-size": 11 });
+      a += da;
+    });
+    const fila = Math.min(18, 250 / e.categorias.length);
+    e.categorias.forEach((c, i) => {
+      const y = 50 + i * fila;
+      capa.appendChild(nodoSvg("rect", { x: 252, y: y - 8, width: 9, height: 9, fill: color(i) }));
+      txt(266, y, `${c.length > 12 ? c.slice(0, 11) + "…" : c}  ${e.porcentajes[i]}%`, { fill: color(i), "font-size": Math.min(10.5, fila - 4) });
+    });
+  }
+  return svg;
 }
 
 function mostrarVisual(v) {
-  const dibujo = v.grafica ? svgDeGrafica(v.grafica) : svgDeTexto(v.svg || "");
+  let dibujo = null;
+  try { dibujo = v.grafica ? svgDeGrafica(v.grafica) : v.estadistica ? svgDeEstadistica(v.estadistica) : null; }
+  catch (err) { console.warn("Grafica:", err); }
   lienzoVisual.innerHTML = "";
-  if (!dibujo) { lienzoVisual.appendChild(el("div", "fallo", "No he podido mostrar este dibujo.")); }
-  else {
-    lienzoVisual.appendChild(dibujo);
-    if (!v.grafica) encuadrar(dibujo);
-  }
+  if (dibujo) lienzoVisual.appendChild(dibujo);
+  else lienzoVisual.appendChild(el("div", "fallo", "No he podido mostrar esta gráfica."));
   document.getElementById("visual-titulo").textContent = v.titulo || "Visual";
   panelVisual.hidden = false; visualActivo = true;
   zonaNucleo.classList.add("con-visual");
@@ -1097,7 +1198,7 @@ const DOOM = window.DOOM = {
       case "error": quitarPensando(); registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo(); break;
       case "abiertas": ponerAbiertas(e.lista || []); break;
       case "visual": {
-        const v = { titulo: e.titulo, svg: e.svg, grafica: e.grafica };
+        const v = { titulo: e.titulo, grafica: e.grafica, estadistica: e.estadistica };
         visuales.push(v); mostrarVisual(v); latido(0.9);
         const l = linea("accion", "◆", "", colorDeModo("visual")), cuerpo = l.querySelector(".cuerpo");
         cuerpo.append(el("span", "chip", "visual"), document.createTextNode(e.titulo));
@@ -1384,17 +1485,6 @@ new ResizeObserver(() => calcularTrazas()).observe(document.querySelector("main.
 /* ==========================================================================
    10. DEMO (#demo): una orden simulada, para disenar sin agente
    ========================================================================== */
-const CABALLO_DEMO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M110 150 C 120 120, 220 115, 270 130 C 285 135, 290 150, 285 170 C 280 185, 250 190, 230 188 L 150 188 C 125 188, 105 175, 110 150 Z"/>
-  <path d="M265 135 C 275 110, 285 85, 300 70 L 318 62 C 330 58, 340 66, 338 78 L 335 92 C 333 100, 325 100, 320 96 L 308 90 C 300 105, 292 125, 285 150"/>
-  <circle cx="322" cy="72" r="2.5" fill="currentColor"/>
-  <path d="M300 70 L 296 56 L 306 64"/>
-  <path d="M298 74 C 288 88, 279 104, 271 122" stroke-dasharray="4 5"/>
-  <path d="M135 186 L 128 230 L 132 262 M 160 188 L 162 232 L 158 262 M 240 186 L 248 230 L 244 262 M 265 178 L 272 228 L 270 262"/>
-  <path d="M125 262 h12 M151 262 h12 M237 262 h12 M263 262 h12" stroke-width="5"/>
-  <path d="M112 152 C 90 150, 78 170, 80 200 C 82 215, 76 225, 70 230"/>
-  <line x1="40" y1="266" x2="360" y2="266" stroke-width="1.5" opacity=".4"/>
-</svg>`;
 if (location.hash === "#demo") {
   const t = (ms, f) => setTimeout(f, ms);
   document.body.prepend(el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS"));
@@ -1430,7 +1520,11 @@ if (location.hash === "#demo") {
         titulo: "Suma de vectores u + v",
         grafica: { x: [-1, 7], y: [-1, 6], vectores: [{ de: [0, 0], a: [4, 1], nombre: "u" }, { de: [4, 1], a: [5, 4], nombre: "v" }, { de: [0, 0], a: [5, 4], nombre: "u+v" }],
                    puntos: [], segmentos: [], funciones: [{ f: "0.8x", nombre: "r" }] },
-      } : /caballo|dibuj/i.test(texto) ? { titulo: "Caballo", svg: CABALLO_DEMO } : null;
+      } : /estad|barra|venta|dato|histogram|sector/i.test(texto) ? {
+        titulo: "Ventas por trimestre",
+        estadistica: { tipo: "barras", eje_x: "trimestre", eje_y: "ventas (miles €)", categorias: ["T1", "T2", "T3", "T4"],
+                       series: [{ nombre: "2025", valores: [12, 18, 15, 22] }, { nombre: "2026", valores: [14, 21, 19, 27] }] },
+      } : null;
       if (visual) {
         t(900, () => E({ tipo: "error", texto: `SIMULACIÓN: no hay agente detrás; esto es un ejemplo fijo para ver cómo se representa («${texto}»).` }));
         t(1300, () => E({ tipo: "comentario", texto: "Lo represento para que se vea mejor." }));

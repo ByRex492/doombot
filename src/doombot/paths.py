@@ -27,6 +27,8 @@ PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 PROFILES_FILE: Path = PROJECT_ROOT / "profiles.toml"
 ENV_FILE: Path = PROJECT_ROOT / ".env"
 DOCS_DIR: Path = PROJECT_ROOT / "docs"
+UI_DIR: Path = PROJECT_ROOT / "ui"
+"""Interfaces: el HUD (``ui/prototipo``) y la ventana de la aplicacion (``ui/ventana``)."""
 
 VAULT_DIR: Path = PROJECT_ROOT / "obsidian"
 """El vault de Obsidian del proyecto: se versiona, igual que ``DOCS_DIR``.

@@ -318,6 +318,29 @@ herramientas; con Claude decide mucho mejor, a cambio de que la conversación
 `/abiertas` lista lo que ha abierto, Ctrl+C corta la tarea. Desde
 `python -m doombot chat` es la orden `agente <lo que sea>`.
 
+### La aplicación
+
+```
+python -m doombot ventana
+```
+
+D.O.O.M en su propia ventana, como cualquier programa: arriba un planeta que
+reacciona (cambia de color según use el navegador, aplicaciones, ficheros o
+la terminal, y se pone naranja cuando espera tu permiso); debajo, lo que
+piensa, lo que abre y lo que hace, paso a paso; y abajo, la caja para
+escribirle. Las confirmaciones son botones, con la segunda opinión del otro
+modelo debajo. Mientras trabaja, el botón de enviar pasa a ser **Parar**.
+
+Necesita el extra `hud` (`pywebview`). En Linux usa el GTK y el WebKit del
+sistema; como el `.venv` no ve los paquetes del sistema, se enlazan una vez:
+
+```bash
+ln -s /usr/lib/python3/dist-packages/gi .venv/lib/python3.12/site-packages/
+ln -s /usr/lib/python3/dist-packages/cairo .venv/lib/python3.12/site-packages/
+```
+
+En Windows no hace falta nada: usa WebView2, que ya trae el sistema.
+
 ### Varios modelos gratuitos
 
 Para no depender de un solo modelo ni de un solo proveedor (D-034):

@@ -30,6 +30,8 @@ class Herramienta:
     requeridos: tuple[str, ...] = ()
     narrar: Callable[[dict[str, Any]], str] | None = None
     confirmar: Callable[[dict[str, Any]], str | None] | None = None
+    familia: str = ""
+    """``web``, ``apps``, ``ficheros`` o ``terminal``: la esfera de la ventana cambia segun esto."""
 
     def espec(self) -> EspecHerramienta:
         return EspecHerramienta(

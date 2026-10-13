@@ -215,6 +215,7 @@ def herramientas() -> list[Herramienta]:
             listar_directorio,
             {"ruta": texto("Carpeta. Admite ~ para la carpeta personal. Por defecto ~.")},
             narrar=lambda a: f"Miro qué hay en {a.get('ruta') or '~'}",
+            familia="ficheros",
         ),
         Herramienta(
             "leer_fichero",
@@ -227,6 +228,7 @@ def herramientas() -> list[Herramienta]:
             requeridos=("ruta",),
             narrar=lambda a: f"Leo {a.get('ruta')}",
             confirmar=_confirmar_lectura,
+            familia="ficheros",
         ),
         Herramienta(
             "buscar_ficheros",
@@ -238,6 +240,7 @@ def herramientas() -> list[Herramienta]:
             },
             requeridos=("patron",),
             narrar=lambda a: f"Busco «{a.get('patron')}» en {a.get('carpeta') or '~'}",
+            familia="ficheros",
         ),
         Herramienta(
             "escribir_fichero",
@@ -247,6 +250,7 @@ def herramientas() -> list[Herramienta]:
             requeridos=("ruta", "contenido"),
             narrar=lambda a: f"Escribo {a.get('ruta')}",
             confirmar=_confirmar_escritura,
+            familia="ficheros",
         ),
         Herramienta(
             "ejecutar_comando",
@@ -261,5 +265,6 @@ def herramientas() -> list[Herramienta]:
             requeridos=("comando",),
             narrar=lambda a: f"Ejecuto: {a.get('comando')}",
             confirmar=_confirmar_comando,
+            familia="terminal",
         ),
     ]

@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D.O.O.M</title>
+<!--
+  La ventana de D.O.O.M (D-035). Se abre dentro de su propia ventana de
+  escritorio (pywebview), nunca en una pestaña del navegador.
+
+  Tres partes:
+    1. El planeta  (WebGL): reacciona al estado y cambia de color segun la
+       herramienta que use el agente (navegador, apps, ficheros, terminal).
+    2. El registro: lo que piensa, cada accion antes de hacerla, como salio,
+       las confirmaciones como botones y la respuesta final.
+    3. La entrada: se escribe la orden; mientras trabaja, el boton es "Parar".
+
+  Contrato con Python (src/doombot/ventana/puente.py):
+    JS -> Py   window.pywebview.api.iniciar() / enviar(t) / responder(id, si)
+               / parar() / nuevo() / abrir_enlace(url)
+    Py -> JS   DOOM.evento({tipo, ...}) — ver DOOM.evento abajo.
+
+  Sin pywebview (abierto suelto para disenar), con #demo en la URL se simula
+  una orden completa, para ver el planeta y el registro sin agente.
+-->
+<style>
+  :root {
+    --fondo: #05070c;
+    --panel: #0b0f18;
+    --borde: #1a2232;
+    --texto: #d9dfeb;
+    --tenue: #7e889a;
+    --muy-tenue: #4b5466;
+    --acento: #5ab4ff;
+    --ok: #4ade80;
+    --mal: #f87171;
+    --aviso: #fb923c;
+    --c-web: #22d3ee;
+    --c-apps: #a78bfa;
+    --c-ficheros: #fbbf24;
+    --c-terminal: #4ade80;
+    --c-pensando: #9b8cff;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, "Noto Sans", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--fondo);
+    color: var(--texto);
+    font: 14px/1.55 var(--sans);
+    display: grid;
+    grid-template-rows: auto minmax(200px, 40vh) 1fr auto;
+    overflow: hidden;
+  }
+
+  /* -- cabecera ------------------------------------------------------------ */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--borde);
+    background: linear-gradient(180deg, #080b13, var(--fondo));
+  }
+  .marca { font: 600 13px/1 var(--mono); letter-spacing: .32em; color: #e8ecf5; }
+  .modelos { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; justify-content: flex-end; }
+  .modelo {
+    font: 11px/1 var(--mono); color: var(--tenue);
+    border: 1px solid var(--borde); border-radius: 999px; padding: 4px 8px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .modelo::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .modelo.sin::before { background: var(--muy-tenue); }
+  button {
+    font: 12px/1 var(--sans); color: var(--texto);
+    background: transparent; border: 1px solid var(--borde); border-radius: 8px;
+    padding: 7px 11px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: #2c3850; background: #101624; }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, textarea:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+  /* -- el planeta ------------------------------------------------------------ */
+  #cielo { position: relative; min-height: 0; }
+  #planeta { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #rotulo {
+    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    font: 11px/1 var(--mono); letter-spacing: .22em; text-transform: uppercase;
+    color: var(--tenue); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(5, 7, 12, .78); border: 1px solid var(--borde); border-radius: 999px;
+    padding: 6px 12px 6px 10px;
+  }
+  #rotulo .punto { width: 7px; height: 7px; border-radius: 50%; background: var(--acento); box-shadow: 0 0 10px var(--acento); }
+
+  /* -- el registro ----------------------------------------------------------- */
+  #registro { overflow-y: auto; min-height: 0; padding: 8px 16px 16px; scroll-behavior: smooth; }
+  #registro > * { max-width: 860px; margin-left: auto; margin-right: auto; }
+  .tu {
+    margin-top: 18px; padding: 10px 14px;
+    background: #111827; border: 1px solid var(--borde); border-radius: 12px;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .tu::before { content: "› "; color: var(--acento); font-family: var(--mono); }
+  .linea { display: flex; gap: 10px; align-items: baseline; padding: 3px 0 3px 4px; font-size: 13.5px; }
+  .linea .marca-l { flex: none; width: 14px; text-align: center; font-family: var(--mono); color: var(--muy-tenue); }
+  .linea .cuerpo { min-width: 0; overflow-wrap: anywhere; }
+  .piensa .cuerpo { color: #b9c1d3; font-style: italic; }
+  .accion .cuerpo { color: var(--texto); }
+  .accion .marca-l { color: var(--c, var(--acento)); }
+  .chip {
+    font: 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--c, var(--acento)); border: 1px solid currentColor; border-radius: 4px;
+    padding: 2px 5px; margin-right: 8px; opacity: .9; vertical-align: 1px;
+  }
+  .resultado { padding-left: 28px; }
+  .resultado .cuerpo { color: var(--tenue); font: 12px/1.5 var(--mono); }
+  .resultado .marca-l { color: var(--ok); }
+  .fallo-l .cuerpo { color: #f3a5a5; font: 12px/1.5 var(--mono); }
+  .fallo-l .marca-l { color: var(--mal); }
+  .resultado.fallo-l { padding-left: 28px; }
+  .aviso-l .cuerpo { color: var(--tenue); font-size: 12.5px; }
+  .pensando-l .cuerpo { color: var(--tenue); font-size: 12.5px; }
+  .pensando-l .marca-l::after { content: "◐"; display: inline-block; animation: giro 1s linear infinite; color: var(--c-pensando); }
+  @keyframes giro { to { transform: rotate(360deg); } }
+
+  .respuesta {
+    margin-top: 10px; padding: 12px 14px 12px 16px;
+    border-left: 2px solid var(--acento); background: linear-gradient(90deg, #0d1424, transparent);
+    white-space: pre-wrap; word-wrap: break-word; font-size: 14.5px;
+  }
+  .respuesta a, .resultado a { color: var(--c-web); }
+  .abierto { margin: 6px 0 0 18px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .abierto span { font: 11px/1 var(--mono); color: var(--tenue); border: 1px dashed var(--borde); border-radius: 6px; padding: 4px 7px; }
+  .fallo { margin-top: 10px; padding: 10px 14px; border: 1px solid #4a1f25; background: #1a0d10; border-radius: 10px; color: #f3b3b3; white-space: pre-wrap; font: 12.5px/1.5 var(--mono); }
+  .sistema { margin-top: 14px; padding: 10px 14px; border: 1px solid var(--borde); border-radius: 10px; color: var(--tenue); font-size: 13px; white-space: pre-wrap; }
+
+  .permiso {
+    margin: 10px 0 6px 18px; padding: 12px 14px;
+    border: 1px solid #5a3a17; background: #170f07; border-radius: 10px;
+  }
+  .permiso .pregunta { color: #fde4c8; }
+  .permiso .opinion { margin-top: 8px; font-size: 12.5px; color: var(--tenue); }
+  .permiso .opinion b { font: 600 11px/1 var(--mono); letter-spacing: .08em; margin-right: 6px; }
+  .permiso .opinion.bien b { color: var(--ok); }
+  .permiso .opinion.ojo b { color: var(--aviso); }
+  .permiso .botones { margin-top: 10px; display: flex; gap: 8px; }
+  .permiso .si { border-color: #2f5b3c; color: #c9f5d6; }
+  .permiso .no { border-color: #5b2f2f; color: #f5c9c9; }
+  .permiso .hecho { margin-top: 8px; font: 12px/1 var(--mono); color: var(--tenue); }
+
+  /* -- la entrada -------------------------------------------------------------- */
+  footer { border-top: 1px solid var(--borde); background: var(--panel); padding: 10px 16px 8px; }
+  .caja { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+  textarea {
+    flex: 1; resize: none; min-height: 42px; max-height: 180px;
+    background: #070a11; color: var(--texto); border: 1px solid var(--borde); border-radius: 10px;
+    padding: 11px 12px; font: 14px/1.4 var(--sans);
+    overflow-y: hidden;
+  }
+  textarea::placeholder { color: var(--muy-tenue); }
+  #enviar { height: 42px; padding: 0 16px; border-color: #24406a; color: #cfe6ff; }
+  #enviar.parar { border-color: #6a2424; color: #ffd0d0; }
+  .estado-pie {
+    max-width: 860px; margin: 6px auto 0; display: flex; gap: 12px; flex-wrap: wrap;
+    font: 11px/1.4 var(--mono); color: var(--muy-tenue);
+  }
+  .estado-pie .abiertas { margin-left: auto; text-align: right; }
+
+  @media (prefers-reduced-motion: reduce) { #registro { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+  <header>
+    <span class="marca">D.O.O.M</span>
+    <div class="modelos" id="modelos" aria-label="Modelos en uso"></div>
+    <button id="nueva" title="Olvida la conversación y empieza de cero">Nueva</button>
+  </header>
+
+  <section id="cielo" aria-hidden="true">
+    <canvas id="planeta"></canvas>
+    <div id="rotulo"><span class="punto"></span><span id="rotulo-t">iniciando</span></div>
+  </section>
+
+  <main id="registro" aria-live="polite"></main>
+
+  <footer>
+    <div class="caja">
+      <textarea id="orden" rows="1" placeholder="Dime qué hago…  (Intro envía, Mayús+Intro salto de línea)" aria-label="Orden para D.O.O.M"></textarea>
+      <button id="enviar">Enviar</button>
+    </div>
+    <div class="estado-pie">
+      <span id="pie-info">—</span>
+      <span class="abiertas" id="pie-abiertas"></span>
+    </div>
+  </footer>
+
+<script>
+"use strict";
+/* ==========================================================================
+   1. EL PLANETA
+   Cada "modo" es un conjunto de numeros; el planeta se desliza hacia el del
+   modo actual. Mismo enfoque que ui/prototipo/hud.html: la interfaz no decide
+   nada, recibe estado y anima.
+   ========================================================================== */
+const MODOS = {
+  reposo:   { atm: [0.32, 0.62, 1.00], energia: 0.10, etiqueta: "en reposo",           css: "#5ab4ff" },
+  pensando: { atm: [0.60, 0.50, 1.00], energia: 0.62, etiqueta: "pensando",            css: "#9b8cff" },
+  web:      { atm: [0.13, 0.83, 0.93], energia: 0.85, etiqueta: "navegador",           css: "#22d3ee" },
+  apps:     { atm: [0.66, 0.55, 0.98], energia: 0.85, etiqueta: "aplicaciones",        css: "#a78bfa" },
+  ficheros: { atm: [0.98, 0.75, 0.14], energia: 0.80, etiqueta: "ficheros",            css: "#fbbf24" },
+  terminal: { atm: [0.29, 0.87, 0.50], energia: 0.80, etiqueta: "terminal",            css: "#4ade80" },
+  permiso:  { atm: [0.98, 0.57, 0.24], energia: 0.45, etiqueta: "esperando tu permiso", css: "#fb923c" },
+  hablando: { atm: [0.45, 0.82, 1.00], energia: 0.50, etiqueta: "respondiendo",        css: "#7cc8ff" },
+  error:    { atm: [0.97, 0.40, 0.40], energia: 0.35, etiqueta: "algo ha fallado",     css: "#f87171" },
+};
+const ETIQUETA_FAMILIA = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal" };
+
+const planeta = {
+  modo: "reposo",
+  atm: MODOS.reposo.atm.slice(),
+  energia: MODOS.reposo.energia,
+  pulso: 0,          // golpe corto: llega un evento, se escribe una palabra
+  rot: 0,
+  luna: 0,
+};
+function ponerModo(nombre) {
+  if (!MODOS[nombre]) nombre = "pensando";
+  planeta.modo = nombre;
+  const m = MODOS[nombre];
+  document.getElementById("rotulo-t").textContent = m.etiqueta;
+  const punto = document.querySelector("#rotulo .punto");
+  punto.style.background = m.css; punto.style.boxShadow = `0 0 10px ${m.css}`;
+}
+function latido(fuerza = 0.5) { planeta.pulso = Math.min(1.4, planeta.pulso + fuerza); }
+
+const VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }`;
+const FRAG = `
+precision highp float;
+uniform vec2 uRes; uniform float uTiempo, uRot, uEnergia, uPulso, uLuna;
+uniform vec3 uAtm;
+
+float hash(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float ruido(vec3 x){
+  vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash(i), hash(i+vec3(1,0,0)), f.x), mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),
+             mix(mix(hash(i+vec3(0,0,1)), hash(i+vec3(1,0,1)), f.x), mix(hash(i+vec3(0,1,1)), hash(i+vec3(1,1,1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ v += a*ruido(p); p = p*2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return v; }
+mat3 rotY(float a){ float c = cos(a), s = sin(a); return mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c); }
+mat3 rotX(float a){ float c = cos(a), s = sin(a); return mat3(1.0,0.0,0.0, 0.0,c,s, 0.0,-s,c); }
+
+void main(){
+  float escala = min(uRes.x, uRes.y);
+  vec2 p = (gl_FragCoord.xy - 0.5*uRes) / escala * 2.0;
+  float R = 0.62 * (1.0 + 0.035*uPulso);
+  float r = length(p);
+  vec3 col = vec3(0.0);
+
+  // estrellas, quietas y tenues
+  float st = hash(vec3(floor(gl_FragCoord.xy/2.0), 3.0));
+  col += vec3(step(0.9983, st)) * (0.35 + 0.35*sin(uTiempo*1.5 + st*90.0));
+
+  vec3 L = normalize(vec3(-0.55, 0.42, 0.72));
+  vec3 tierraBase = vec3(0.16, 0.30, 0.34), marBase = vec3(0.025, 0.06, 0.13);
+  vec3 tierra = mix(tierraBase, uAtm*0.55, 0.30);
+  vec3 mar = mix(marBase, uAtm*0.18, 0.35);
+
+  // luna: orbita inclinada; detras del planeta no se ve
+  float va = uLuna;
+  vec3 lp = vec3(cos(va)*1.55*R, sin(va)*0.32*R + 0.05, sin(va));
+  float ld = length(p - lp.xy);
+  float lunaR = 0.055;
+  bool lunaDetras = lp.z < 0.0 && r < R;
+
+  if (r < R){
+    float z = sqrt(R*R - r*r);
+    vec3 n = normalize(vec3(p, z));
+    vec3 q = rotX(0.38) * rotY(uRot) * n;
+    float h = fbm(q*2.2);
+    float esTierra = smoothstep(0.50, 0.555, h);
+    vec3 sup = mix(mar*(0.6 + 0.8*h), tierra*(0.55 + 1.1*(h - 0.45)), esTierra);
+
+    // venas de energia: se encienden cuando trabaja
+    float vena = pow(1.0 - abs(fbm(q*3.6 + vec3(0.0, uTiempo*0.12, uTiempo*0.05))*2.0 - 1.0), 9.0);
+    sup += uAtm * vena * (0.08 + 1.4*uEnergia);
+
+    // nubes, mas lentas que la superficie
+    float nub = smoothstep(0.56, 0.82, fbm(rotY(uTiempo*0.025)*q*3.1 + vec3(0.0, uTiempo*0.015, 0.0)));
+    sup = mix(sup, vec3(0.86, 0.92, 1.0), nub*0.40);
+
+    float dif = clamp(dot(n, L), 0.0, 1.0);
+    col = sup * (0.06 + 0.10*uEnergia + dif*0.95);
+    col += uAtm * 0.35 * (1.0 - dif) * vena * uEnergia;        // lado de noche: luces
+    float fres = pow(1.0 - n.z, 3.0);
+    col += uAtm * fres * (0.55 + 1.1*uEnergia + 0.9*uPulso);     // borde iluminado
+  } else {
+    float d = r - R;
+    float halo = exp(-d*(8.5 - 4.0*uEnergia)) * (0.30 + 0.85*uEnergia + 1.1*uPulso);
+    col += uAtm * halo;
+  }
+
+  if (!lunaDetras){
+    float lm = smoothstep(lunaR, lunaR - 0.012, ld);
+    vec3 ln = normalize(vec3((p - lp.xy)/lunaR, 0.6));
+    vec3 lunaCol = vec3(0.72, 0.76, 0.85) * (0.25 + 0.8*clamp(dot(ln, L), 0.0, 1.0));
+    col = mix(col, lunaCol, lm);
+    col += uAtm * exp(-max(ld - lunaR, 0.0)*40.0) * 0.25 * (0.4 + uEnergia);
+  }
+
+  col = 1.0 - exp(-col*1.25);                                    // tono suave, sin quemar
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const lienzo = document.getElementById("planeta");
+const gl = lienzo.getContext("webgl", { antialias: true, premultipliedAlpha: false });
+let uni = null, ctx2d = null;
+
+function compilar(tipo, fuente) {
+  const s = gl.createShader(tipo); gl.shaderSource(s, fuente); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+try {
+  if (!gl) throw new Error("sin WebGL");
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compilar(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, compilar(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const a = gl.getAttribLocation(prog, "a"); gl.enableVertexAttribArray(a);
+  gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  uni = {};
+  for (const n of ["uRes", "uTiempo", "uRot", "uEnergia", "uPulso", "uLuna", "uAtm"]) uni[n] = gl.getUniformLocation(prog, n);
+} catch (e) {
+  // Sin WebGL: una esfera plana con su halo. Se pierde detalle, no funcion.
+  console.warn("Planeta en modo simple:", e);
+  lienzo.replaceWith(lienzo.cloneNode());
+  ctx2d = document.getElementById("planeta").getContext("2d");
+}
+
+function ajustar() {
+  const c = document.getElementById("planeta");
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.floor(c.clientWidth * dpr)), h = Math.max(1, Math.floor(c.clientHeight * dpr));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  return [w, h];
+}
+
+let antes = performance.now();
+function fotograma(ahora) {
+  const dt = Math.min(0.05, (ahora - antes) / 1000); antes = ahora;
+  const m = MODOS[planeta.modo];
+  const k = 1 - Math.exp(-dt * 2.6);
+  for (let i = 0; i < 3; i++) planeta.atm[i] += (m.atm[i] - planeta.atm[i]) * k;
+  planeta.energia += (m.energia - planeta.energia) * k;
+  planeta.pulso *= Math.exp(-dt * 3.2);
+  planeta.rot += dt * (0.05 + 0.55 * planeta.energia);
+  planeta.luna += dt * (0.25 + 1.6 * planeta.energia);
+  const [w, h] = ajustar();
+
+  if (uni) {
+    gl.viewport(0, 0, w, h);
+    gl.uniform2f(uni.uRes, w, h);
+    gl.uniform1f(uni.uTiempo, ahora / 1000);
+    gl.uniform1f(uni.uRot, planeta.rot);
+    gl.uniform1f(uni.uEnergia, planeta.energia);
+    gl.uniform1f(uni.uPulso, planeta.pulso);
+    gl.uniform1f(uni.uLuna, planeta.luna);
+    gl.uniform3f(uni.uAtm, planeta.atm[0], planeta.atm[1], planeta.atm[2]);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  } else if (ctx2d) {
+    const c = ctx2d, R = Math.min(w, h) * 0.31 * (1 + 0.035 * planeta.pulso);
+    const [r, g, b] = planeta.atm.map(v => Math.round(v * 255));
+    c.fillStyle = "#05070c"; c.fillRect(0, 0, w, h);
+    const halo = c.createRadialGradient(w/2, h/2, R*0.9, w/2, h/2, R*(1.5 + planeta.energia));
+    halo.addColorStop(0, `rgba(${r},${g},${b},${0.35 + 0.5*planeta.energia})`); halo.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = halo; c.fillRect(0, 0, w, h);
+    const esfera = c.createRadialGradient(w/2 - R*0.35, h/2 - R*0.35, R*0.1, w/2, h/2, R);
+    esfera.addColorStop(0, `rgb(${40 + r/4},${60 + g/4},${80 + b/4})`); esfera.addColorStop(1, "#04060c");
+    c.fillStyle = esfera; c.beginPath(); c.arc(w/2, h/2, R, 0, Math.PI*2); c.fill();
+  }
+  requestAnimationFrame(fotograma);
+}
+requestAnimationFrame(fotograma);
+
+/* ==========================================================================
+   2. EL REGISTRO
+   ========================================================================== */
+const registro = document.getElementById("registro");
+let familiaActual = "", lineaPensando = null, ocupado = false;
+
+function alFondo() { registro.scrollTop = registro.scrollHeight; }
+function el(etiqueta, clase, texto) {
+  const e = document.createElement(etiqueta);
+  if (clase) e.className = clase;
+  if (texto !== undefined) e.textContent = texto;
+  return e;
+}
+// Texto con enlaces pulsables. Un enlace no puede navegar dentro de la
+// ventana: se abre en el navegador del usuario a traves de Python.
+function conEnlaces(nodo, texto) {
+  const partes = String(texto).split(/(https?:\/\/[^\s<>"')\]]+)/g);
+  for (const p of partes) {
+    if (/^https?:\/\//.test(p)) {
+      // El punto o la coma que cierran la frase no son parte del enlace.
+      const url = p.replace(/[.,;:!?»]+$/, ""), cola = p.slice(url.length);
+      const a = el("a", "", url); a.href = url;
+      a.addEventListener("click", ev => { ev.preventDefault(); api("abrir_enlace", url); });
+      nodo.appendChild(a);
+      if (cola) nodo.appendChild(document.createTextNode(cola));
+    } else if (p) nodo.appendChild(document.createTextNode(p));
+  }
+  return nodo;
+}
+function linea(clase, marca, texto, color) {
+  const l = el("div", `linea ${clase}`);
+  const m = el("span", "marca-l", marca);
+  const c = el("span", "cuerpo");
+  if (color) l.style.setProperty("--c", color);
+  conEnlaces(c, texto);
+  l.append(m, c);
+  return l;
+}
+function quitarPensando() { if (lineaPensando) { lineaPensando.remove(); lineaPensando = null; } }
+function mostrarPensando(texto) {
+  quitarPensando();
+  lineaPensando = linea("pensando-l", "", texto);
+  registro.appendChild(lineaPensando); alFondo();
+}
+
+// Escribe la respuesta palabra a palabra; cada palabra es un latido del planeta.
+function escribir(nodo, texto, alTerminar) {
+  const palabras = String(texto).split(/(\s+)/);
+  let i = 0, acumulado = "";
+  const paso = () => {
+    if (i >= palabras.length) { nodo.textContent = ""; conEnlaces(nodo, texto); alFondo(); alTerminar && alTerminar(); return; }
+    acumulado += palabras[i++];
+    nodo.textContent = acumulado;
+    if (palabras[i - 1].trim()) latido(0.18);
+    alFondo();
+    setTimeout(paso, palabras[i - 1].trim() ? 28 : 0);
+  };
+  paso();
+}
+
+function tarjetaPermiso(id, pregunta, opinion) {
+  const t = el("div", "permiso"); t.dataset.id = id;
+  t.appendChild(el("div", "pregunta", pregunta));
+  if (opinion) {
+    const ojo = /^OJO/i.test(opinion);
+    const o = el("div", `opinion ${ojo ? "ojo" : "bien"}`);
+    o.appendChild(el("b", "", "SEGUNDA OPINIÓN"));
+    o.appendChild(document.createTextNode(opinion));
+    t.appendChild(o);
+  }
+  const botones = el("div", "botones");
+  const si = el("button", "si", "Confirmar"), no = el("button", "no", "No");
+  const decidir = valor => {
+    si.disabled = no.disabled = true;
+    t.appendChild(el("div", "hecho", valor ? "✓ autorizado" : "✗ no autorizado"));
+    ponerModo("pensando");
+    api("responder", id, valor);
+  };
+  si.addEventListener("click", () => decidir(true));
+  no.addEventListener("click", () => decidir(false));
+  botones.append(si, no); t.appendChild(botones);
+  return t;
+}
+
+function ponerAbiertas(lista) {
+  const ult = lista.slice(-4).map(x => x.replace(/^https?:\/\//, ""));
+  document.getElementById("pie-abiertas").textContent = lista.length ? `abierto: ${ult.join(" · ")}` : "";
+}
+
+/* ==========================================================================
+   3. LOS EVENTOS DE PYTHON
+   ========================================================================== */
+const DOOM = window.DOOM = {
+  evento(e) {
+    switch (e.tipo) {
+      case "estado":
+        if (e.estado === "pensando") { ponerModo("pensando"); latido(0.8); }
+        break;
+      case "pensando":
+        familiaActual = "";
+        ponerModo("pensando");
+        mostrarPensando(e.paso > 1 ? `pensando el siguiente paso (${e.paso})…` : "pensando…");
+        break;
+      case "herramienta":
+        familiaActual = e.familia || "";
+        ponerModo(familiaActual || "pensando"); latido(0.7);
+        break;
+      case "comentario":
+        quitarPensando();
+        registro.appendChild(linea("piensa", "·", e.texto)); latido(0.3); alFondo();
+        break;
+      case "accion": {
+        quitarPensando();
+        const color = familiaActual ? MODOS[familiaActual].css : null;
+        const l = linea("accion", "→", "", color);
+        const cuerpo = l.querySelector(".cuerpo");
+        if (familiaActual) cuerpo.appendChild(el("span", "chip", ETIQUETA_FAMILIA[familiaActual]));
+        conEnlaces(cuerpo, e.texto);
+        registro.appendChild(l); alFondo();
+        break;
+      }
+      case "resultado":
+        registro.appendChild(linea("resultado", "✓", e.texto)); alFondo();
+        break;
+      case "error":
+        quitarPensando();
+        registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo();
+        break;
+      case "abiertas":
+        ponerAbiertas(e.lista || []);
+        break;
+      case "permiso":
+        quitarPensando();
+        ponerModo("permiso"); latido(0.6);
+        registro.appendChild(tarjetaPermiso(e.id, e.pregunta, e.opinion)); alFondo();
+        break;
+      case "permiso_fin": {
+        const t = registro.querySelector(`.permiso[data-id="${e.id}"]`);
+        if (t) t.querySelectorAll("button").forEach(b => b.disabled = true);
+        break;
+      }
+      case "respuesta": {
+        quitarPensando();
+        ponerModo("hablando");
+        const r = el("div", "respuesta");
+        registro.appendChild(r);
+        escribir(r, e.texto, () => {
+          if (e.abiertas && e.abiertas.length) {
+            const a = el("div", "abierto");
+            for (const x of e.abiertas) a.appendChild(el("span", "", `abierto · ${x}`));
+            registro.appendChild(a); alFondo();
+          }
+          setTimeout(() => { if (!ocupado) ponerModo("reposo"); }, 600);
+        });
+        break;
+      }
+      case "fallo":
+        quitarPensando();
+        ponerModo("error"); latido(0.9);
+        registro.appendChild(el("div", "fallo", e.texto)); alFondo();
+        setTimeout(() => { if (!ocupado) ponerModo("reposo"); }, 2500);
+        break;
+      default:
+        break;
+    }
+    if (e.tipo === "estado") ponerOcupado(e.estado === "pensando");
+  },
+};
+
+/* ==========================================================================
+   4. LA ENTRADA
+   ========================================================================== */
+const orden = document.getElementById("orden");
+const botonEnviar = document.getElementById("enviar");
+
+function api(metodo, ...args) {
+  const p = window.pywebview && window.pywebview.api;
+  if (p && p[metodo]) return p[metodo](...args);
+  if (window.DEMO) return window.DEMO[metodo] ? window.DEMO[metodo](...args) : Promise.resolve(null);
+  return Promise.resolve(null);
+}
+function ponerOcupado(si) {
+  ocupado = si;
+  botonEnviar.textContent = si ? "Parar" : "Enviar";
+  botonEnviar.classList.toggle("parar", si);
+  if (!si) quitarPensando();
+}
+function crecer() {
+  orden.style.height = "auto";
+  orden.style.height = Math.min(orden.scrollHeight + 2, 180) + "px";
+  orden.style.overflowY = orden.scrollHeight > 180 ? "auto" : "hidden";
+}
+
+async function mandar() {
+  if (ocupado) { api("parar"); return; }
+  const texto = orden.value.trim();
+  if (!texto) return;
+  registro.appendChild(el("div", "tu", texto)); alFondo();
+  orden.value = ""; crecer();
+  const r = await api("enviar", texto);
+  if (r && r.ok === false && r.error) {
+    registro.appendChild(el("div", "fallo", r.error)); alFondo();
+  }
+}
+orden.addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); mandar(); }
+});
+orden.addEventListener("input", () => { crecer(); latido(0.06); });
+botonEnviar.addEventListener("click", mandar);
+document.getElementById("nueva").addEventListener("click", () => {
+  if (ocupado) return;
+  api("nuevo");
+  registro.innerHTML = "";
+  ponerAbiertas([]);
+  registro.appendChild(el("div", "sistema", "Conversación nueva: no recuerdo nada de lo anterior."));
+});
+
+async function arrancar() {
+  ponerModo("reposo");
+  const info = await api("iniciar");
+  const modelos = document.getElementById("modelos");
+  modelos.innerHTML = "";
+  if (!info) { document.getElementById("pie-info").textContent = "sin conexión con el agente"; return; }
+  if (!info.ok) {
+    ponerModo("error");
+    registro.appendChild(el("div", "fallo", info.error));
+    registro.appendChild(el("div", "sistema",
+      "Para que pueda actuar necesito al menos un modelo: pon las claves gratuitas en .env " +
+      "(DOOMBOT_GROQ_API_KEY, DOOMBOT_GEMINI_API_KEY…) y vuelve a abrir la ventana."));
+    orden.disabled = botonEnviar.disabled = true;
+    orden.placeholder = "Sin modelo configurado";
+    return;
+  }
+  for (const m of info.modelos) modelos.appendChild(el("span", "modelo", m));
+  for (const a of info.avisos || []) modelos.appendChild(Object.assign(el("span", "modelo sin", a.split(":")[0].replace(/'/g, "")), { title: a }));
+  document.getElementById("pie-info").textContent =
+    `${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión activada" : "");
+  registro.appendChild(el("div", "sistema",
+    "Escribe lo que quieres que haga. Te iré contando lo que pienso, lo que abro y lo que hago; " +
+    "antes de algo que no se deshace, te preguntaré."));
+  orden.focus();
+}
+if (window.pywebview && window.pywebview.api) arrancar();
+else window.addEventListener("pywebviewready", arrancar);
+
+/* ==========================================================================
+   5. DEMO (#demo): una orden simulada, para disenar sin agente
+   ========================================================================== */
+if (location.hash === "#demo") {
+  const t = (ms, f) => setTimeout(f, ms);
+  window.DEMO = {
+    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 15, revisor: true }),
+    nuevo: () => Promise.resolve(null),
+    parar: () => Promise.resolve(null),
+    abrir_enlace: () => Promise.resolve(null),
+    responder: () => { t(500, () => { DOOM.evento({ tipo: "herramienta", nombre: "cerrar_aplicacion", familia: "apps" }); DOOM.evento({ tipo: "accion", texto: "Cierro Calculadora" }); }); t(900, () => DOOM.evento({ tipo: "resultado", texto: "Pedido el cierre de la ventana 'Calculator'." })); t(1300, () => { DOOM.evento({ tipo: "respuesta", texto: "He buscado el tiempo en Madrid: 19 °C y despejado según https://www.aemet.es. También he abierto y cerrado la Calculadora.", completo: true, abiertas: ["Calculator", "https://duckduckgo.com/?q=tiempo+Madrid"] }); DOOM.evento({ tipo: "estado", estado: "reposo" }); }); return Promise.resolve(null); },
+    enviar: () => {
+      const E = e => DOOM.evento(e);
+      E({ tipo: "estado", estado: "pensando" }); E({ tipo: "pensando", paso: 1 });
+      t(1200, () => E({ tipo: "comentario", texto: "Voy a buscar el tiempo en Madrid en mi navegador y luego abro la calculadora." }));
+      t(1500, () => { E({ tipo: "herramienta", nombre: "navegar", familia: "web" }); E({ tipo: "accion", texto: "Navego a el tiempo en Madrid" }); });
+      t(2600, () => { E({ tipo: "resultado", texto: "Pagina: «tiempo Madrid at DuckDuckGo» (https://duckduckgo.com/?q=tiempo+Madrid)" }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid"] }); });
+      t(2800, () => E({ tipo: "pensando", paso: 2 }));
+      t(3800, () => { E({ tipo: "herramienta", nombre: "abrir_aplicacion", familia: "apps" }); E({ tipo: "accion", texto: "Abro calculadora" }); });
+      t(4300, () => { E({ tipo: "resultado", texto: "Abierta Calculator." }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid", "Calculator"] }); });
+      t(4500, () => E({ tipo: "pensando", paso: 3 }));
+      t(5400, () => { E({ tipo: "herramienta", nombre: "ejecutar_comando", familia: "terminal" }); E({ tipo: "accion", texto: "Ejecuto: ls ~/Descargas" }); });
+      t(5900, () => E({ tipo: "resultado", texto: "informe.pdf  notas.txt" }));
+      t(6200, () => E({ tipo: "pensando", paso: 4 }));
+      t(7000, () => E({ tipo: "permiso", id: 1, pregunta: "Voy a cerrar 'calculadora' (si hay algo sin guardar, se puede perder).", opinion: "BIEN: el usuario pidió abrirla y cerrarla. (gemini/gemini-3.8-flash)" }));
+      return Promise.resolve({ ok: true });
+    },
+  };
+  arrancar();
+}
+</script>
+</body>
+</html>

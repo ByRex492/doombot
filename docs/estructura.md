@@ -51,6 +51,8 @@ doombot/
 │   │   ├── revision.py  Segunda opinión de otro modelo antes de lo irreversible
 │   │   ├── consola.py   `python -m doombot agente`
 │   │   └── orders.py    `agent`, desde el chat
+│   ├── ventana/         La aplicación de escritorio: planeta, registro y chat (D-035)
+│   │   └── puente.py    Ventana <-> agente: js_api, un hilo fijo, confirmaciones
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon
@@ -180,6 +182,24 @@ truncadas y resultados viejos enmascarados. Cada herramienta solo declara
 **Dónde va una herramienta nueva:** en el módulo de `agent/` que le toque, con
 su `narrar` (lo que ve el usuario) y su `confirmar` (cuándo pide permiso), y
 añadida a la lista de `montaje.montar()`.
+
+## La aplicación
+
+`python -m doombot ventana` abre D.O.O.M como un programa: su propia ventana
+(pywebview), sin navegador a la vista (D-016, D-035). Por dentro dibuja
+`ui/ventana/doom.html`: un planeta en WebGL que cambia según el estado y la
+herramienta que usa el agente, el registro de lo que piensa y hace, y la
+caja para escribirle. El agente corre en el mismo proceso.
+
+**No usa el WebSocket del HUD.** El HUD (D-022) conecta dos programas; aquí
+ventana y agente son uno, y `ventana/puente.py` los habla por el `js_api` de
+pywebview: JavaScript llama a métodos de Python, y Python pinta con
+`DOOM.evento({...})`. Todo el trabajo del agente va en un solo hilo, porque
+Playwright solo funciona desde el hilo que lo creó.
+
+**Dónde va un evento nuevo:** se emite desde el puente (`_emitir`) y se pinta
+en el `switch` de `DOOM.evento`, en `doom.html`. Abriendo `doom.html#demo`
+sin pywebview se simula una orden completa, para diseñar sin agente.
 
 ## El vault de Obsidian
 

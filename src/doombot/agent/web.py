@@ -302,6 +302,7 @@ class Web:
                 {"url": texto("Direccion (ej. youtube.com) o terminos de busqueda.")},
                 requeridos=("url",),
                 narrar=lambda a: f"Abro {a.get('url')} en tu navegador",
+                familia="web",
             ),
             Herramienta(
                 "navegar",
@@ -311,12 +312,14 @@ class Web:
                 {"url": texto("Direccion (ej. elpais.com) o terminos de busqueda.")},
                 requeridos=("url",),
                 narrar=lambda a: f"Navego a {a.get('url')}",
+                familia="web",
             ),
             Herramienta(
                 "leer_pagina",
                 "Vuelve a leer la pagina actual de tu navegador propio.",
                 self.leer_pagina,
                 narrar=lambda a: "Leo la página",
+                familia="web",
             ),
             Herramienta(
                 "clicar",
@@ -327,6 +330,7 @@ class Web:
                 requeridos=("objetivo",),
                 narrar=lambda a: f"Pulso «{a.get('objetivo')}»",
                 confirmar=self._confirmar_clic,
+                familia="web",
             ),
             Herramienta(
                 "escribir_en_pagina",
@@ -344,11 +348,13 @@ class Web:
                     + (" y envío" if a.get("enviar") else "")
                 ),
                 confirmar=self._confirmar_envio,
+                familia="web",
             ),
             Herramienta(
                 "volver_atras",
                 "Vuelve a la pagina anterior en tu navegador propio.",
                 self.volver,
                 narrar=lambda a: "Vuelvo atrás",
+                familia="web",
             ),
         ]

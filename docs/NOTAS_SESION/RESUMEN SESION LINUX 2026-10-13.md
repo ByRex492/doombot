@@ -96,6 +96,26 @@ claves: el usuario las crea (Groq, Google AI Studio, NVIDIA) y las pega.
 **Sin verificar**: ningún proveedor real, ni los IDs exactos de Gemini y NVIDIA en sus capas
 gratuitas.
 
+## 4. La aplicación: planeta, registro y chat (D-035)
+
+Pedido: una interfaz propia "como Claude Code", sin abrir un HTML en el navegador; una esfera
+como un planeta que reaccione, y un chat debajo que diga lo que piensa y qué abre.
+
+- `python -m doombot ventana`: ventana pywebview con `ui/ventana/doom.html` (planeta WebGL +
+  registro + caja de texto). El agente en el mismo proceso, por `src/doombot/ventana/puente.py`.
+- El planeta cambia de modo según la `familia` de cada herramienta (`web`, `apps`, `ficheros`,
+  `terminal`), y además: pensando, esperando permiso (naranja), respondiendo, error.
+- Agente: `Herramienta.familia`, `Agente.observar` (eventos para interfaces) y `Agente.parar()`.
+- Integración tocada además: `paths.py` (`UI_DIR`), `__main__.py` (`ventana`).
+- `doom.html#demo` simula una orden completa sin agente: sirve para diseñar.
+
+**En este portátil**: extra `hud` instalado en `.venv`, y `gi`/`cairo` del sistema enlazados
+dentro del `.venv` (ver README, "La aplicación"). Ventana real probada con un cerebro de guion:
+abrió la Calculadora con las herramientas reales y lo contó en el registro.
+
+**Sin verificar**: con modelo real, en Windows (WebView2) y como ejecutable. Y la voz: el planeta
+aún no reacciona al micrófono ni a Kokoro como el HUD; juntar los dos es lo siguiente.
+
 ## Qué hacer primero en el sobremesa
 
 1. Fusionar `tarea/agente-local` (`git merge --no-ff`), revisar los ficheros de integración de
@@ -111,6 +131,8 @@ gratuitas.
    - "borra la carpeta X" (debe preguntar; contestar no y ver que no insiste)
    Anotar cuántas resuelve cada cerebro: eso decide el valor por defecto de `DOOMBOT_AGENT_BRAIN`.
 4. En Windows: comprobar que "abre la calculadora" encuentra el acceso del menú Inicio.
+5. `python -m doombot ventana` en Windows: que abre con WebView2, que el planeta se ve (WebGL) y
+   que el navegador propio funciona desde la ventana (Playwright en el hilo del agente).
 
 ## Ideas que quedan para después
 - El agente por voz: la orden `agente` ya pasa por `Sesion.decir`/`preguntar`, falta oírlo.

@@ -378,6 +378,7 @@ class Aplicaciones:
                     if a.get("filtro")
                     else "Repaso las aplicaciones instaladas"
                 ),
+                familia="apps",
             ),
             Herramienta(
                 "abrir_aplicacion",
@@ -393,12 +394,14 @@ class Aplicaciones:
                     f"Abro {a.get('nombre')}"
                     + (f" con {a['argumento']}" if a.get("argumento") else "")
                 ),
+                familia="apps",
             ),
             Herramienta(
                 "ventanas_abiertas",
                 "Lista las ventanas o aplicaciones abiertas ahora mismo.",
                 self.ventanas,
                 narrar=lambda a: "Miro qué ventanas hay abiertas",
+                familia="apps",
             ),
             Herramienta(
                 "cerrar_aplicacion",
@@ -411,5 +414,6 @@ class Aplicaciones:
                 confirmar=lambda a: (
                     f"Voy a cerrar {a.get('nombre')!r} (si hay algo sin guardar, se puede perder)."
                 ),
+                familia="apps",
             ),
         ]

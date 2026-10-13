@@ -1254,3 +1254,53 @@ proveedor real todavía, ni los nombres exactos de modelo de Gemini y NVIDIA en 
 gratuitas (`gemini-3.8-flash` sale de los ejemplos de la documentación de Google;
 `nvidia/nemotron-3-super-120b-a12b`, de una comparativa).
 
+---
+
+## D-035 — La aplicación: una ventana con un planeta, el registro del agente y un chat
+
+**Contexto.** Pedido del usuario, 13/10/2026: una interfaz propia "como Claude Code", que no abra
+un HTML en el navegador; una esfera "como un planeta" que reaccione a las consultas, y un chat
+debajo que procese la orden y vaya diciendo lo que piensa y qué aplicaciones o enlaces abre
+mientras trabaja. Además, que la interfaz cambie según la herramienta que use el agente.
+
+**Decisión.**
+
+1. **Ventana propia con pywebview** (`python -m doombot ventana`), confirmando D-016: sin
+   pestaña ni barra de direcciones, con su título y su icono en la barra de tareas. WebKitGTK en
+   Linux, WebView2 en Windows. Dibujar en HTML dentro de una ventana es lo que hacen VS Code o
+   Discord; lo descartado sigue siendo abrir una pestaña del navegador.
+2. **Interfaz nueva, `ui/ventana/doom.html`**, aparte del HUD de voz (`ui/prototipo/hud.html`):
+   el HUD es solo la esfera para la voz; esto es la aplicación entera. Mismo principio que el
+   HUD: la interfaz no decide nada, recibe eventos y anima.
+3. **El planeta, en WebGL**: esfera iluminada con continentes, nubes y venas de energía de ruido
+   procedural, atmósfera y una luna. Cada **modo** es un juego de números (color de atmósfera,
+   energía) y el planeta se desliza hacia el del modo actual: reposo, pensando, `web`, `apps`,
+   `ficheros`, `terminal`, esperando permiso, respondiendo, error. La energía acelera la rotación
+   y la luna; cada evento y cada palabra de la respuesta dan un latido. Sin WebGL, una esfera 2D
+   con halo: se pierde detalle, no función.
+4. **El modo sale de la herramienta.** Cada `Herramienta` declara su `familia`, y el bucle del
+   agente avisa por `observar("herramienta", {nombre, familia})` antes de ejecutarla. La
+   consola no lo usa; la ventana sí.
+5. **Ventana y agente en el mismo proceso, por `js_api`, no por WebSocket.** D-022 eligió
+   WebSocket para conectar dos programas; aquí hay uno, y abrir un puerto para hablar consigo
+   mismo es superficie sin necesidad. Python pinta con `DOOM.evento({tipo, ...})`.
+6. **Un solo hilo para el agente.** pywebview atiende cada llamada de JavaScript en un hilo
+   distinto, y Playwright solo funciona desde el hilo que lo creó: sin hilo fijo, la segunda
+   orden que tocara el navegador propio reventaría.
+7. **Confirmaciones como botones**, con la segunda opinión (D-034) debajo, y **Parar** en el
+   sitio de Enviar mientras trabaja: el agente para entre paso y paso (`Agente.parar()`), y una
+   confirmación pendiente cuenta como "no".
+8. **Los enlaces nunca navegan dentro de la ventana**: se abren en el navegador del usuario, y
+   solo si son `http(s)`, para que un texto del modelo no pueda lanzar `file://` u otros
+   esquemas.
+
+**Verificado en el portátil Linux.** 445 tests sin hardware (9 del puente con una ventana
+falsa). La ventana real abierta con pywebview sobre WebKitGTK, con un cerebro de guion y las
+herramientas reales: encontró la Calculadora, la abrió, vio su ventana y escribió la respuesta;
+captura revisada. El flujo completo -modos, permiso con segunda opinión, respuesta palabra a
+palabra- revisado también con `doom.html#demo`.
+
+**Sin verificar.** Con un modelo real (faltan las claves). En Windows (WebView2) y empaquetada
+como ejecutable. La voz: el planeta todavía no reacciona al nivel del micrófono ni de Kokoro,
+como sí hace el HUD; es el siguiente paso natural, juntando los dos.
+

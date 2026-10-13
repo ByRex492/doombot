@@ -77,6 +77,12 @@ class Agente:
         # opinion acompana a la pregunta, y quien decide sigue siendo el usuario.
         self.revisar = revisar
         self._tarea = ""
+        # Para interfaces que quieren mas que texto -la esfera de la ventana
+        # cambia de modo segun la herramienta-: ("pensando", {"paso": n}) antes
+        # de cada consulta al modelo, ("herramienta", {"nombre", "familia"})
+        # antes de ejecutar una. La consola no lo necesita y lo deja a None.
+        self.observar: Callable[[str, dict[str, Any]], None] | None = None
+        self._parar = False
         self._system = system
         self._max_pasos = max_pasos
         self._max_resultado = max_resultado
@@ -89,14 +95,27 @@ class Agente:
         """Empieza de cero: otra tarea sin nada de lo anterior."""
         self.conversacion.clear()
 
+    def parar(self) -> None:
+        """Pide que la tarea en curso termine en cuanto acabe el paso actual.
+
+        Para interfaces sin Ctrl+C. No corta una herramienta a medias -un
+        fichero a medio escribir es peor que esperar un segundo-: se para entre
+        paso y paso.
+        """
+        self._parar = True
+
     # -- el bucle ---------------------------------------------------------------
     def ejecutar(self, tarea: str) -> Informe:
         self._tarea = tarea
+        self._parar = False
         self.conversacion.append(tarea)
         informe = Informe(respuesta="")
         especs = [h.espec() for h in self.herramientas.values()]
 
-        for _ in range(self._max_pasos):
+        for n in range(self._max_pasos):
+            if self._parar:
+                return self._parado(informe)
+            self._avisar("pensando", {"paso": n + 1})
             paso = self.cerebro.paso(self._vista(), especs, system=self._system)
             self.conversacion.append(paso)
             informe.pasos += 1
@@ -110,6 +129,8 @@ class Agente:
             pendientes = list(paso.llamadas)
             try:
                 while pendientes:
+                    if self._parar:
+                        raise KeyboardInterrupt
                     llamada = pendientes[0]
                     contenido = self._atender(llamada, informe)
                     self.conversacion.append(
@@ -125,6 +146,8 @@ class Agente:
                             llamada.id, llamada.nombre, "Interrumpido por el usuario."
                         )
                     )
+                if self._parar:
+                    return self._parado(informe)
                 raise
 
         informe.completo = False
@@ -135,6 +158,16 @@ class Agente:
         return informe
 
     # -- interno ----------------------------------------------------------------
+    def _avisar(self, evento: str, datos: dict[str, Any]) -> None:
+        if self.observar is not None:
+            self.observar(evento, datos)
+
+    def _parado(self, informe: Informe) -> Informe:
+        self._parar = False
+        informe.completo = False
+        informe.respuesta = "Parado. Dime como sigo."
+        return informe
+
     def _atender(self, llamada: LlamadaHerramienta, informe: Informe) -> str:
         herramienta = self.herramientas.get(llamada.nombre)
         if herramienta is None:
@@ -164,6 +197,7 @@ class Agente:
             return NEGADA
 
         accion = herramienta.contar(argumentos)
+        self._avisar("herramienta", {"nombre": herramienta.nombre, "familia": herramienta.familia})
         self.narrar("accion", accion)
         informe.acciones.append(accion)
         try:

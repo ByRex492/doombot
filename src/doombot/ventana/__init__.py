@@ -9,6 +9,7 @@ corre en el mismo proceso y se hablan por ``puente.Puente``.
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -56,4 +57,10 @@ def abrir(*, montar: Callable[..., Any] | None = None, depurar: bool = False) ->
         print("\nD.O.O.M cerrado.", file=sys.stderr)
     finally:
         puente._cerrar()
-    return 0
+    # Cerrar la ventana es cerrar el programa. Los hilos del agente no son
+    # demonio: una peticion a un modelo a medias retendria el proceso hasta su
+    # tiempo maximo -un minuto- sin ventana ni forma de verlo. Ya se ha
+    # cerrado lo que habia que cerrar; el resto se termina aqui.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)

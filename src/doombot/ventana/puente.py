@@ -33,6 +33,8 @@ from typing import Any
 
 from doombot.backends.base import BackendError
 
+# Lo que se espera al cerrar la ventana a que el navegador propio se cierre.
+_ESPERA_CIERRE = 5.0
 # Lo que tarda el usuario en contestar una confirmacion antes de darla por
 # negada. Generoso: puede estar leyendo la segunda opinion.
 _ESPERA_PERMISO = 600.0
@@ -159,10 +161,18 @@ class Puente:
         if self._cerrado:
             return
         self._cerrado = True
+        # Sin ventana a la que pintar: si el hilo del agente intentara
+        # evaluate_js ahora, esperaria a un bucle de GTK que ya no atiende.
+        self._ventana = None
         self.parar()
         if self._montaje is not None:
-            self._hilo.submit(self._montaje.cerrar)
-        self._hilo.shutdown(wait=True, cancel_futures=False)
+            # Unos segundos para cerrar el navegador propio. Si el agente sigue
+            # dentro de una peticion a un modelo, no se le espera: el proceso
+            # va a terminar igual (ver abrir()).
+            cierre = self._hilo.submit(self._montaje.cerrar)
+            with contextlib.suppress(Exception):
+                cierre.result(timeout=_ESPERA_CIERRE)
+        self._hilo.shutdown(wait=False, cancel_futures=True)
 
     # -- en el hilo del agente ----------------------------------------------------
     def _montar_agente(self) -> dict[str, Any]:

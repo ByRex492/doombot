@@ -222,3 +222,12 @@ def test_cerrar_dos_veces_no_rompe():
     puente.iniciar()
     puente._cerrar()
     puente._cerrar()
+
+
+def test_cerrar_no_espera_a_un_agente_ocupado():
+    """Con una peticion larga en marcha, cerrar la ventana no se queda colgado."""
+    puente = Puente()
+    puente._hilo.submit(time.sleep, 3)
+    inicio = time.monotonic()
+    puente._cerrar()
+    assert time.monotonic() - inicio < 1

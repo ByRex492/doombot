@@ -52,7 +52,8 @@ doombot/
 │   │   ├── consola.py   `python -m doombot agente`
 │   │   └── orders.py    `agent`, desde el chat
 │   ├── ventana/         La aplicación de escritorio: planeta, registro y chat (D-035)
-│   │   └── puente.py    Ventana <-> agente: js_api, un hilo fijo, confirmaciones
+│   │   ├── puente.py    Ventana <-> agente: js_api, un hilo fijo, confirmaciones
+│   │   └── primeros_pasos.py  Qué falta para funcionar; guardar y probar claves
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon

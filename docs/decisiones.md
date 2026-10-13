@@ -1304,3 +1304,15 @@ palabra- revisado también con `doom.html#demo`.
 como ejecutable. La voz: el planeta todavía no reacciona al nivel del micrófono ni de Kokoro,
 como sí hace el HUD; es el siguiente paso natural, juntando los dos.
 
+**Ampliación, mismo día: primeros pasos.** Pedido: una pantalla antes del chat con los enlaces y
+las instrucciones de lo que necesita el agente. Sale sola si no hay ningún modelo utilizable, y
+siempre desde la cabecera. Por proveedor: pasos para sacar la clave, enlace, caja para pegarla,
+**Guardar** (`config.guardar_en_env`: sustituye la línea, conserva comentarios, rechaza saltos de
+línea para que una clave pegada con basura no cuele otra variable, y deja `.env` en `0600`) y
+**Probar** (una petición mínima). La clave no vuelve a la ventana: solo sus cuatro últimos
+caracteres. Guardar una clave también la añade a `DOOMBOT_MODELOS` y, si el agente no tenía
+cerebro elegido, pone `DOOMBOT_AGENT_BRAIN=varios`: sin eso la clave no se usaría. Los textos de
+cada proveedor viven en el catálogo (`backends/proveedores.py`), no en la ventana. Verificado:
+con las claves reales del usuario, Groq (`openai/gpt-oss-120b`) y Gemini (`gemini-3.8-flash`)
+responden -lo que confirma el nombre de modelo de Gemini, que D-034 dejó sin verificar-.
+

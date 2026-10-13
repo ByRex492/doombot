@@ -166,7 +166,55 @@
   }
   .estado-pie .abiertas { margin-left: auto; text-align: right; }
 
+  /* -- primeros pasos ---------------------------------------------------------- */
+  #pasos { grid-row: 3 / 5; grid-column: 1; overflow-y: auto; padding: 4px 16px 28px; background: var(--fondo); }
+  #pasos[hidden], #registro[hidden], footer[hidden] { display: none; }
+  .pasos-dentro { max-width: 860px; margin: 0 auto; }
+  .pasos-dentro h1 { font: 600 19px/1.3 var(--sans); margin: 16px 0 4px; }
+  .pasos-dentro .intro { color: var(--tenue); margin: 0 0 10px; }
+  .pasos-dentro .motivo {
+    font: 12px/1.5 var(--mono); color: #f3b3b3; background: #1a0d10; border: 1px solid #4a1f25;
+    border-radius: 10px; padding: 8px 12px; white-space: pre-wrap; margin-bottom: 8px;
+  }
+  .pasos-dentro h2 { font: 600 14px/1.3 var(--sans); margin: 22px 0 8px; display: flex; gap: 10px; align-items: baseline; }
+  .pasos-dentro h2 .num { font: 600 12px/1 var(--mono); color: var(--acento); }
+  .pasos-dentro h2 .etq { font: 11px/1 var(--mono); color: var(--muy-tenue); letter-spacing: .06em; }
+  .pasos-dentro h2 .etq.req { color: var(--aviso); }
+  .prov, .bloque { border: 1px solid var(--borde); border-radius: 12px; padding: 12px 14px; margin: 10px 0; background: #080b12; }
+  .prov.lista { border-color: #1f4a30; }
+  .prov-cab { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .prov-cab b { font-size: 15px; }
+  .prov-estado { font: 12px/1 var(--mono); }
+  .prov-estado.ok, .linea-estado.ok { color: var(--ok); }
+  .prov-estado.falta, .linea-estado.falta { color: var(--muy-tenue); }
+  .prov-nota { color: var(--tenue); font-size: 12.5px; margin-top: 4px; }
+  .prov ol { margin: 8px 0 6px; padding-left: 20px; color: #c3cad8; font-size: 13px; }
+  .prov ol li { margin: 2px 0; }
+  .prov-gratis { color: var(--tenue); font: 12px/1.4 var(--mono); }
+  .fila { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .fila input { flex: 1 1 240px; }
+  .pasos-dentro input {
+    background: #05070c; color: var(--texto); border: 1px solid var(--borde); border-radius: 8px;
+    padding: 8px 10px; font: 13px/1.2 var(--mono); min-width: 0;
+  }
+  .pasos-dentro input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+  .prov-modelo { margin-top: 8px; }
+  .prov-modelo summary { color: var(--muy-tenue); font: 12px/1.4 var(--mono); cursor: pointer; }
+  .prov-modelo input { width: 100%; margin-top: 6px; }
+  .prov-res { margin-top: 8px; font: 12px/1.5 var(--mono); color: var(--tenue); white-space: pre-wrap; }
+  .prov-res.ok { color: var(--ok); } .prov-res.mal { color: var(--mal); }
+  .linea-estado { font: 12.5px/1.6 var(--mono); }
+  .bloque p { margin: 6px 0; color: #c3cad8; font-size: 13px; }
+  .bloque code, .pasos-dentro code.cmd {
+    display: block; font: 12.5px/1.4 var(--mono); background: #05070c; border: 1px solid var(--borde);
+    border-radius: 8px; padding: 7px 10px; margin: 6px 0; color: #cfe6ff; user-select: all; overflow-x: auto;
+  }
+  .nota-claves { margin-top: 18px; color: var(--tenue); font-size: 12.5px; border-left: 2px solid var(--borde); padding: 4px 0 4px 12px; }
+  .acciones { display: flex; justify-content: flex-end; margin-top: 16px; }
+  button.primario { border-color: #24406a; color: #cfe6ff; padding: 9px 16px; font-size: 13px; }
+
   .demo-banda {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     background: repeating-linear-gradient(135deg, #2a1d05 0 12px, #241904 12px 24px);
     color: #fcd58a; border-bottom: 1px solid #5a3a17;
     font: 600 11px/1.4 var(--mono); letter-spacing: .14em; text-align: center; padding: 6px 12px;
@@ -178,6 +226,7 @@
   <header>
     <span class="marca">D.O.O.M</span>
     <div class="modelos" id="modelos" aria-label="Modelos en uso"></div>
+    <button id="boton-pasos" title="Qué necesita el agente y cómo ponerlo">Primeros pasos</button>
     <button id="nueva" title="Olvida la conversación y empieza de cero">Nueva</button>
   </header>
 
@@ -187,6 +236,7 @@
   </section>
 
   <main id="registro" aria-live="polite"></main>
+  <section id="pasos" hidden aria-label="Primeros pasos"></section>
 
   <footer>
     <div class="caja">
@@ -608,59 +658,212 @@ document.getElementById("nueva").addEventListener("click", () => {
   registro.appendChild(el("div", "sistema", "Conversación nueva: no recuerdo nada de lo anterior."));
 });
 
+/* ==========================================================================
+   5. PRIMEROS PASOS
+   Antes del chat si no hay ningun modelo; despues, desde la cabecera.
+   ========================================================================== */
+const pasos = document.getElementById("pasos");
+const pie = document.querySelector("footer");
+const botonPasos = document.getElementById("boton-pasos");
+let enPasos = false, bienvenida = false;
+
+function mostrarPasos(motivo) {
+  enPasos = true;
+  pasos.hidden = false; registro.hidden = true; pie.hidden = true;
+  botonPasos.textContent = "Volver al chat";
+  pintarPasos(motivo);
+}
+function ocultarPasos() {
+  enPasos = false;
+  pasos.hidden = true; registro.hidden = false; pie.hidden = false;
+  botonPasos.textContent = "Primeros pasos";
+  alFondo(); orden.focus();
+}
+async function irAlChat() { if (await arrancar()) ocultarPasos(); }
+
+function seccion(num, titulo, etiqueta, requerido) {
+  const h = el("h2");
+  h.append(el("span", "num", num), el("span", "", titulo), el("span", `etq${requerido ? " req" : ""}`, etiqueta));
+  return h;
+}
+function lineaEstado(ok, texto) { return el("div", `linea-estado ${ok ? "ok" : "falta"}`, `${ok ? "✓" : "·"} ${texto}`); }
+function comando(texto) { return el("code", "cmd", texto); }
+
+function tarjetaProveedor(p) {
+  const t = el("div", `prov${p.configurada ? " lista" : ""}`);
+  const cab = el("div", "prov-cab");
+  const estado = el("span", `prov-estado ${p.configurada ? "ok" : "falta"}`,
+    p.configurada ? `✓ clave guardada${p.final ? ` (…${p.final})` : ""}` : "sin clave");
+  cab.append(el("b", "", p.titulo), estado);
+  t.appendChild(cab);
+  if (p.nota) t.appendChild(el("div", "prov-nota", p.nota));
+  const ol = el("ol");
+  for (const x of p.pasos) ol.appendChild(el("li", "", x));
+  t.appendChild(ol);
+  t.appendChild(el("div", "prov-gratis", `Gratis: ${p.gratis}`));
+
+  const fila = el("div", "fila");
+  const abrir = el("button", "", "Abrir la página ↗");
+  abrir.addEventListener("click", () => api("abrir_enlace", p.alta));
+  const campo = el("input");
+  Object.assign(campo, { type: "password", autocomplete: "off", spellcheck: false,
+    placeholder: p.configurada ? "Pega otra clave para sustituirla" : "Pega aquí la clave" });
+  campo.setAttribute("aria-label", `Clave de ${p.titulo}`);
+  const guardar = el("button", "", "Guardar");
+  const probar = el("button", "", "Probar");
+  probar.disabled = !p.configurada;
+  fila.append(abrir, campo, guardar, probar);
+  t.appendChild(fila);
+
+  const det = el("details", "prov-modelo");
+  det.appendChild(el("summary", "", `Modelo: ${p.modelo}`));
+  const modelo = el("input"); modelo.value = p.modelo; modelo.spellcheck = false;
+  modelo.setAttribute("aria-label", `Modelo de ${p.titulo}`);
+  det.append(modelo, el("div", "prov-nota", "Cámbialo solo si el proveedor ya no ofrece este. Se aplica al pulsar Guardar."));
+  t.appendChild(det);
+
+  const res = el("div", "prov-res");
+  t.appendChild(res);
+  const hacerPrueba = async () => {
+    res.className = "prov-res"; res.textContent = "Probando…";
+    const r = await api("probar_clave", p.id);
+    res.className = `prov-res ${r && r.ok ? "ok" : "mal"}`;
+    res.textContent = r ? `${r.ok ? "✓" : "✗"} ${r.detalle}` : "✗ sin respuesta";
+    if (r && r.ok) { latido(0.9); ponerModo("hablando"); setTimeout(() => ponerModo("reposo"), 1500); }
+  };
+  guardar.addEventListener("click", async () => {
+    const r = await api("guardar_clave", p.id, campo.value, modelo.value);
+    if (!r || !r.ok) { res.className = "prov-res mal"; res.textContent = `✗ ${r ? r.error : "no se pudo guardar"}`; return; }
+    campo.value = ""; campo.placeholder = "Pega otra clave para sustituirla";
+    estado.className = "prov-estado ok"; estado.textContent = `✓ clave guardada (…${r.final})`;
+    t.classList.add("lista"); probar.disabled = false;
+    det.querySelector("summary").textContent = `Modelo: ${modelo.value.trim() || p.modelo}`;
+    await hacerPrueba();
+  });
+  campo.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); guardar.click(); } });
+  probar.addEventListener("click", hacerPrueba);
+  return t;
+}
+
+function bloqueNavegador(n) {
+  const b = el("div", "bloque");
+  b.append(lineaEstado(n.playwright, "Playwright instalado"), lineaEstado(n.chromium, "Chromium descargado"));
+  if (n.playwright && n.chromium) {
+    b.appendChild(el("p", "", "Listo: el agente puede leer páginas, pulsar y rellenar en su propio navegador, aparte del tuyo."));
+  } else {
+    b.appendChild(el("p", "", "Sin esto, el agente abre páginas en tu navegador pero no puede leerlas ni pulsar en ellas. Se instala una vez, desde la carpeta del proyecto:"));
+    b.append(comando('pip install -e ".[agent-web]"'), comando("python -m playwright install chromium"));
+  }
+  return b;
+}
+
+function bloqueOllama(o) {
+  const b = el("div", "bloque");
+  b.appendChild(lineaEstado(o.responde, o.responde ? `Ollama responde en ${o.host}` : `Ollama no responde en ${o.host}`));
+  if (o.responde && o.en_lista) {
+    b.appendChild(el("p", "", "En uso: está en tu lista de modelos."));
+    return b;
+  }
+  b.appendChild(el("p", "", "Gratis y sin conexión: lo que lee el agente no sale del equipo. Necesita memoria de sobra, y va mucho mejor con una tarjeta gráfica."));
+  if (!o.responde) {
+    const d = el("button", "", "Descargar Ollama ↗");
+    d.addEventListener("click", () => api("abrir_enlace", o.descarga));
+    b.appendChild(d);
+    b.appendChild(el("p", "", "Después, descarga un modelo:"));
+    b.appendChild(comando(`ollama pull ${o.sugerido}`));
+  }
+  b.appendChild(el("p", "", `Y añade ollama:${o.sugerido} al final de DOOMBOT_MODELOS en el fichero .env.`));
+  return b;
+}
+
+async function pintarPasos(motivo) {
+  pasos.innerHTML = "";
+  const d = el("div", "pasos-dentro");
+  d.appendChild(el("h1", "", "Primeros pasos"));
+  d.appendChild(el("p", "intro",
+    "Para actuar, D.O.O.M necesita al menos un modelo de lenguaje. Estos son gratuitos y sin tarjeta: " +
+    "crea una clave, pégala aquí y pruébala."));
+  if (motivo) d.appendChild(el("div", "motivo", motivo));
+  pasos.appendChild(d);
+  const est = await api("configuracion");
+  if (!est) { d.appendChild(el("p", "intro", "No puedo leer la configuración.")); return; }
+
+  d.appendChild(seccion("1", "Modelos de lenguaje", "necesario: al menos uno", true));
+  for (const p of est.proveedores) d.appendChild(tarjetaProveedor(p));
+  d.appendChild(seccion("2", "Navegador propio del agente", "opcional"));
+  d.appendChild(bloqueNavegador(est.navegador));
+  d.appendChild(seccion("3", "Modelo local, sin internet", "opcional"));
+  d.appendChild(bloqueOllama(est.ollama));
+  d.appendChild(el("div", "nota-claves",
+    `Las claves son de tu cuenta, no de este ordenador: la misma sirve en cualquier equipo. ` +
+    `Se guardan solo en ${est.env}, que no se sube a GitHub; en otro ordenador, vuelve a pegarlas ` +
+    `aquí. Si prefieres, crea una por equipo: así puedes revocar solo la de uno.`));
+  const acciones = el("div", "acciones");
+  const ir = el("button", "primario", "Ir al chat");
+  ir.addEventListener("click", irAlChat);
+  acciones.appendChild(ir);
+  d.appendChild(acciones);
+}
+
+botonPasos.addEventListener("click", () => {
+  if (enPasos) irAlChat();
+  else if (!ocupado) mostrarPasos();
+});
+
 async function arrancar() {
   ponerModo("reposo");
   const info = await api("iniciar");
   const modelos = document.getElementById("modelos");
   modelos.innerHTML = "";
-  registro.querySelectorAll(".sin-modelo").forEach(n => n.remove());
-  if (!info) { document.getElementById("pie-info").textContent = "sin conexión con el agente"; return; }
+  if (!info) { document.getElementById("pie-info").textContent = "sin conexión con el agente"; return false; }
   if (!info.ok) {
     ponerModo("error");
-    const caja = el("div", "sin-modelo");
-    caja.appendChild(el("div", "fallo", info.error));
-    const ayuda = el("div", "sistema",
-      "Para que pueda actuar necesito al menos un modelo. Pega una clave gratuita en el fichero " +
-      ".env del proyecto (por ejemplo en DOOMBOT_GROQ_API_KEY=), guárdalo y pulsa Reintentar.");
-    const reintentar = el("button", "", "Reintentar");
-    reintentar.style.marginTop = "10px";
-    reintentar.addEventListener("click", () => { reintentar.disabled = true; arrancar(); });
-    ayuda.appendChild(document.createElement("br"));
-    ayuda.appendChild(reintentar);
-    caja.appendChild(ayuda);
-    registro.appendChild(caja);
-    orden.disabled = botonEnviar.disabled = true;
-    orden.placeholder = "Sin modelo configurado";
-    return;
+    setTimeout(() => ponerModo("reposo"), 2500);
+    mostrarPasos(info.error);
+    return false;
   }
-  orden.disabled = botonEnviar.disabled = false;
-  orden.placeholder = "Dime qué hago…  (Intro envía, Mayús+Intro salto de línea)";
   for (const m of info.modelos) modelos.appendChild(el("span", "modelo", m));
   for (const a of info.avisos || []) modelos.appendChild(Object.assign(el("span", "modelo sin", a.split(":")[0].replace(/'/g, "")), { title: a }));
   document.getElementById("pie-info").textContent =
     `${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión activada" : "");
-  registro.appendChild(el("div", "sistema",
-    "Escribe lo que quieres que haga. Te iré contando lo que pienso, lo que abro y lo que hago; " +
-    "antes de algo que no se deshace, te preguntaré."));
-  orden.focus();
+  orden.disabled = botonEnviar.disabled = false;
+  if (!bienvenida) {
+    bienvenida = true;
+    registro.appendChild(el("div", "sistema",
+      "Escribe lo que quieres que haga. Te iré contando lo que pienso, lo que abro y lo que hago; " +
+      "antes de algo que no se deshace, te preguntaré."));
+  }
+  if (!enPasos) orden.focus();
+  return true;
 }
 if (window.pywebview && window.pywebview.api) arrancar();
 else window.addEventListener("pywebviewready", arrancar);
 
 /* ==========================================================================
-   5. DEMO (#demo): una orden simulada, para disenar sin agente
+   6. DEMO (#demo): una orden simulada, para disenar sin agente
    ========================================================================== */
 if (location.hash === "#demo") {
   const t = (ms, f) => setTimeout(f, ms);
   // Que nadie la confunda con la aplicacion: una franja fija arriba y el
   // aviso en la propia caja de texto.
   const banda = el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS");
-  document.body.style.gridTemplateRows = "auto auto minmax(200px, 40vh) 1fr auto";
+  document.body.style.paddingTop = "28px";
   document.body.prepend(banda);
   document.getElementById("orden").placeholder = "Demostración: lo que escribas no llega a ningún agente";
   window.DEMO = {
     iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 15, revisor: true }),
     nuevo: () => Promise.resolve(null),
+    configuracion: () => Promise.resolve({
+      proveedores: [
+        { id: "groq", titulo: "Groq", alta: "https://console.groq.com/keys", pasos: ["Abre la página y entra con Google o GitHub.", "Create API Key.", "Copia la clave y pégala aquí."], gratis: "30/min, 1.000/día", nota: "La más rápida. Empieza por esta.", modelo: "openai/gpt-oss-120b", en_lista: true, configurada: true, final: "ab12" },
+        { id: "gemini", titulo: "Gemini (Google)", alta: "https://aistudio.google.com/apikey", pasos: ["Abre la página.", "Create API key.", "Copia y pega."], gratis: "según modelo", nota: "Segundo modelo para contrastar.", modelo: "gemini-3.8-flash", en_lista: true, configurada: false, final: "" },
+      ],
+      listos: 1, navegador: { playwright: true, chromium: false },
+      ollama: { host: "http://127.0.0.1:11434", responde: false, en_lista: false, descarga: "https://ollama.com/download", sugerido: "qwen3:4b" },
+      env: "/ruta/al/proyecto/.env",
+    }),
+    guardar_clave: () => Promise.resolve({ ok: true, final: "9z9z" }),
+    probar_clave: (id) => Promise.resolve({ ok: true, detalle: `${id} responde (simulado).` }),
     parar: () => Promise.resolve(null),
     abrir_enlace: () => Promise.resolve(null),
     responder: () => { t(500, () => { DOOM.evento({ tipo: "herramienta", nombre: "cerrar_aplicacion", familia: "apps" }); DOOM.evento({ tipo: "accion", texto: "Cierro Calculadora" }); }); t(900, () => DOOM.evento({ tipo: "resultado", texto: "Pedido el cierre de la ventana 'Calculator'." })); t(1300, () => { DOOM.evento({ tipo: "respuesta", texto: "(Simulación: no he hecho nada de verdad.) Así se vería una respuesta: «He buscado el tiempo en Madrid según https://www.aemet.es y he abierto y cerrado la Calculadora». Para que actúe de verdad: python -m doombot ventana, con un modelo configurado en .env.", completo: true, abiertas: ["Calculator", "https://duckduckgo.com/?q=tiempo+Madrid"] }); DOOM.evento({ tipo: "estado", estado: "reposo" }); }); return Promise.resolve(null); },

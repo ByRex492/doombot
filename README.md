@@ -331,6 +331,17 @@ piensa, lo que abre y lo que hace, paso a paso; y abajo, la caja para
 escribirle. Las confirmaciones son botones, con la segunda opinión del otro
 modelo debajo. Mientras trabaja, el botón de enviar pasa a ser **Parar**.
 
+**Primeros pasos.** Si no hay ningún modelo configurado, la ventana empieza
+por ahí (y después está siempre en la cabecera): cómo conseguir cada clave
+gratuita, un enlace a la página, una caja para pegarla y los botones
+**Guardar** -la escribe en `.env`, que queda legible solo por ti- y
+**Probar** -una petición mínima para ver que responde-. También dice si está
+el navegador propio del agente y si hay un Ollama local.
+
+Las claves son de tu cuenta, no del equipo: la misma vale en cualquier
+ordenador, pero `.env` no se sube a GitHub, así que en cada equipo se pegan
+de nuevo.
+
 Necesita el extra `hud` (`pywebview`). En Linux usa el GTK y el WebKit del
 sistema; como el `.venv` no ve los paquetes del sistema, se enlazan una vez:
 

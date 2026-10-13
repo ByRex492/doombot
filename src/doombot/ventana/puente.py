@@ -67,6 +67,7 @@ class Puente:
         self._ids = itertools.count(1)
         self._permisos: dict[int, queue.Queue[bool]] = {}
         self._cerrado = False
+        self._desfasado = False
 
     def _conectar(self, ventana: Any) -> None:
         self._ventana = ventana
@@ -105,6 +106,27 @@ class Puente:
         if self._montaje is not None:
             self._hilo.submit(self._montaje.agente.olvidar)
 
+    # -- primeros pasos ----------------------------------------------------------
+    def configuracion(self) -> dict[str, Any]:
+        """Que hay configurado y que falta: para la pantalla de primeros pasos."""
+        from doombot.ventana import primeros_pasos
+
+        return primeros_pasos.estado()
+
+    def guardar_clave(self, proveedor: str, clave: str, modelo: str = "") -> dict[str, Any]:
+        from doombot.ventana import primeros_pasos
+
+        resultado = primeros_pasos.guardar(proveedor, clave, modelo)
+        if resultado.get("ok"):
+            # El agente montado usa las claves de antes: se rehace al volver al chat.
+            self._desfasado = True
+        return resultado
+
+    def probar_clave(self, proveedor: str) -> dict[str, Any]:
+        from doombot.ventana import primeros_pasos
+
+        return primeros_pasos.probar(proveedor)
+
     def abrir_enlace(self, url: str) -> None:
         """Un enlace de la conversacion se abre en el navegador del usuario.
 
@@ -135,6 +157,10 @@ class Puente:
     def _montar_agente(self) -> dict[str, Any]:
         from doombot.backends.varios import Cadena, etiqueta
 
+        if self._montaje is not None and self._desfasado:
+            self._montaje.cerrar()
+            self._montaje = None
+        self._desfasado = False
         if self._montaje is None:
             montar = self._montar
             if montar is None:

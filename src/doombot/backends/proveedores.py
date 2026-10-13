@@ -24,19 +24,78 @@ class Proveedor:
     base_url: str
     alta: str
     """Donde se crea la clave. Para decirselo al usuario cuando falte."""
+    titulo: str = ""
+    sugerido: str = ""
+    """Modelo con el que se da de alta si el usuario no elige otro."""
+    pasos: tuple[str, ...] = ()
+    """Como conseguir la clave, para la pantalla de primeros pasos. Sin pasos, no sale ahi."""
+    gratis: str = ""
+    nota: str = ""
 
 
 PROVEEDORES: dict[str, Proveedor] = {
     p.nombre: p
     for p in (
-        Proveedor("groq", "https://api.groq.com/openai/v1", "https://console.groq.com/keys"),
+        Proveedor(
+            "groq",
+            "https://api.groq.com/openai/v1",
+            "https://console.groq.com/keys",
+            titulo="Groq",
+            sugerido="openai/gpt-oss-120b",
+            pasos=(
+                "Abre la página y entra con tu cuenta de Google o de GitHub.",
+                "En «API Keys», pulsa «Create API Key» y ponle un nombre (por ejemplo, doom).",
+                "Copia la clave -empieza por gsk_ y solo se enseña una vez- y pégala aquí.",
+            ),
+            gratis="Unas 30 peticiones por minuto y 1.000 al día. Sin tarjeta.",
+            nota="La más rápida. Empieza por esta.",
+        ),
         Proveedor(
             "gemini",
             "https://generativelanguage.googleapis.com/v1beta/openai",
             "https://aistudio.google.com/apikey",
+            titulo="Gemini (Google)",
+            sugerido="gemini-3.8-flash",
+            pasos=(
+                "Abre la página con tu cuenta de Google y acepta las condiciones de AI Studio.",
+                "Pulsa «Create API key».",
+                "Copia la clave -empieza por AIza- y pégala aquí.",
+            ),
+            gratis="Límites según el modelo; se ven en AI Studio. Sin tarjeta.",
+            nota=(
+                "Un segundo modelo de otra familia: activa la segunda opinión y «contrasta». "
+                "En el plan gratuito, Google puede usar las peticiones para mejorar sus productos."
+            ),
         ),
-        Proveedor("openrouter", "https://openrouter.ai/api/v1", "https://openrouter.ai/keys"),
-        Proveedor("nvidia", "https://integrate.api.nvidia.com/v1", "https://build.nvidia.com"),
+        Proveedor(
+            "nvidia",
+            "https://integrate.api.nvidia.com/v1",
+            "https://build.nvidia.com",
+            titulo="NVIDIA",
+            sugerido="nvidia/nemotron-3-super-120b-a12b",
+            pasos=(
+                "Abre la página e inicia sesión; te pedirá unirte al programa de "
+                "desarrolladores de NVIDIA, que es gratuito.",
+                "Abre cualquier modelo y pulsa «Get API Key».",
+                "Copia la clave -empieza por nvapi- y pégala aquí.",
+            ),
+            gratis="Unas 40 peticiones por minuto por modelo.",
+            nota="Opcional: un tercer modelo para contrastar.",
+        ),
+        Proveedor(
+            "openrouter",
+            "https://openrouter.ai/api/v1",
+            "https://openrouter.ai/keys",
+            titulo="OpenRouter",
+            sugerido="openai/gpt-oss-120b:free",
+            pasos=(
+                "Abre la página e inicia sesión.",
+                "Pulsa «Create Key».",
+                "Copia la clave -empieza por sk-or- y pégala aquí.",
+            ),
+            gratis="Solo 50 peticiones al día en los modelos gratuitos.",
+            nota="De reserva: un agente gasta varias peticiones por orden.",
+        ),
         Proveedor("mistral", "https://api.mistral.ai/v1", "https://console.mistral.ai/api-keys"),
         Proveedor("cerebras", "https://api.cerebras.ai/v1", "https://cloud.cerebras.ai"),
         Proveedor(

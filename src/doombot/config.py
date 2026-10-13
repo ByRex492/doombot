@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from doombot.paths import ENV_FILE
+from doombot.paths import ENV_EXAMPLE, ENV_FILE
 
 
 def load_env(fichero: Path | None = None, *, override: bool = False) -> dict[str, str]:
@@ -41,6 +41,46 @@ def load_env(fichero: Path | None = None, *, override: bool = False) -> dict[str
         if override or clave not in os.environ:
             os.environ[clave] = valor
     return leidas
+
+
+def guardar_en_env(clave: str, valor: str, fichero: Path | None = None) -> Path:
+    """Escribe ``clave=valor`` en .env, sustituyendo la linea si ya estaba.
+
+    La usa la pantalla de primeros pasos para guardar una clave de API sin
+    que el usuario tenga que abrir el fichero. Conserva el resto tal cual
+    -comentarios incluidos-; si no hay .env, parte de .env.example. El valor
+    se rechaza si lleva saltos de linea: una clave pegada con basura detras
+    no debe poder colar otra variable en el fichero.
+
+    Tambien lo pone en ``os.environ`` y vacia la cache de ``settings()``:
+    quien guarda una clave quiere usarla ya.
+    """
+    if "\n" in valor or "\r" in valor or "=" in clave or not clave.strip():
+        raise ValueError("Valor no valido para .env.")
+    ruta = fichero or ENV_FILE
+    if ruta.is_file():
+        lineas = ruta.read_text(encoding="utf-8").splitlines()
+    elif ENV_EXAMPLE.is_file() and fichero is None:
+        lineas = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+    else:
+        lineas = []
+
+    nueva = f"{clave}={valor}"
+    for i, linea in enumerate(lineas):
+        if linea.strip().startswith(f"{clave}="):
+            lineas[i] = nueva
+            break
+    else:
+        lineas.append(nueva)
+
+    ruta.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    # Lleva claves: solo lo lee su dueño. En Windows chmod no hace nada util,
+    # y el perfil de usuario ya esta protegido por el sistema.
+    if os.name == "posix":
+        ruta.chmod(0o600)
+    os.environ[clave] = valor
+    settings.cache_clear()
+    return ruta
 
 
 @dataclass(frozen=True)

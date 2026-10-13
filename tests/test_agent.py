@@ -253,3 +253,12 @@ def test_truncar_deja_cabeza_y_cola():
     assert recortada.startswith("INICIO")
     assert recortada.endswith("FINAL")
     assert truncar("corto", 120) == "corto"
+
+
+def test_un_nombre_casi_igual_usa_la_herramienta_que_queria():
+    herramienta, hechas = eco()
+    cerebro = CerebroGuion(PasoModelo("", (llamada("ecco", msg="hola"),)), PasoModelo("fin"))
+    agente, narrado, _ = montar(cerebro, herramienta)
+    agente.ejecutar("x")
+    assert hechas == ["hola"]
+    assert ("comentario", "«ecco» no existe: uso «eco»") in narrado

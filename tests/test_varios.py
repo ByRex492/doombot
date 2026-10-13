@@ -399,3 +399,47 @@ def test_saturado_cuenta_como_pasajero():
     )
     with pytest.raises(LimiteAlcanzado, match="saturado"):
         g.generate("x")
+
+
+# -- herramientas inventadas (Groq las rechaza con un 400) ---------------------------------
+def test_si_groq_rechaza_una_herramienta_inventada_se_reintenta_diciendole_cual_es():
+    pedidos = []
+    respuestas = [
+        httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "tool call validation failed: attempted to call tool 'clickar' "
+                    "which was not in request.tools"
+                }
+            },
+        ),
+        httpx.Response(200, json={"choices": [{"message": {"content": "Hecho."}}]}),
+    ]
+
+    def handler(req):
+        pedidos.append(json.loads(req.content))
+        return respuestas.pop(0)
+
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="groq", client=cliente(handler)
+    )
+    clicar = EspecHerramienta("clicar", "pulsa", {"type": "object", "properties": {}})
+    navegar = EspecHerramienta("navegar", "va", {"type": "object", "properties": {}})
+
+    assert g.paso(["pulsa el enlace"], [clicar, navegar]).texto == "Hecho."
+    aviso = pedidos[1]["messages"][-1]
+    assert aviso["role"] == "user"
+    assert "«clickar» no existe" in aviso["content"] and "«clicar»" in aviso["content"]
+
+
+def test_un_apartado_vale_para_todas_las_cadenas_que_comparten_el_modelo():
+    """Cada modo monta su cadena (D-038): cambiar de modo no debe volver a esperar al saturado."""
+    reloj = [0.0]
+    saturado = Juguete("gemini", fallo=LimiteAlcanzado("gemini: tardo demasiado"))
+    groq = Juguete("groq")
+    Cadena([saturado, groq], reloj=lambda: reloj[0]).generate("1")
+
+    otra = Cadena([saturado, groq], reloj=lambda: reloj[0])  # la de otro modo
+    otra.generate("2")
+    assert len(saturado.llamadas) == 1  # no se le volvio a esperar

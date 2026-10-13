@@ -14,6 +14,7 @@ version en streaming, y no merece un SDK como dependencia.
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import time
@@ -34,7 +35,7 @@ from doombot.backends.base import (
 
 # Un modelo gratuito que tarda mas de un minuto suele estar saturado: mejor
 # pasar al siguiente de la cadena que dejar al usuario esperando.
-_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0)
+_TIMEOUT = httpx.Timeout(connect=5.0, read=40.0, write=30.0, pool=5.0)
 # Algunos modelos de razonamiento (qwen3, deepseek) devuelven su pensamiento
 # dentro del texto. No es respuesta para el usuario.
 _PENSAMIENTO = re.compile(r"<think>.*?</think>", re.DOTALL)
@@ -45,6 +46,19 @@ _FIRMA_AJENA = "skip_thought_signature_validator"
 # Si el proveedor pide esperar menos que esto, se espera y se reintenta una vez
 # en vez de dar el modelo por agotado: el limite gratuito de Groq es por minuto.
 _ESPERA_MAXIMA = 12.0
+
+
+class LlamadaInvalida(BackendError):
+    """El proveedor rechazo una llamada a una herramienta que no se le ofrecio.
+
+    Groq valida las llamadas en el servidor: si el modelo se inventa un nombre
+    ("clickar" por "clicar") devuelve un 400 en vez de pasarnos la llamada para
+    que el bucle le diga que no existe. ``nombre`` es lo que intento llamar.
+    """
+
+    def __init__(self, mensaje: str, nombre: str) -> None:
+        super().__init__(mensaje)
+        self.nombre = nombre
 
 
 class LimiteAlcanzado(BackendError):
@@ -146,7 +160,20 @@ class OpenAICompatGenerator:
                 }
                 for h in herramientas
             ]
-        datos = self._post(cuerpo)
+        try:
+            datos = self._post(cuerpo)
+        except LlamadaInvalida as e:
+            # Una vez mas, diciendole que herramientas hay de verdad y cual
+            # queria seguramente. Si vuelve a fallar, el error sigue su camino.
+            nombres = [h.nombre for h in herramientas]
+            parecida = difflib.get_close_matches(e.nombre, nombres, n=1, cutoff=0.6)
+            pista = f" ¿Querias decir «{parecida[0]}»?" if parecida else ""
+            aviso = (
+                f"(Aviso del sistema) La herramienta «{e.nombre}» no existe.{pista} Usa solo "
+                f"estas, con su nombre exacto: {', '.join(nombres)}."
+            )
+            cuerpo["messages"] = [*cuerpo["messages"], {"role": "user", "content": aviso}]
+            datos = self._post(cuerpo)
         mensaje_resp = (datos.get("choices") or [{}])[0].get("message", {})
         texto = _PENSAMIENTO.sub("", str(mensaje_resp.get("content") or "")).strip()
 
@@ -257,6 +284,12 @@ class OpenAICompatGenerator:
         if r.status_code == 503:
             # "Demasiada demanda": pasajero, como el 429. Que la cadena lo aparte un rato.
             return LimiteAlcanzado(f"{quien}: saturado ahora mismo, prueba en un momento.")
+        if r.status_code == 400 and "tool call validation failed" in detalle.lower():
+            nombre = re.search(r"call tool '([^']+)'", detalle)
+            return LlamadaInvalida(
+                f"{quien}: pidio una herramienta que no existe. {detalle}",
+                nombre.group(1) if nombre else "",
+            )
         if r.status_code in (401, 403):
             return BackendError(
                 f"{quien}: clave rechazada. Revisa DOOMBOT_{self.proveedor.upper()}_API_KEY."

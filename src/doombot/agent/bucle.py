@@ -18,6 +18,7 @@ herramienta nueva no pueda saltarselas por olvido:
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -172,6 +173,18 @@ class Agente:
 
     def _atender(self, llamada: LlamadaHerramienta, informe: Informe) -> str:
         herramienta = self.herramientas.get(llamada.nombre)
+        if herramienta is None:
+            # Un nombre casi igual al de una herramienta real ("clickar" por
+            # "clicar") es un despiste del modelo, no otra peticion: se usa la
+            # que queria y se cuenta.
+            parecidas = difflib.get_close_matches(
+                llamada.nombre, self.herramientas, n=1, cutoff=0.8
+            )
+            if parecidas:
+                herramienta = self.herramientas[parecidas[0]]
+                self.narrar(
+                    "comentario", f"«{llamada.nombre}» no existe: uso «{herramienta.nombre}»"
+                )
         if herramienta is None:
             self.narrar("error", f"el modelo pidio una herramienta que no existe: {llamada.nombre}")
             return (

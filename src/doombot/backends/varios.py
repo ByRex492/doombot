@@ -62,7 +62,6 @@ class Cadena:
         """El que respondio la ultima vez. El revisor del agente elige otro distinto."""
         self._espera = espera_limite
         self._reloj = reloj
-        self._apartados: dict[int, float] = {}
 
     @property
     def model_name(self) -> str:
@@ -112,10 +111,18 @@ class Cadena:
         raise self._ninguno(fallos)
 
     # -- interno -------------------------------------------------------------
+    # Hasta cuando esta apartado un modelo se guarda EN el modelo, no en la
+    # cadena: cada modo monta su propia cadena con los mismos modelos (D-038), y
+    # si fuera de la cadena, cambiar de modo volveria a esperar un minuto a un
+    # Gemini saturado que otra cadena ya sabia saturado.
+    @staticmethod
+    def _apartado_hasta(g: Any) -> float:
+        return getattr(g, "_doombot_apartado_hasta", 0.0)
+
     def _orden(self) -> list[tuple[int, Any]]:
         ahora = self._reloj()
         libres = [
-            (i, g) for i, g in enumerate(self.generadores) if self._apartados.get(i, 0) <= ahora
+            (i, g) for i, g in enumerate(self.generadores) if self._apartado_hasta(g) <= ahora
         ]
         apartados = [(i, g) for i, g in enumerate(self.generadores) if (i, g) not in libres]
         return libres + apartados
@@ -134,7 +141,7 @@ class Cadena:
 
     def _fallo(self, i: int, g: Any, e: BackendError, fallos: list[str]) -> None:
         if isinstance(e, LimiteAlcanzado):
-            self._apartados[i] = self._reloj() + self._espera
+            g._doombot_apartado_hasta = self._reloj() + self._espera
         fallos.append(str(e))
         if self.avisar is not None and len(self.generadores) > 1:
             self.avisar(f"{etiqueta(g)} no responde ({str(e).split(': ', 1)[-1]})")
@@ -145,7 +152,8 @@ class Cadena:
         self.ultimo = g
 
     def _ninguno(self, fallos: list[str]) -> BackendError:
-        if self._apartados and len(self._apartados) == len(self.generadores):
+        ahora = self._reloj()
+        if all(self._apartado_hasta(g) > ahora for g in self.generadores):
             return LimiteAlcanzado(
                 "Todos los modelos gratuitos han llegado a su limite por ahora (suele ser por "
                 "minuto). Espera un poco y vuelve a pedirlo, o añade otro proveedor en "

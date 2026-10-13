@@ -166,6 +166,11 @@
   }
   .estado-pie .abiertas { margin-left: auto; text-align: right; }
 
+  .demo-banda {
+    background: repeating-linear-gradient(135deg, #2a1d05 0 12px, #241904 12px 24px);
+    color: #fcd58a; border-bottom: 1px solid #5a3a17;
+    font: 600 11px/1.4 var(--mono); letter-spacing: .14em; text-align: center; padding: 6px 12px;
+  }
   @media (prefers-reduced-motion: reduce) { #registro { scroll-behavior: auto; } }
 </style>
 </head>
@@ -636,15 +641,22 @@ else window.addEventListener("pywebviewready", arrancar);
    ========================================================================== */
 if (location.hash === "#demo") {
   const t = (ms, f) => setTimeout(f, ms);
+  // Que nadie la confunda con la aplicacion: una franja fija arriba y el
+  // aviso en la propia caja de texto.
+  const banda = el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS");
+  document.body.style.gridTemplateRows = "auto auto minmax(200px, 40vh) 1fr auto";
+  document.body.prepend(banda);
+  document.getElementById("orden").placeholder = "Demostración: lo que escribas no llega a ningún agente";
   window.DEMO = {
     iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 15, revisor: true }),
     nuevo: () => Promise.resolve(null),
     parar: () => Promise.resolve(null),
     abrir_enlace: () => Promise.resolve(null),
-    responder: () => { t(500, () => { DOOM.evento({ tipo: "herramienta", nombre: "cerrar_aplicacion", familia: "apps" }); DOOM.evento({ tipo: "accion", texto: "Cierro Calculadora" }); }); t(900, () => DOOM.evento({ tipo: "resultado", texto: "Pedido el cierre de la ventana 'Calculator'." })); t(1300, () => { DOOM.evento({ tipo: "respuesta", texto: "He buscado el tiempo en Madrid: 19 °C y despejado según https://www.aemet.es. También he abierto y cerrado la Calculadora.", completo: true, abiertas: ["Calculator", "https://duckduckgo.com/?q=tiempo+Madrid"] }); DOOM.evento({ tipo: "estado", estado: "reposo" }); }); return Promise.resolve(null); },
-    enviar: () => {
+    responder: () => { t(500, () => { DOOM.evento({ tipo: "herramienta", nombre: "cerrar_aplicacion", familia: "apps" }); DOOM.evento({ tipo: "accion", texto: "Cierro Calculadora" }); }); t(900, () => DOOM.evento({ tipo: "resultado", texto: "Pedido el cierre de la ventana 'Calculator'." })); t(1300, () => { DOOM.evento({ tipo: "respuesta", texto: "(Simulación: no he hecho nada de verdad.) Así se vería una respuesta: «He buscado el tiempo en Madrid según https://www.aemet.es y he abierto y cerrado la Calculadora». Para que actúe de verdad: python -m doombot ventana, con un modelo configurado en .env.", completo: true, abiertas: ["Calculator", "https://duckduckgo.com/?q=tiempo+Madrid"] }); DOOM.evento({ tipo: "estado", estado: "reposo" }); }); return Promise.resolve(null); },
+    enviar: (texto) => {
       const E = e => DOOM.evento(e);
       E({ tipo: "estado", estado: "pensando" }); E({ tipo: "pensando", paso: 1 });
+      t(900, () => E({ tipo: "error", texto: `SIMULACIÓN: no hay agente detrás. Tu orden («${texto}») no llega a ningún sitio; lo que sigue es un guion fijo para ver el diseño.` }));
       t(1200, () => E({ tipo: "comentario", texto: "Voy a buscar el tiempo en Madrid en mi navegador y luego abro la calculadora." }));
       t(1500, () => { E({ tipo: "herramienta", nombre: "navegar", familia: "web" }); E({ tipo: "accion", texto: "Navego a el tiempo en Madrid" }); });
       t(2600, () => { E({ tipo: "resultado", texto: "Pagina: «tiempo Madrid at DuckDuckGo» (https://duckduckgo.com/?q=tiempo+Madrid)" }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid"] }); });

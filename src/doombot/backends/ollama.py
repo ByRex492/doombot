@@ -12,12 +12,21 @@ implementaciones ni una rama que las distinga.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator, Sequence
 from typing import Any
 
 import httpx
 
-from doombot.backends.base import BackendError, Turno
+from doombot.backends.base import (
+    BackendError,
+    EspecHerramienta,
+    LlamadaHerramienta,
+    MensajeAgente,
+    PasoModelo,
+    ResultadoHerramienta,
+    Turno,
+)
 from doombot.config import Settings, settings
 from doombot.profiles import Profile
 
@@ -25,6 +34,11 @@ from doombot.profiles import Profile
 # conviene fallar en segundos, no dejar la voz colgada. La lectura, en cambio,
 # tarda lo que tarde el modelo en generar, y en CPU eso puede irse a minutos.
 _TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0)
+
+# Los modelos con razonamiento (qwen3, deepseek-r1) pueden devolver su
+# razonamiento entre <think>...</think> dentro de ``content``. Para el agente
+# eso no es comentario para el usuario: se quita antes de mostrarlo.
+_PENSAMIENTO = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 # D-008: siempre /api/chat, nunca /api/generate.
 #
@@ -192,6 +206,81 @@ class OllamaGenerator:
             # Si falla aqui, fallara igual en la primera pregunta real: no
             # merece la pena bloquear el arranque por esto.
             return False
+
+    # -- llamada a herramientas (D-033) ---------------------------------------
+    def paso(
+        self,
+        conversacion: Sequence[MensajeAgente],
+        herramientas: Sequence[EspecHerramienta],
+        *,
+        system: str | None = None,
+    ) -> PasoModelo:
+        """Un turno del agente: el modelo responde o pide herramientas.
+
+        Sin streaming a proposito: lo que importa aqui es la decision entera
+        -que herramienta, con que argumentos-, no ir pintando texto. Y con
+        temperatura 0, como en la medicion de capa4-investigacion.md: elegir
+        herramienta es clasificar, no redactar.
+        """
+        mensajes: list[dict[str, Any]] = []
+        if system:
+            mensajes.append({"role": "system", "content": system})
+        for m in conversacion:
+            if isinstance(m, str):
+                mensajes.append({"role": "user", "content": m})
+            elif isinstance(m, PasoModelo):
+                mensaje: dict[str, Any] = {"role": "assistant", "content": m.texto}
+                if m.llamadas:
+                    mensaje["tool_calls"] = [
+                        {"function": {"name": ll.nombre, "arguments": ll.argumentos}}
+                        for ll in m.llamadas
+                    ]
+                mensajes.append(mensaje)
+            elif isinstance(m, ResultadoHerramienta):
+                mensajes.append({"role": "tool", "content": m.contenido, "tool_name": m.nombre})
+
+        cuerpo = {
+            "model": self._model,
+            "messages": mensajes,
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": h.nombre,
+                        "description": h.descripcion,
+                        "parameters": h.parametros,
+                    },
+                }
+                for h in herramientas
+            ],
+            "stream": False,
+            "options": {**self._options, "temperature": 0},
+            "keep_alive": self._keep_alive,
+        }
+        mensaje_resp = self._post(RUTA_CHAT, cuerpo).get("message", {})
+        texto = _PENSAMIENTO.sub("", str(mensaje_resp.get("content") or "")).strip()
+
+        llamadas = []
+        for i, ll in enumerate(mensaje_resp.get("tool_calls") or []):
+            funcion = ll.get("function", {})
+            argumentos = funcion.get("arguments") or {}
+            # Segun la version de Ollama y el modelo, los argumentos llegan ya
+            # como objeto o como texto JSON. Se aceptan los dos.
+            if isinstance(argumentos, str):
+                try:
+                    argumentos = json.loads(argumentos)
+                except json.JSONDecodeError:
+                    argumentos = {}
+            llamadas.append(
+                LlamadaHerramienta(
+                    # Ollama no siempre da id; el bucle lo necesita para emparejar
+                    # cada resultado con su llamada.
+                    id=str(ll.get("id") or f"llamada_{i}"),
+                    nombre=str(funcion.get("name", "")),
+                    argumentos=argumentos if isinstance(argumentos, dict) else {},
+                )
+            )
+        return PasoModelo(texto=texto, llamadas=tuple(llamadas))
 
     # -- interno -------------------------------------------------------------
     def _cuerpo(

@@ -1,0 +1,458 @@
+"""Varios modelos (D-034): backend compatible con OpenAI, catalogo, cadena, consejo y revisor.
+
+Sin red ni claves: transportes falsos de httpx y modelos de juguete.
+"""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+
+from doombot.agent.bucle import Agente
+from doombot.agent.herramientas import Herramienta
+from doombot.agent.revision import revisor
+from doombot.backends.base import (
+    BackendError,
+    EspecHerramienta,
+    LlamadaHerramienta,
+    PasoModelo,
+    ResultadoHerramienta,
+    TextGenerator,
+    ToolCaller,
+)
+from doombot.backends.openai_compat import LimiteAlcanzado, OpenAICompatGenerator
+from doombot.backends.proveedores import construir, construir_todos, partir
+from doombot.backends.varios import Cadena, Consejo, etiqueta
+from doombot.config import Settings
+
+
+def cfg(**kw) -> Settings:
+    return Settings(ollama_host="http://127.0.0.1:11434", log_level="INFO", **kw)
+
+
+def cliente(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def respuesta(mensaje: dict, codigo: int = 200):
+    enviado: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        enviado["url"] = str(req.url)
+        enviado["auth"] = req.headers.get("authorization")
+        enviado["cuerpo"] = json.loads(req.content)
+        return httpx.Response(codigo, json={"choices": [{"message": mensaje}]})
+
+    return enviado, cliente(handler)
+
+
+# -- backend compatible con OpenAI ----------------------------------------------
+def test_cumple_los_dos_contratos():
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq")
+    assert isinstance(g, TextGenerator)
+    assert isinstance(g, ToolCaller)
+    assert g.model_name == "groq/m"
+
+
+def test_generate_manda_clave_y_url_y_quita_el_razonamiento():
+    enviado, c = respuesta({"content": "<think>hmm</think>Madrid."})
+    g = OpenAICompatGenerator("m", base_url="https://api.x/v1/", api_key="k", client=c)
+    assert g.generate("capital de España", system="breve") == "Madrid."
+    assert enviado["url"] == "https://api.x/v1/chat/completions"
+    assert enviado["auth"] == "Bearer k"
+    assert enviado["cuerpo"]["messages"][0] == {"role": "system", "content": "breve"}
+
+
+def test_paso_traduce_al_formato_openai_y_lee_tool_calls():
+    enviado, c = respuesta(
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_9",
+                    "type": "function",
+                    "function": {"name": "abrir_aplicacion", "arguments": '{"nombre": "calc"}'},
+                }
+            ],
+        }
+    )
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", client=c)
+    espec = EspecHerramienta("abrir_aplicacion", "abre", {"type": "object", "properties": {}})
+    conversacion = [
+        "abre firefox",
+        PasoModelo("", (LlamadaHerramienta("call_1", "abrir_aplicacion", {"nombre": "ff"}),)),
+        ResultadoHerramienta("call_1", "abrir_aplicacion", "Abierta."),
+    ]
+
+    paso = g.paso(conversacion, [espec])
+
+    assert paso == PasoModelo(
+        "", (LlamadaHerramienta("call_9", "abrir_aplicacion", {"nombre": "calc"}),)
+    )
+    mensajes = enviado["cuerpo"]["messages"]
+    assert mensajes[1]["tool_calls"][0]["function"]["arguments"] == '{"nombre": "ff"}'
+    assert mensajes[2] == {"role": "tool", "tool_call_id": "call_1", "content": "Abierta."}
+    assert enviado["cuerpo"]["temperature"] == 0
+    assert enviado["cuerpo"]["tools"][0]["function"]["name"] == "abrir_aplicacion"
+
+
+def test_stream_lee_eventos_sse():
+    cuerpo = "\n".join(
+        [
+            'data: {"choices":[{"delta":{"content":"Ho"}}]}',
+            'data: {"choices":[{"delta":{"content":"la"}}]}',
+            "data: [DONE]",
+        ]
+    ).encode()
+    c = cliente(lambda req: httpx.Response(200, content=cuerpo))
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", client=c)
+    assert "".join(g.stream("hola")) == "Hola"
+
+
+def test_sin_cuota_es_un_error_propio():
+    _, c = respuesta({}, codigo=429)
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq", client=c)
+    with pytest.raises(LimiteAlcanzado, match="limite de uso gratuito"):
+        g.generate("x")
+
+
+def test_sin_clave_dice_cual_falta():
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", proveedor="gemini")
+    with pytest.raises(BackendError, match="DOOMBOT_GEMINI_API_KEY"):
+        g.generate("x")
+
+
+# -- catalogo -------------------------------------------------------------------
+def test_partir_por_el_primer_dos_puntos():
+    assert partir("ollama:qwen3:4b") == ("ollama", "qwen3:4b")
+    assert partir("openrouter:x/y:free") == ("openrouter", "x/y:free")
+
+
+def test_construir_cada_tipo():
+    c = cfg(claves=(("groq", "k1"),), anthropic_api_key="ka")
+    groq = construir("groq:openai/gpt-oss-120b", c)
+    assert isinstance(groq, OpenAICompatGenerator)
+    assert etiqueta(groq) == "groq/openai/gpt-oss-120b"
+    assert etiqueta(construir("ollama:qwen3:4b", c)) == "ollama/qwen3:4b"
+    assert etiqueta(construir("anthropic:claude-x", c)) == "anthropic/claude-x"
+
+
+@pytest.mark.parametrize(
+    ("entrada", "error"),
+    [
+        ("groq:modelo", "DOOMBOT_GROQ_API_KEY"),
+        ("inventado:modelo", "proveedor desconocido"),
+        ("groq", "falta el modelo"),
+    ],
+)
+def test_construir_dice_que_falta(entrada, error):
+    with pytest.raises(ValueError, match=error):
+        construir(entrada, cfg())
+
+
+def test_construir_todos_salta_los_que_no_tienen_clave():
+    c = cfg(modelos=("groq:a", "gemini:b", "ollama:c"), claves=(("groq", "k"),))
+    generadores, avisos = construir_todos(c)
+    assert [etiqueta(g) for g in generadores] == ["groq/a", "ollama/c"]
+    assert len(avisos) == 1 and "DOOMBOT_GEMINI_API_KEY" in avisos[0]
+    assert "aistudio.google.com" in avisos[0]
+
+
+def test_las_claves_salen_del_entorno(monkeypatch):
+    from doombot import config
+
+    monkeypatch.setenv("DOOMBOT_GROQ_API_KEY", "  gsk  ")
+    monkeypatch.setenv("DOOMBOT_NVIDIA_API_KEY", "")
+    monkeypatch.setenv("DOOMBOT_MODELOS", "groq:a, gemini:b")
+    monkeypatch.setattr(config, "load_env", lambda *a, **k: {})
+    config.settings.cache_clear()
+    try:
+        s = config.settings()
+        assert s.clave("groq") == "gsk"
+        assert s.clave("nvidia") == ""
+        assert s.modelos == ("groq:a", "gemini:b")
+    finally:
+        config.settings.cache_clear()
+
+
+# -- cadena -----------------------------------------------------------------------
+class Juguete:
+    """Un modelo que responde lo que se le diga, o falla como se le diga."""
+
+    def __init__(self, nombre: str, respuesta: str = "", fallo: BackendError | None = None):
+        self.proveedor = nombre
+        self.model_name = nombre
+        self.respuesta = respuesta or f"soy {nombre}"
+        self.fallo = fallo
+        self.llamadas: list[str] = []
+
+    def generate(self, prompt, *, system=None, historial=()):
+        self.llamadas.append(prompt)
+        if self.fallo:
+            raise self.fallo
+        return self.respuesta
+
+    def stream(self, prompt, *, system=None, historial=()):
+        if self.fallo:
+            raise self.fallo
+        yield from self.respuesta.split(" ")
+
+    def paso(self, conversacion, herramientas, *, system=None):
+        return PasoModelo(self.generate(str(conversacion[-1])))
+
+
+def test_la_cadena_cumple_los_contratos():
+    cadena = Cadena([Juguete("a")])
+    assert isinstance(cadena, TextGenerator) and isinstance(cadena, ToolCaller)
+
+
+def test_si_el_primero_falla_responde_el_siguiente_y_se_avisa():
+    avisos: list[str] = []
+    a, b = Juguete("a", fallo=BackendError("a: sin conexion")), Juguete("b")
+    cadena = Cadena([a, b], avisar=avisos.append)
+
+    assert cadena.generate("hola") == "soy b"
+    assert cadena.paso(["hola"], []).texto == "soy b"
+    assert cadena.ultimo is b
+    assert avisos[:2] == ["a no responde (sin conexion)", "sigo con b"]
+
+
+def test_sin_cuota_se_aparta_un_rato_y_luego_vuelve():
+    reloj = [0.0]
+    a = Juguete("a", fallo=LimiteAlcanzado("a: limite"))
+    b = Juguete("b")
+    cadena = Cadena([a, b], espera_limite=60, reloj=lambda: reloj[0])
+
+    cadena.generate("1")
+    cadena.generate("2")
+    assert len(a.llamadas) == 1  # el segundo turno ya no lo intenta con a
+
+    reloj[0] = 61
+    a.fallo = None
+    assert cadena.generate("3") == "soy a"
+
+
+def test_si_todos_fallan_lo_dice_con_cada_motivo():
+    cadena = Cadena(
+        [Juguete("a", fallo=BackendError("a: x")), Juguete("b", fallo=BackendError("b: y"))]
+    )
+    with pytest.raises(BackendError, match="Ningun modelo") as e:
+        cadena.generate("hola")
+    assert "a: x" in str(e.value) and "b: y" in str(e.value)
+
+
+def test_stream_cambia_de_modelo_solo_antes_del_primer_trozo():
+    cadena = Cadena([Juguete("a", fallo=BackendError("a: caido")), Juguete("b", "hola que tal")])
+    assert list(cadena.stream("x")) == ["hola", "que", "tal"]
+
+
+# -- consejo ----------------------------------------------------------------------
+def test_el_consejo_pregunta_a_todos_y_el_juez_compara():
+    a, b = Juguete("a", "Madrid"), Juguete("b", "Madrid, desde 1561")
+    juez = Juguete("juez", "Coinciden: Madrid.")
+    veredicto = Consejo([a, b], juez=juez).consultar("capital de España")
+
+    assert [o.texto for o in veredicto.opiniones] == ["Madrid", "Madrid, desde 1561"]
+    assert veredicto.final == "Coinciden: Madrid."
+    assert "Respuesta de a:\nMadrid" in juez.llamadas[0]
+    assert "Respuesta de b:\nMadrid, desde 1561" in juez.llamadas[0]
+
+
+def test_si_solo_responde_uno_se_dice_que_no_hay_contraste():
+    consejo = Consejo([Juguete("a", "42"), Juguete("b", fallo=BackendError("b: caido"))])
+    veredicto = consejo.consultar("x")
+    assert veredicto.final.startswith("42")
+    assert "sin contraste" in veredicto.final
+    assert veredicto.opiniones[1].fallo
+
+
+def test_si_no_responde_ninguno_falla():
+    with pytest.raises(BackendError):
+        Consejo([Juguete("a", fallo=BackendError("a: caido"))]).consultar("x")
+
+
+# -- segunda opinion en el agente -------------------------------------------------
+def test_el_revisor_es_otro_modelo_distinto_del_que_propuso():
+    a, b = Juguete("a"), Juguete("b", "OJO: el usuario no pidio borrar nada")
+    cadena = Cadena([a, b])
+    cadena.generate("propuesta")  # responde a: es el que propone
+    opinion = revisor(cadena)("abre firefox", "ejecutar_comando(rm -rf ~)")
+
+    assert opinion == "OJO: el usuario no pidio borrar nada (b)"
+    assert "rm -rf" in b.llamadas[0]
+
+
+def test_con_un_solo_modelo_no_hay_revisor():
+    assert revisor(Cadena([Juguete("a")])) is None
+
+
+def test_la_segunda_opinion_acompana_a_la_pregunta():
+    preguntas: list[str] = []
+    llamada = LlamadaHerramienta("c0", "borrar", {"ruta": "x"})
+
+    class Cerebro:
+        model_name = "c"
+
+        def __init__(self):
+            self.pasos = [PasoModelo("", (llamada,)), PasoModelo("fin")]
+
+        def paso(self, *a, **k):
+            return self.pasos.pop(0)
+
+    agente = Agente(
+        Cerebro(),
+        [Herramienta("borrar", "borra", lambda ruta: "borrado", confirmar=lambda a: "¿Borro x?")],
+        narrar=lambda *a: None,
+        confirmar=lambda p: preguntas.append(p) or False,
+        revisar=lambda tarea, propuesta: f"OJO: no encaja con «{tarea}»",
+    )
+    agente.ejecutar("abre firefox")
+
+    assert preguntas == ["¿Borro x?\n      Segunda opinion: OJO: no encaja con «abre firefox»"]
+
+
+# -- Gemini 3: firma de razonamiento ------------------------------------------------
+def test_la_firma_de_gemini_se_guarda_y_se_devuelve():
+    firma = {"google": {"thought_signature": "abc123"}}
+    enviado, c = respuesta(
+        {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "g1",
+                    "function": {"name": "abrir_aplicacion", "arguments": "{}"},
+                    "extra_content": firma,
+                }
+            ],
+        }
+    )
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="gemini", client=c
+    )
+    paso = g.paso(["abre"], [])
+    assert paso.llamadas[0].extra == {"extra_content": firma}
+
+    g.paso(["abre", paso, ResultadoHerramienta("g1", "abrir_aplicacion", "ok")], [])
+    llamada = enviado["cuerpo"]["messages"][1]["tool_calls"][0]
+    assert llamada["extra_content"] == firma
+
+
+def test_a_gemini_las_llamadas_de_otro_modelo_le_llegan_con_la_firma_de_relleno():
+    enviado, c = respuesta({"content": "ok"})
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="gemini", client=c
+    )
+    de_groq = PasoModelo("", (LlamadaHerramienta("call_1", "buscar", {"p": "x"}),))
+    g.paso(["busca", de_groq, ResultadoHerramienta("call_1", "buscar", "nada")], [])
+    llamada = enviado["cuerpo"]["messages"][1]["tool_calls"][0]
+    assert llamada["extra_content"] == {
+        "google": {"thought_signature": "skip_thought_signature_validator"}
+    }
+
+
+def test_a_otros_proveedores_no_les_llega_nada_raro():
+    enviado, c = respuesta({"content": "ok"})
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq", client=c)
+    g.paso(["x", PasoModelo("", (LlamadaHerramienta("c", "b", {}),))], [])
+    assert "extra_content" not in enviado["cuerpo"]["messages"][1]["tool_calls"][0]
+
+
+# -- limite por minuto ------------------------------------------------------------------
+def test_si_el_limite_es_de_segundos_espera_y_reintenta():
+    respuestas = [
+        httpx.Response(429, headers={"retry-after": "3"}, json={"error": {"message": "rate"}}),
+        httpx.Response(200, json={"choices": [{"message": {"content": "listo"}}]}),
+    ]
+    c = cliente(lambda req: respuestas.pop(0))
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq", client=c)
+    esperas = []
+    g._dormir = esperas.append
+    assert g.generate("x") == "listo"
+    assert esperas == [3.5]
+
+
+def test_si_hay_que_esperar_mucho_no_se_espera():
+    c = cliente(lambda req: httpx.Response(429, headers={"retry-after": "60"}, json={}))
+    g = OpenAICompatGenerator("m", base_url="https://x/v1", api_key="k", proveedor="groq", client=c)
+    g._dormir = lambda s: pytest.fail("no deberia esperar 60 s")
+    with pytest.raises(LimiteAlcanzado):
+        g.generate("x")
+
+
+def test_si_todos_estan_sin_cuota_lo_dice_claro():
+    cadena = Cadena(
+        [
+            Juguete("a", fallo=LimiteAlcanzado("a: limite")),
+            Juguete("b", fallo=LimiteAlcanzado("b: limite")),
+        ]
+    )
+    with pytest.raises(LimiteAlcanzado, match="han llegado a su limite"):
+        cadena.generate("x")
+
+
+def test_saturado_cuenta_como_pasajero():
+    c = cliente(lambda req: httpx.Response(503, json={"error": {"message": "high demand"}}))
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="gemini", client=c
+    )
+    with pytest.raises(LimiteAlcanzado, match="saturado"):
+        g.generate("x")
+
+
+# -- herramientas inventadas (Groq las rechaza con un 400) ---------------------------------
+def test_si_groq_rechaza_una_herramienta_inventada_se_reintenta_diciendole_cual_es():
+    pedidos = []
+    respuestas = [
+        httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "tool call validation failed: attempted to call tool 'clickar' "
+                    "which was not in request.tools"
+                }
+            },
+        ),
+        httpx.Response(200, json={"choices": [{"message": {"content": "Hecho."}}]}),
+    ]
+
+    def handler(req):
+        pedidos.append(json.loads(req.content))
+        return respuestas.pop(0)
+
+    g = OpenAICompatGenerator(
+        "m", base_url="https://x/v1", api_key="k", proveedor="groq", client=cliente(handler)
+    )
+    clicar = EspecHerramienta("clicar", "pulsa", {"type": "object", "properties": {}})
+    navegar = EspecHerramienta("navegar", "va", {"type": "object", "properties": {}})
+
+    assert g.paso(["pulsa el enlace"], [clicar, navegar]).texto == "Hecho."
+    aviso = pedidos[1]["messages"][-1]
+    assert aviso["role"] == "user"
+    assert "«clickar» no existe" in aviso["content"] and "«clicar»" in aviso["content"]
+
+
+def test_un_apartado_vale_para_todas_las_cadenas_que_comparten_el_modelo():
+    """Cada modo monta su cadena (D-038): cambiar de modo no debe volver a esperar al saturado."""
+    reloj = [0.0]
+    saturado = Juguete("gemini", fallo=LimiteAlcanzado("gemini: tardo demasiado"))
+    groq = Juguete("groq")
+    Cadena([saturado, groq], reloj=lambda: reloj[0]).generate("1")
+
+    otra = Cadena([saturado, groq], reloj=lambda: reloj[0])  # la de otro modo
+    otra.generate("2")
+    assert len(saturado.llamadas) == 1  # no se le volvio a esperar
+
+
+def test_un_modelo_que_sigue_fallando_se_aparta_cada_vez_mas_y_al_acertar_vuelve_a_cero():
+    reloj = [0.0]
+    g, otro = Juguete("gemini", fallo=LimiteAlcanzado("gemini: saturado")), Juguete("groq")
+    cadena = Cadena([g, otro], espera_limite=60, reloj=lambda: reloj[0])
+    for esperado in (60, 120, 240):
+        cadena.generate("x")
+        assert g._doombot_apartado_hasta - reloj[0] == esperado
+        reloj[0] = g._doombot_apartado_hasta  # vuelve a intentarlo justo al acabar
+    g.fallo = None
+    cadena.generate("x")
+    assert g._doombot_fallos_seguidos == 0

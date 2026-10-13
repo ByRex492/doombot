@@ -1115,3 +1115,438 @@ sido el mismo mensaje escrito dos veces.
 **Verificado con dobles**: `tests/test_ask_claude_order.py` comprueba que se presta un
 `AnthropicGenerator` de verdad durante el turno, que el backend original vuelve después -incluso
 si `responder()` falla a medias-, y que sin argumento no se toca nada.
+
+---
+
+## D-033 — Agente local con bucle propio: cerebro intercambiable, autónomo salvo en lo irreversible
+
+**Contexto.** Se pidió un agente "como Claude": recibir órdenes escritas -de momento, no voz- y
+cumplirlas solo, contando lo que hace y qué aplicaciones abre, con acceso a todo el equipo:
+aplicaciones, navegadores, y un navegador que controle por dentro. Lo que había era
+`actions/claude_code.py`, que delega en `claude -p`: sirve para tareas de código en un
+repositorio, pero no abre aplicaciones ni maneja un navegador, depende de la nube y cuesta
+dinero por uso, en contra del "coste económico: ninguno" de `capa4-investigacion.md`.
+
+**Decisión.** Un paquete nuevo, `agent/`, con un bucle propio (pensar → herramienta → observar)
+y cuatro familias de herramientas: ficheros, comandos, aplicaciones instaladas y navegador. Tres
+elecciones las tomó el usuario explícitamente, el 13/10/2026:
+
+1. **Cerebro intercambiable.** El bucle habla con un `ToolCaller` nuevo de `backends/base.py`
+   con tipos neutros (`EspecHerramienta`, `LlamadaHerramienta`, `PasoModelo`,
+   `ResultadoHerramienta`); `OllamaGenerator` y `AnthropicGenerator` lo cumplen con un método
+   `paso()` cada uno, traduciendo a su formato -Ollama con rol `tool`, Anthropic con bloques
+   `tool_use`/`tool_result`-. `DOOMBOT_AGENT_BRAIN` elige, separado de `DOOMBOT_LLM_BACKEND`:
+   se puede conversar con Ollama y dejar que actúe Claude. Es el mismo patrón que D-032 aplicó a
+   `TextGenerator`.
+2. **Autónomo, confirma lo irreversible.** Abrir apps, navegar, leer y buscar van solos;
+   sobrescribir, cerrar una app, ejecutar un comando que no sea de solo lectura, enviar un
+   formulario o pulsar algo tipo comprar/enviar/aceptar, se preguntan. Es D-031 llevado de
+   "antes de toda acción" a "antes de lo que no se deshace", que es lo que hace usable un agente.
+3. **Navegador propio, aparte del del usuario.** Chromium por Playwright (extra `agent-web`) con
+   perfil en `data_dir()/navegador-agente`, con ventana para que se vea lo que hace. No tiene las
+   sesiones ni las contraseñas del usuario. Para enseñarle una página al usuario se usa su
+   navegador normal (`webbrowser`), donde el agente no lee nada.
+
+**Las salvaguardas viven en el bucle, no en las herramientas.** Lista blanca (lo que no está en
+el catálogo devuelve un error al modelo), confirmación, límite de 20 pasos, salidas truncadas
+(cabeza y cola con nota de continuación) y resultados viejos enmascarados en lo que se envía al
+modelo -no en lo guardado-, las dos técnicas del punto 4 de `capa4-investigacion.md`. Una
+negativa del usuario vuelve al modelo como resultado ("no la repitas"), para que no insista. Cada
+herramienta declara cuándo es irreversible en función de sus argumentos (`confirmar(args)`): el
+riesgo de `ejecutar_comando` depende del comando.
+
+**Ficheros sensibles: leer también se confirma.** Con navegador propio y comandos libres de
+solo lectura, una página con instrucciones ocultas podría pedir leer `~/.ssh/id_rsa` y llevarlo a
+una URL: navegar no se confirma. Así que leer claves, `.env`, credenciales o perfiles de
+navegador se pregunta, y crear ficheros de arranque automático (`.bashrc`, `autostart`,
+`Startup`) también, aunque no existieran. El agente no escribe en campos de contraseña: con
+Claude detrás, saldría de la máquina. Y todo lo leído de páginas y ficheros va marcado como datos,
+no órdenes, en el resultado y en el prompt.
+
+**Reconocer aplicaciones sin adivinar ejecutables.** Cada sistema ya tiene la lista: `.desktop`
+en Linux, accesos `.lnk` del menú Inicio en Windows, `.app` en macOS. Se busca por nombre, por
+nombre genérico, por palabras clave y por las categorías estándar (`WebBrowser`,
+`FileManager`...), con un diccionario corto español → categoría. Medido en el portátil Linux: sin
+categorías, "navegador" no encontraba Firefox y "archivos" no encontraba nada, porque GNOME
+traduce los nombres con gettext y no en el `.desktop`.
+
+**Descartado.**
+- *Seguir solo con `claude -p`.* No abre aplicaciones ni maneja un navegador, y ata la capa de
+  acciones a la nube. Se queda como está, para tareas de código (`act`).
+- *MCP para las herramientas.* Descartado ya por contexto en `capa4-investigacion.md`.
+- *Controlar el escritorio por capturas y clics* (lo que Anthropic llama *computer use*). Pide
+  un modelo con visión y es otro orden de riesgo; queda para una fase posterior, si hace falta
+  tras usar esto.
+- *El Chrome real del usuario.* Más potente, pero el agente actuaría con sus cuentas.
+
+**Relación con D-014.** Las herramientas de aquí son funciones, no *skills*. El estándar
+agentskills.io sigue vigente para cuando haga falta empaquetar procedimientos de varios pasos
+encima de ellas.
+
+**Verificado en el portátil Linux, sin modelo.** 408 tests sin hardware, con un cerebro de
+guion. Contra el escritorio real (GNOME, X11): descubre 55 aplicaciones, y un guion que abre la
+Calculadora, ve su ventana y la cierra -con su confirmación- funciona de punta a punta.
+**Sin medir:** ningún modelo real ha llevado este bucle todavía -ni Ollama ni Claude- y el
+navegador propio no se ha lanzado (Playwright no instalado aquí).
+
+**Pendiente.** Medir en el sobremesa con `gemma4:12b` cuántas órdenes resuelve bien, y con
+Claude como referencia, antes de decidir el cerebro por defecto. El agente por voz (la orden
+`agente` ya existe en el chat, falta probarla hablada). Que el HUD muestre los pasos.
+
+**Adenda (13/10/2026): investigar sin dar vueltas.** El registro de una investigación real
+("investiga la discografía de Saiko", 11 pasos) enseñó cuatro fallos. Los tres primeros eran
+de las herramientas del navegador, no del modelo:
+- *Buscó cuatro veces.* La página de DuckDuckGo se pinta con JavaScript y `leer_pagina` la leía
+  antes de que hubiera resultados. Ahora hay una herramienta `buscar_web` que pide la versión sin
+  JavaScript (`html.duckduckgo.com`) con `httpx` y devuelve una lista numerada de título, enlace y
+  resumen. No abre el navegador, así que es rápida y no depende de cuándo termina de cargar.
+- *La sección que buscaba caía fuera del recorte.* En Wikipedia, "Discografía" está más allá de
+  los 4.000 caracteres que se leían. `leer_pagina(buscar="…")` devuelve ventanas de texto
+  alrededor de cada aparición del término, sin distinguir tildes ni mayúsculas. Pulsar un enlace
+  del índice no servía: mueve la vista, pero se sigue leyendo la página entera desde arriba.
+- *Más enlaces que contenido.* Se lee solo el contenedor principal (`#mw-content-text`, `main`,
+  `article`...) y como mucho 25 elementos, no 60 de menús y pies de página.
+- *Respuesta sin fuentes, y un nombre ambiguo* (una banda chilena y un cantante español). Va al
+  prompt: buscar primero, abrir de una a tres fuentes fiables, no repetir búsquedas, decir si un
+  nombre es ambiguo y citar siempre los enlaces.
+
+*Descartado:* una API de búsqueda con clave (Brave, Tavily). Sería otra clave más que conseguir
+en cada equipo, y la versión HTML de DuckDuckGo basta. Si algún día empieza a pedir captcha,
+`buscar_web` devuelve el error y sugiere `navegar` a la página del buscador. Verificado en real:
+la búsqueda da 10 resultados, y `leer_pagina(buscar="Discografía")` en la página de Wikipedia
+devuelve los álbumes directamente.
+
+---
+
+## D-034 — Varios modelos gratuitos: en cadena para no depender de uno, en consejo para contrastar
+
+**Contexto.** Pedido del usuario, 13/10/2026: usar modelos **gratuitos**, buenos, y **varios**,
+para tener comprobaciones de modelos distintos y no depender de uno. Sin GPU en el portátil,
+"gratis" no puede ser solo Ollama local: las capas gratuitas de proveedores en la nube son lo
+que da modelos grandes aquí.
+
+**Estado de las capas gratuitas, a 13/10/2026** (cambian a menudo; verificar en cada panel):
+
+| Proveedor | Gratis | Herramientas | Nota |
+|---|---|---|---|
+| Groq | ~30 peticiones/min, ~1.000/día por modelo | Sí, en todos sus modelos (documentado) | `openai/gpt-oss-120b`, `llama-3.3-70b-versatile`, `qwen/qwen3.8-27b` |
+| Gemini (Google AI Studio) | Límites en el panel de AI Studio | Sí, por su capa compatible con OpenAI (beta) | Puede usar las peticiones gratuitas para mejorar sus productos fuera del EEE |
+| NVIDIA NIM | ~40/min por modelo | No verificado | Requiere programa de desarrolladores |
+| OpenRouter (`:free`) | 20/min, **50/día** | Según modelo | Demasiado poco para un agente; solo de reserva |
+| Mistral | Créditos mensuales | Sí | El plan gratuito pide aceptar entrenamiento con tus datos |
+
+Fuentes: documentación de Groq (modelos y *tool use*) y de Gemini (compatibilidad OpenAI),
+comparativas de OpenRouter y dev.to de octubre de 2026.
+
+**Decisión.**
+
+1. **Un solo backend para todos**: `backends/openai_compat.py`. Casi todos los proveedores
+   gratuitos hablan el formato de OpenAI (`/chat/completions` con `tools`), así que una clase
+   cubre Groq, Gemini, OpenRouter, NVIDIA, Mistral, Cerebras y GitHub Models. Cumple
+   `TextGenerator` y `ToolCaller`. El catálogo (URL y dónde se saca la clave) está en
+   `backends/proveedores.py`; la configuración es `DOOMBOT_MODELOS=proveedor:modelo,...` y una
+   `DOOMBOT_<PROVEEDOR>_API_KEY` por proveedor. Ollama y Anthropic entran en la misma lista con
+   sus backends propios (`ollama:gemma4:12b`).
+2. **`Cadena`: no depender de uno.** Responde el primero; si falla (sin conexión, clave mala, o
+   429 de cuota gratuita agotada), el siguiente, avisando del cambio. Un modelo sin cuota se
+   aparta 60 s para no gastar una petición en él en cada paso del agente, pero sigue al final por
+   si es el único. En *streaming*, solo se cambia antes del primer trozo. Es `varios` en
+   `DOOMBOT_LLM_BACKEND` y en `DOOMBOT_AGENT_BRAIN`.
+3. **`Consejo`: contrastar.** La misma pregunta a todos en paralelo, y un juez (la propia
+   cadena) que da la respuesta final diciendo en qué discrepan. `/contrasta` en la consola del
+   agente, `contrasta ...` en el chat. Si solo responde uno, se dice: "sin contraste".
+4. **Segunda opinión antes de lo irreversible.** En el agente, cuando una acción va a pedir
+   confirmación, un modelo **distinto del que la propuso** lee la orden del usuario y la acción
+   -no la página ni el fichero que la motivó- y dice "BIEN" u "OJO". Su opinión se añade a la
+   pregunta; no decide nada. El motivo: el modelo que propone es el peor juez de su propuesta,
+   sobre todo si una página le ha colado instrucciones; otro que no ha visto esa página no
+   arrastra el engaño.
+
+**Por qué no un voto automático en cada paso del agente.** Triplicaría las peticiones y la cuota
+gratuita se acaba antes; además, en la mayoría de pasos (abrir, leer, buscar) no hay nada que
+arbitrar. El contraste se gasta donde importa: preguntas de datos (`contrasta`) y acciones
+irreversibles (revisor).
+
+**Privacidad, dicho claro.** Con estos proveedores, lo que el agente lee -páginas, ficheros,
+títulos de ventanas- sale del equipo. Algunos planes gratuitos usan esas peticiones para entrenar.
+Para lo que no deba salir, `ollama:` en la lista, en el sobremesa.
+
+**Verificado sin claves**: 432 tests con transportes falsos y modelos de juguete; la consola con
+`varios` y sin claves dice exactamente cuáles faltan y dónde se crean. **Sin verificar**: ningún
+proveedor real todavía, ni los nombres exactos de modelo de Gemini y NVIDIA en sus capas
+gratuitas (`gemini-3.8-flash` sale de los ejemplos de la documentación de Google;
+`nvidia/nemotron-3-super-120b-a12b`, de una comparativa).
+
+---
+
+## D-035 — La aplicación: una ventana con un planeta, el registro del agente y un chat
+
+**Contexto.** Pedido del usuario, 13/10/2026: una interfaz propia "como Claude Code", que no abra
+un HTML en el navegador; una esfera "como un planeta" que reaccione a las consultas, y un chat
+debajo que procese la orden y vaya diciendo lo que piensa y qué aplicaciones o enlaces abre
+mientras trabaja. Además, que la interfaz cambie según la herramienta que use el agente.
+
+**Decisión.**
+
+1. **Ventana propia con pywebview** (`python -m doombot ventana`), confirmando D-016: sin
+   pestaña ni barra de direcciones, con su título y su icono en la barra de tareas. WebKitGTK en
+   Linux, WebView2 en Windows. Dibujar en HTML dentro de una ventana es lo que hacen VS Code o
+   Discord; lo descartado sigue siendo abrir una pestaña del navegador.
+2. **Interfaz nueva, `ui/ventana/doom.html`**, aparte del HUD de voz (`ui/prototipo/hud.html`):
+   el HUD es solo la esfera para la voz; esto es la aplicación entera. Mismo principio que el
+   HUD: la interfaz no decide nada, recibe eventos y anima.
+3. **El planeta, en WebGL**: esfera iluminada con continentes, nubes y venas de energía de ruido
+   procedural, atmósfera y una luna. Cada **modo** es un juego de números (color de atmósfera,
+   energía) y el planeta se desliza hacia el del modo actual: reposo, pensando, `web`, `apps`,
+   `ficheros`, `terminal`, esperando permiso, respondiendo, error. La energía acelera la rotación
+   y la luna; cada evento y cada palabra de la respuesta dan un latido. Sin WebGL, una esfera 2D
+   con halo: se pierde detalle, no función.
+4. **El modo sale de la herramienta.** Cada `Herramienta` declara su `familia`, y el bucle del
+   agente avisa por `observar("herramienta", {nombre, familia})` antes de ejecutarla. La
+   consola no lo usa; la ventana sí.
+5. **Ventana y agente en el mismo proceso, por `js_api`, no por WebSocket.** D-022 eligió
+   WebSocket para conectar dos programas; aquí hay uno, y abrir un puerto para hablar consigo
+   mismo es superficie sin necesidad. Python pinta con `DOOM.evento({tipo, ...})`.
+6. **Un solo hilo para el agente.** pywebview atiende cada llamada de JavaScript en un hilo
+   distinto, y Playwright solo funciona desde el hilo que lo creó: sin hilo fijo, la segunda
+   orden que tocara el navegador propio reventaría.
+7. **Confirmaciones como botones**, con la segunda opinión (D-034) debajo, y **Parar** en el
+   sitio de Enviar mientras trabaja: el agente para entre paso y paso (`Agente.parar()`), y una
+   confirmación pendiente cuenta como "no".
+8. **Los enlaces nunca navegan dentro de la ventana**: se abren en el navegador del usuario, y
+   solo si son `http(s)`, para que un texto del modelo no pueda lanzar `file://` u otros
+   esquemas.
+
+**Verificado en el portátil Linux.** 445 tests sin hardware (9 del puente con una ventana
+falsa). La ventana real abierta con pywebview sobre WebKitGTK, con un cerebro de guion y las
+herramientas reales: encontró la Calculadora, la abrió, vio su ventana y escribió la respuesta;
+captura revisada. El flujo completo -modos, permiso con segunda opinión, respuesta palabra a
+palabra- revisado también con `doom.html#demo`.
+
+**Sin verificar.** Con un modelo real (faltan las claves). En Windows (WebView2) y empaquetada
+como ejecutable. La voz: el planeta todavía no reacciona al nivel del micrófono ni de Kokoro,
+como sí hace el HUD; es el siguiente paso natural, juntando los dos.
+
+**Ampliación, mismo día: primeros pasos.** Pedido: una pantalla antes del chat con los enlaces y
+las instrucciones de lo que necesita el agente. Sale sola si no hay ningún modelo utilizable, y
+siempre desde la cabecera. Por proveedor: pasos para sacar la clave, enlace, caja para pegarla,
+**Guardar** (`config.guardar_en_env`: sustituye la línea, conserva comentarios, rechaza saltos de
+línea para que una clave pegada con basura no cuele otra variable, y deja `.env` en `0600`) y
+**Probar** (una petición mínima). La clave no vuelve a la ventana: solo sus cuatro últimos
+caracteres. Guardar una clave también la añade a `DOOMBOT_MODELOS` y, si el agente no tenía
+cerebro elegido, pone `DOOMBOT_AGENT_BRAIN=varios`: sin eso la clave no se usaría. Los textos de
+cada proveedor viven en el catálogo (`backends/proveedores.py`), no en la ventana. Verificado:
+con las claves reales del usuario, Groq (`openai/gpt-oss-120b`) y Gemini (`gemini-3.8-flash`)
+responden -lo que confirma el nombre de modelo de Gemini, que D-034 dejó sin verificar-.
+
+---
+
+## D-036 — Aspecto propio: HUD holográfico estilo JARVIS, personalizable en color y luz
+
+**Contexto.** 13/10/2026. La primera ventana (D-035) se parecía a cualquier otra interfaz
+oscura genérica. El usuario pidió una identidad propia, "medio cyberpunk, similar a JARVIS", con
+dos referencias: un HUD azul con un núcleo de anillos concéntricos y pistas de circuito hacia
+paneles de datos, y una esfera holográfica dorada de filamentos. Y que colores y luz se puedan
+personalizar.
+
+**Decisión.**
+
+1. **Un núcleo holográfico en lugar del planeta**: disco oscuro con anillos segmentados que
+   giran a contrapelo, grupos de marcas radiales, una esfera de alambre (paralelos, meridianos y
+   170 partículas) con tres órbitas inclinadas, y un anillo brillante alrededor de una pupila
+   oscura. Cada herramienta tiene un gesto propio además del color: barrido de radar (`web`),
+   segmentos en cadena (`apps`), línea de lectura (`ficheros`), anillo de caracteres
+   (`terminal`), anillo de aviso parpadeante (permiso) y temblor (error).
+2. **Canvas 2D con mezcla aditiva y una pasada de resplandor casera** (la escena reducida a 1/4
+   y 1/8 y vuelta a ampliar en modo `lighter`), no WebGL ni `ctx.filter`: así no depende de qué
+   soporte WebKitGTK o WebView2 y el brillo es un solo número (`luz`).
+3. **Composición HUD**: paneles SISTEMA (reloj, estado, carga, modelos, segunda opinión) y
+   ACTIVIDAD (herramienta actual, pasos, permisos, lo abierto), unidos al núcleo por pistas de
+   circuito con codos a 45° por las que corren pulsos de datos al pensar y en cada evento.
+   Marcos con esquinas, rejilla y bloques de datos tenues de fondo, efecto CRT opcional. Por
+   debajo de 1120 px se quita el panel derecho; por debajo de 820, también el izquierdo.
+4. **Personalizar**: seis temas (Jarvis, Holograma, Neón, Matriz, Glaciar, Carmesí), dos colores
+   propios, brillo y resplandor, intensidad de rejilla y circuitos, velocidad, y tres
+   interruptores (color por herramienta, pulsos, CRT). Permiso y error conservan siempre ámbar y
+   rojo: son avisos, no decoración.
+5. **Las preferencias son estado local**: `data_dir()/ventana.json`, fuera del repositorio
+   (`ventana/preferencias.py`). Todo pasa por `limpiar()` -claves conocidas, colores `#rrggbb`,
+   números en su rango- porque esos valores acaban en el CSS de la ventana.
+
+**Verificado.** 463 tests (5 de preferencias). La ventana real en este Linux con eventos
+simulados: reposo, navegador con el registro, permiso, y los temas holograma y neón; capturas
+revisadas. Un fallo visto en ellas y arreglado: el cajón de ajustes usaba la clase `abierto`,
+que ya era la de las etiquetas de "lo abierto", y enmarcaba sus rótulos.
+
+**Sin verificar.** En Windows (WebView2) y el rendimiento en un equipo más lento: el núcleo se
+redibuja entero en cada fotograma.
+
+---
+
+## D-037 — Enseñar en vez de contar: el núcleo se transforma en gráficas, esquemas o dibujos
+
+**Contexto.** 13/10/2026. El usuario pidió al agente representar unos vectores y, sin forma de
+dibujar, el agente acabó escribiendo un script de matplotlib. Pedido: que si se le dice
+"represéntamelo", el núcleo cambie a una gráfica o un esquema, y no solo para matemáticas
+("dibújame un caballo"). Con una condición explícita: no cargar mucho la aplicación.
+
+**Decisión.**
+
+1. **Una herramienta, `mostrar_visual`, que solo existe donde hay pantalla.** `montar()` la añade
+   si recibe `pantalla` -la ventana se la pasa; consola y voz, no-, y el prompt gana una línea que
+   le dice al modelo cuándo usarla. Familia `visual`: el núcleo pasa al modo "representando".
+2. **Dos formas, según lo que haya que enseñar.**
+   - `grafica`: el modelo describe ejes, vectores, puntos, segmentos y funciones; la ventana los
+     dibuja con precisión (rejilla con paso "bonito", flechas, etiquetas, leyenda). El modelo da
+     coordenadas, no píxeles: los vectores quedan donde tienen que estar. Las funciones se
+     evalúan con un intérprete propio de fórmulas (`+ - * / ^`, paréntesis, `sin cos tan sqrt abs
+     exp log ln`, `pi`, `e`), nunca con `eval`.
+   - `svg`: dibujos y esquemas libres. Los modelos escriben SVG razonablemente bien, y un
+     `stroke="currentColor"` toma el color del tema.
+3. **El SVG se reconstruye desde cero con lista blanca** (`agent/visual.py`, `limpiar_svg`):
+   solo formas, texto, degradados y marcadores; fuera `script`, `foreignObject`, `image`, `a`,
+   `style`, cualquier `on*`, `href`, y `url()` que no apunte dentro del propio dibujo. Motivo: la
+   ventana tiene `js_api` hacia Python; un dibujo con código -de un modelo equivocado o de una
+   página que le coló instrucciones- podría pedir cosas al agente. Se rechaza todo `DOCTYPE`
+   antes de leer el XML, lo que corta XXE y la expansión de entidades sin añadir `defusedxml`. La
+   ventana además lo importa como XML (nunca como HTML) y vuelve a quitar lo peligroso.
+4. **Ligero, como se pidió**: ninguna librería nueva. Mientras hay un visual, el núcleo se queda
+   de fondo y deja de redibujarse. "Ampliar" usa también el sitio del registro; "Núcleo" vuelve;
+   una orden nueva devuelve el núcleo, y cada visual queda en el registro con "Ver".
+
+**Arreglos en el mismo cambio, vistos con las claves reales del usuario.**
+- *Gemini 3 rechazaba la conversación* ("missing a thought_signature"): firma su razonamiento en
+  `tool_calls[].extra_content.google.thought_signature` y exige recibirlo de vuelta. Ahora
+  `LlamadaHerramienta.extra` lo guarda y `openai_compat` lo devuelve; a las llamadas de otro
+  modelo de la cadena se les pone el valor de relleno documentado por Google,
+  `skip_thought_signature_validator`.
+- *Groq se quedaba "sin cuota" a los pocos pasos*: su límite gratuito es por minuto (~8.000
+  tokens). Si responde 429 con `Retry-After` de pocos segundos, se espera y se reintenta una vez;
+  el agente reenvía menos de lo leído (3.500 caracteres por resultado, 3 resultados enteros); y si
+  todos los modelos están sin cuota, se dice claro en vez de un volcado de errores.
+- *Gemini saturado* (503, "high demand") cuenta como pasajero, igual que un 429, y el tiempo
+  máximo de respuesta baja de 120 a 60 s: mejor el siguiente de la cadena que esperar.
+
+**Verificado.** 489 tests (filtro de SVG con scripts, manejadores, enlaces, `foreignObject`,
+`DOCTYPE`, entidades; gráficas; firma de Gemini; reintento). En la vista previa: la gráfica de
+vectores con sus etiquetas y el caballo, normal y ampliado.
+
+**Ampliación, mismo día: refinar los dibujos.** El usuario probó en real: los vectores salieron
+bien pero sin números en los ejes, y "la silueta de un caballo" fue una mancha negra.
+
+- *Gráficas*: se rotula el 0 en el origen y el nombre de cada eje; los números, más grandes y
+  menos tenues. La herramienta dice ahora "para matemáticas, SIEMPRE `grafica`, nunca un dibujo".
+- *Dibujante*: el agente ya no improvisa el SVG; describe el encargo y lo dibuja un modelo con
+  instrucciones solo de dibujo -planificar en un comentario las partes y su sitio, componer con
+  formas geométricas, nunca negro ni blanco- y un ejemplo de método (una taza; con un perro de
+  ejemplo, `gpt-oss-120b` dibujaba perros). Un SVG inválido se pide una vez más.
+- *Medido, no supuesto* (13/10/2026, "un caballo de perfil", mismas instrucciones): de los
+  modelos gratuitos de Groq, solo `qwen/qwen3.8-27b` dibujó un caballo reconocible, en 2 s;
+  `gpt-oss-120b`, un perro; `gpt-oss-20b`, peor. Gemini estaba saturado y no se pudo medir.
+  Orden por defecto del dibujante: `groq:qwen/qwen3.8-27b`, después Gemini, después el resto de
+  la cadena (`DOOMBOT_MODELO_DIBUJO` lo cambia; el dibujante no necesita estar en
+  `DOOMBOT_MODELOS`).
+- *Red de seguridad en la ventana*: los rellenos negros o blancos se recolorean al tema (el CSS
+  manda sobre los atributos del SVG), y cada dibujo se encuadra solo -se mide lo dibujado y el
+  `viewBox` se ajusta-, porque los modelos a veces dibujan descentrados o medio fuera.
+- *La cadena*: un modelo que agota el tiempo de respuesta cuenta como pasajero, como un 429, y se
+  aparta un rato.
+
+**Límite honesto.** La calidad del trazo depende del modelo: con los gratuitos, los animales y
+objetos salen reconocibles pero sencillos, y alguno sale mal. Gemini, cuando no está saturado, o
+un modelo de pago dibujarían mejor.
+
+**Cambio de rumbo, mismo día: solo gráficas y estadística.** Probados en real, los dibujos libres
+no fueron lo bastante precisos ni con el dibujante, y el usuario decidió dejar la herramienta para
+gráficas y estadística. Se quitó todo lo de dibujo -el dibujante y sus instrucciones, el filtro de
+SVG, el encuadre automático, `DOOMBOT_MODELO_DIBUJO`-, y la herramienta pasó a ser
+`mostrar_grafica` (`agent/graficas.py`):
+
+- `grafica`: lo de antes, matemáticas en ejes.
+- `estadistica`: barras (también varias series), líneas, sectores, histograma y dispersión con
+  recta de regresión. **Los cálculos se hacen en Python, no en el modelo**: total, media, mediana,
+  desviación típica, máximos y mínimos con su categoría, porcentajes, intervalos del histograma
+  (regla de Sturges si no se dicen) y regresión lineal con `r`. La herramienta se los devuelve al
+  modelo con la indicación de usarlos al explicar: los modelos fallan en la aritmética, y así no
+  la necesitan. Los datos mal formados se rechazan con el motivo -"la serie X tiene 2 valores y
+  hay 3 categorías"- para que el modelo lo corrija en el paso siguiente.
+
+Verificado: 488 tests (estadísticos exactos: histograma de 1..10 en 5 intervalos de 2, regresión de
+`y = 2x + 1` con `r = 1`); los cinco tipos pintados en la vista previa.
+
+**Ampliación: icono propio.** `python -m doombot lanzador` escribe un `.desktop` en la carpeta de
+aplicaciones del usuario -no del sistema: sin sudo, se quita borrando un fichero- que apunta al
+Python del `.venv`, y lo añade al final de los favoritos del dock de GNOME. La ventana se llama
+`doombot` para el escritorio (`GLib.set_prgname` antes de arrancar GTK; antes era un
+`__main__.py` genérico) y el `.desktop` lo declara en `StartupWMClass`: así el dock asocia la
+ventana a su icono. El icono (`ui/ventana/doom.svg`) es el núcleo del HUD. Verificado: el
+`.desktop` pasa `desktop-file-validate` y la ventana abierta desde él tiene `WM_CLASS` `doombot`.
+Pendiente: el equivalente en Windows (acceso en el menú Inicio).
+
+---
+
+## D-038 — Skills como modos de conversación que aprenden, y conversaciones por carpetas
+
+**Contexto.** 13/10/2026. Pedido del usuario: "agentes profesionales con distintas utilidades"
+-diseño, conversación e investigación en internet, programación, ciencias- que sean las propias
+skills de D.O.O.M y funcionen como modos de conversación, pero que a la vez realimenten a la IA;
+poder elegir uno según la tarea o usar una versión global de todo. Y un historial de
+conversaciones por temas o carpetas, como Claude Code.
+
+**Decisión.**
+
+1. **Skills en el estándar de D-014, por fin.** Una carpeta por skill con su `SKILL.md`
+   (agentskills.io): `name`, `description` e instrucciones; lo propio de D.O.O.M en `metadata`
+   (`titulo`, `color`, `modelos` preferidos) y en `allowed-tools`. Viven en `skills/` del
+   repositorio y, las personales, en `data_dir()/skills` (una personal sustituye a la del mismo
+   nombre). Cuatro de serie: `diseno`, `investigacion`, `programacion`, `ciencias`. Añadir una es
+   añadir una carpeta, sin código.
+2. **Un modo reconfigura el agente, no crea otro** (`agent/skills.py`, `Modos.aplicar`): sus
+   instrucciones (las de la skill más lo aprendido), sus herramientas (las de `allowed-tools`) y el
+   orden de los modelos (los preferidos delante, montándolos aparte si no estaban en la cadena).
+   El parser del frontmatter es propio y mínimo: no se añade PyYAML para leer `clave: valor`.
+3. **El modo global lo tiene todo** y ve el catálogo de skills (nombre y descripción: la
+   "divulgación progresiva" del estándar, unos 20 tokens por skill), con `consultar_skill` para
+   pedirle una respuesta a un experto con sus instrucciones y sus modelos.
+4. **Realimentación: `aprender`.** En cualquier modo, el agente apunta una preferencia o corrección
+   del usuario en el ámbito del modo (`data_dir()/aprendizajes/<modo>.md`, texto legible). Cada
+   modo lee lo suyo y lo global; el modo global lee un resumen de todos -lo que enseñas a
+   Programación lo sabe también la IA general-, pero un modo no ve lo de los demás. **Apuntar se
+   confirma** con un clic: lo apuntado entra en el prompt de todas las conversaciones futuras, y
+   una página con instrucciones ocultas podría intentar que el agente "aprendiera" algo suyo.
+   Desde el selector de modo se ve lo aprendido y se puede olvidar nota a nota.
+5. **`calcular`**, en todos los modos: aritmética de verdad con `math`, analizada con `ast` y una
+   lista blanca (números, operadores, unas constantes y funciones), nunca `eval`, con topes para
+   que una potencia o un factorial enormes no cuelguen el proceso. El modo Ciencias obliga a usarla.
+6. **Historial por carpetas** (`ventana/historial.py`): un JSON por conversación en
+   `data_dir()/conversaciones` -estado privado, fuera del repositorio-, con lo que se ve en el
+   registro (para volver a pintarlo) y el estado del agente (para retomarla, no solo releerla),
+   incluida la firma de Gemini de cada llamada. Carpetas que existen aunque estén vacías.
+   Crear, renombrar, mover y borrar conversaciones y carpetas desde la ventana; borrar una carpeta
+   no borra sus conversaciones. Los identificadores que llegan de la ventana se validan contra un
+   patrón antes de ser nombre de fichero.
+
+**En la ventana**: pestañas *Conversaciones* / *Sistema* a la izquierda, con el árbol de carpetas;
+selector de modo junto a la línea de órdenes, con el color de cada skill; una conversación se
+crea al primer mensaje, se guarda al acabar cada orden y se reproduce sin animaciones al abrirla.
+
+**Un error propio, visto y cerrado.** Los primeros tests del puente guardaron conversaciones de
+prueba en la carpeta de datos real del usuario. Se borraron, y `tests/conftest.py` dirige ahora
+`DOOMBOT_DATA_DIR` a una carpeta temporal en todos los tests: ninguno puede volver a escribir en
+los datos de quien los ejecuta.
+
+**Verificado.** 529 tests (skills reales y de prueba, modos, lo aprendido, calculadora con
+intentos de ejecutar código, historial con identificadores maliciosos, puente creando, guardando y
+retomando conversaciones). La ventana, en la vista previa con datos simulados: árbol, selector de
+modo con lo aprendido, conversación reabierta. **Sin verificar**: con modelos reales eligiendo
+herramientas en cada modo.
+
+**Ampliación de D-034, 13/10/2026 (tarde): más modelos con las mismas claves.** Cada modelo tiene
+su propia cuota gratuita, así que varios del mismo proveedor multiplican la capacidad sin cuentas
+nuevas. Probados con una herramienta, con las claves del usuario: funcionan `groq:qwen/qwen3.8-27b`,
+`groq:openai/gpt-oss-20b` y `gemini:gemini-3.5-flash-lite` (menos de 1 s); Gemini 3.5/3.6/3.7/3.8
+Flash, saturados ese día; Gemini 2.5, 404 para esta cuenta; `gemma-4-31b-it`, sin respuesta. La
+cadena por defecto pasa a cinco modelos, los saturados detrás. Y un modelo que sigue fallando se
+aparta cada vez más tiempo (1, 2, 4… hasta 15 min), volviendo a cero al primer acierto: con un
+minuto fijo, un Gemini saturado durante horas costaba una espera en cada orden.
+

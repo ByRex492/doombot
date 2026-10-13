@@ -83,7 +83,9 @@ def capabilities() -> list[Capability]:
         ),
         Capability(
             "hablar",
-            _tiene_contenido("tts"),
+            # tts/ ya no importa Kokoro al cargarse (ver su __init__), asi que
+            # exponer algo publico no prueba nada: hay que mirar el motor.
+            _tiene_contenido("tts") and find_spec("kokoro_onnx") is not None,
             "responder en voz alta, no solo por pantalla",
             "no tienes voz: respondes escribiendo",
         ),
@@ -91,7 +93,9 @@ def capabilities() -> list[Capability]:
             "actuar",
             _tiene_contenido("actions"),
             "delegar tareas de codigo reales -editar ficheros, ejecutar comandos- "
-            "en el agente de acciones, y disparar workflows de n8n ya dados de alta",
+            "en el agente de acciones, disparar workflows de n8n ya dados de alta, y, "
+            "con la orden 'agente', abrir aplicaciones, manejar un navegador y tocar "
+            "ficheros del equipo",
             "no puedes abrir programas, ni tocar ficheros, ni manejar el equipo",
         ),
         Capability(

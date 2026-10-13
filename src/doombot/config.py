@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from doombot.paths import ENV_FILE
+from doombot.paths import ENV_EXAMPLE, ENV_FILE
 
 
 def load_env(fichero: Path | None = None, *, override: bool = False) -> dict[str, str]:
@@ -41,6 +41,46 @@ def load_env(fichero: Path | None = None, *, override: bool = False) -> dict[str
         if override or clave not in os.environ:
             os.environ[clave] = valor
     return leidas
+
+
+def guardar_en_env(clave: str, valor: str, fichero: Path | None = None) -> Path:
+    """Escribe ``clave=valor`` en .env, sustituyendo la linea si ya estaba.
+
+    La usa la pantalla de primeros pasos para guardar una clave de API sin
+    que el usuario tenga que abrir el fichero. Conserva el resto tal cual
+    -comentarios incluidos-; si no hay .env, parte de .env.example. El valor
+    se rechaza si lleva saltos de linea: una clave pegada con basura detras
+    no debe poder colar otra variable en el fichero.
+
+    Tambien lo pone en ``os.environ`` y vacia la cache de ``settings()``:
+    quien guarda una clave quiere usarla ya.
+    """
+    if "\n" in valor or "\r" in valor or "=" in clave or not clave.strip():
+        raise ValueError("Valor no valido para .env.")
+    ruta = fichero or ENV_FILE
+    if ruta.is_file():
+        lineas = ruta.read_text(encoding="utf-8").splitlines()
+    elif ENV_EXAMPLE.is_file() and fichero is None:
+        lineas = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+    else:
+        lineas = []
+
+    nueva = f"{clave}={valor}"
+    for i, linea in enumerate(lineas):
+        if linea.strip().startswith(f"{clave}="):
+            lineas[i] = nueva
+            break
+    else:
+        lineas.append(nueva)
+
+    ruta.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    # Lleva claves: solo lo lee su dueño. En Windows chmod no hace nada util,
+    # y el perfil de usuario ya esta protegido por el sistema.
+    if os.name == "posix":
+        ruta.chmod(0o600)
+    os.environ[clave] = valor
+    settings.cache_clear()
+    return ruta
 
 
 @dataclass(frozen=True)
@@ -75,6 +115,32 @@ class Settings:
     """
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5"
+
+    agent_brain: str = ""
+    """Quien decide en el agente local (D-033): ``ollama`` o ``anthropic``.
+
+    Vacio = el mismo que ``llm_backend``. Va aparte porque elegir herramientas
+    pide mas modelo que conversar: con 3B se acerto 6 de 9 y dos fallos eran
+    acciones no pedidas (capa4-investigacion.md). Se puede charlar con Ollama
+    y dejar que actue Claude, o al reves.
+    """
+    agent_model: str = ""
+    """Modelo de Ollama para el agente, si no es el del perfil. Vacio = el del perfil."""
+
+    modelos: tuple[str, ...] = ()
+    """Varios modelos, en orden de preferencia: ``proveedor:modelo`` (D-034).
+
+    Los usa el backend ``varios``: se prueba el primero y, si falla o se queda
+    sin cuota gratuita, el siguiente. Y el consejo (``contrasta``) les pregunta
+    a todos lo mismo para comparar.
+    """
+    claves: tuple[tuple[str, str], ...] = ()
+    """Clave de cada proveedor, de ``DOOMBOT_<PROVEEDOR>_API_KEY``. Pares, no dict: frozen."""
+    agent_revisor: bool = True
+    """Antes de una accion irreversible, otro modelo da una segunda opinion (D-034)."""
+
+    def clave(self, proveedor: str) -> str:
+        return dict(self.claves).get(proveedor.lower(), "")
 
     n8n_base_url: str = ""
     """Raiz del servidor de n8n, ej. ``http://127.0.0.1:5678``. Vacio = sin n8n."""
@@ -116,6 +182,19 @@ def _parse_n8n_workflows(raw: str) -> tuple[tuple[str, str], ...]:
     return tuple(pares)
 
 
+def _claves_de_proveedores() -> tuple[tuple[str, str], ...]:
+    """Toda ``DOOMBOT_<X>_API_KEY`` con valor, como ``(x, clave)``.
+
+    Se leen todas las que haya en vez de una lista fija de proveedores: el
+    catalogo vive en ``backends/proveedores.py``, y esta capa no lo importa.
+    """
+    pares = []
+    for nombre, valor in os.environ.items():
+        if nombre.startswith("DOOMBOT_") and nombre.endswith("_API_KEY") and valor.strip():
+            pares.append((nombre[len("DOOMBOT_") : -len("_API_KEY")].lower(), valor.strip()))
+    return tuple(sorted(pares))
+
+
 @lru_cache(maxsize=1)
 def settings() -> Settings:
     load_env()
@@ -130,6 +209,14 @@ def settings() -> Settings:
         llm_backend=os.environ.get("DOOMBOT_LLM_BACKEND", "ollama").strip().lower(),
         anthropic_api_key=os.environ.get("DOOMBOT_ANTHROPIC_API_KEY", "").strip(),
         anthropic_model=os.environ.get("DOOMBOT_ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
+        agent_brain=os.environ.get("DOOMBOT_AGENT_BRAIN", "").strip().lower(),
+        agent_model=os.environ.get("DOOMBOT_AGENT_MODEL", "").strip(),
+        modelos=tuple(
+            m.strip() for m in os.environ.get("DOOMBOT_MODELOS", "").split(",") if m.strip()
+        ),
+        claves=_claves_de_proveedores(),
+        agent_revisor=os.environ.get("DOOMBOT_AGENT_REVISOR", "si").strip().lower()
+        not in ("no", "0", "false", "off"),
         n8n_base_url=os.environ.get("DOOMBOT_N8N_BASE_URL", "").strip().rstrip("/"),
         n8n_workflows=_parse_n8n_workflows(os.environ.get("DOOMBOT_N8N_WORKFLOWS", "").strip()),
     )

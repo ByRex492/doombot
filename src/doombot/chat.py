@@ -147,6 +147,18 @@ def _generador(perfil: Profile, cfg: Settings) -> TextGenerator:
     """
     if cfg.llm_backend == "anthropic":
         return AnthropicGenerator.from_config(cfg)
+    if cfg.llm_backend == "varios":
+        # D-034: los modelos de DOOMBOT_MODELOS en fila; si uno falla, el
+        # siguiente. Los que no tienen clave se avisan y se saltan.
+        from doombot.backends.proveedores import construir_todos
+        from doombot.backends.varios import Cadena
+
+        generadores, avisos = construir_todos(cfg)
+        for aviso in avisos:
+            print(f"  (sin usar: {aviso})", file=sys.stderr)
+        if generadores:
+            return Cadena(generadores)
+        print("  (ningun modelo de DOOMBOT_MODELOS disponible: uso Ollama)", file=sys.stderr)
     return OllamaGenerator.from_profile(perfil, cfg)
 
 

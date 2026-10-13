@@ -166,8 +166,9 @@ def test_micro_por_fragmento(monkeypatch):
             InputDevice(65, "Microfono de los auriculares (A50 Mic)", "WDM-KS", 1),
         ],
     )
-    assert Microphone("a50").device == 65
-    assert Microphone("oculus").device == 1
+    # opener presente: _capta_algo() no sondea el hardware de esta maquina.
+    assert Microphone("a50", opener=lambda **kw: None).device == 65
+    assert Microphone("oculus", opener=lambda **kw: None).device == 1
 
 
 def test_un_nombre_que_no_existe_dice_cuales_hay(monkeypatch):

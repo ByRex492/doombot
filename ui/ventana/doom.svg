@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Icono de D.O.O.M: el nucleo holografico del HUD (D-036), en pequeño. -->
+  <defs>
+    <radialGradient id="fondo" cx="50%" cy="45%" r="65%">
+      <stop offset="0" stop-color="#0b2433"/>
+      <stop offset="1" stop-color="#020409"/>
+    </radialGradient>
+    <radialGradient id="pupila" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#000000"/>
+      <stop offset="0.7" stop-color="#062430"/>
+      <stop offset="1" stop-color="#0d5a73"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0.55" stop-color="#29d3ff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#29d3ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#fondo)" stroke="#1a4a5e" stroke-width="3"/>
+  <g fill="none" stroke="#29d3ff" stroke-linecap="butt">
+    <circle cx="128" cy="128" r="96" stroke-opacity="0.45" stroke-width="2"/>
+    <circle cx="128" cy="128" r="88" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="3 7"/>
+    <!-- arcos segmentados -->
+    <path d="M128 46 A82 82 0 0 1 199 87" stroke-width="7"/>
+    <path d="M206 104 A82 82 0 0 1 192 179" stroke-width="7"/>
+    <path d="M176 194 A82 82 0 0 1 96 204" stroke-width="7"/>
+    <path d="M80 196 A82 82 0 0 1 48 120" stroke-width="7"/>
+    <path d="M52 100 A82 82 0 0 1 108 48" stroke-width="7"/>
+    <!-- marcas -->
+    <g stroke="#8ff3ff" stroke-width="2.5" stroke-opacity="0.85">
+      <path d="M128 62 V70 M140 63 L139 71 M152 65 L150 73 M116 63 L117 71 M104 65 L106 73"/>
+      <path d="M186 158 L179 154 M180 168 L173 163 M191 147 L183 144"/>
+      <path d="M70 158 L77 154 M76 168 L83 163 M65 147 L73 144"/>
+    </g>
+  </g>
+  <circle cx="128" cy="128" r="64" fill="url(#halo)"/>
+  <circle cx="128" cy="128" r="46" fill="none" stroke="#29d3ff" stroke-width="13"/>
+  <circle cx="128" cy="128" r="46" fill="none" stroke="#c9f8ff" stroke-width="4"/>
+  <circle cx="128" cy="128" r="39" fill="url(#pupila)"/>
+  <circle cx="128" cy="128" r="22" fill="none" stroke="#29d3ff" stroke-opacity="0.5" stroke-width="1.5"/>
+</svg>

@@ -18,18 +18,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 from kokoro_onnx import Kokoro
 
+from doombot.tts.download import MODELO_ONNX, VOCES_BIN
 from doombot.tts.dsp import recorte_graves, reverberacion_sala_pequena
 
 if TYPE_CHECKING:
     from doombot.backends.base import Audio
-
-# Fichero de modelo elegido tras medir en esta maquina (ver D-021): fp32, no
-# las variantes cuantizadas. fp16 e int8 pesan menos en disco pero en CPU van
-# MAS LENTAS que fp32 -el hardware no acelera fp16 de forma nativa, y el int8
-# cae en kernels de referencia sin optimizar-, asi que aqui "mas pequeno" no
-# significa "mas rapido". Contraintuitivo, y por eso queda medido y no supuesto.
-MODELO_ONNX = "kokoro-v1.0.onnx"
-VOCES_BIN = "voices-v1.0.bin"
 
 # Un idioma, una voz por defecto. El espanol solo tiene tres voces en el
 # catalogo de Kokoro (bastantes menos que el ingles, D-005 lo daba por

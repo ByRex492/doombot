@@ -1,0 +1,1904 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D.O.O.M</title>
+<!--
+  La ventana de D.O.O.M (D-035, aspecto en D-036). Se abre en su propia ventana
+  de escritorio (pywebview), nunca en una pestaña del navegador.
+
+  Estilo HUD: un nucleo holografico en el centro -anillos segmentados, marcas,
+  una esfera de alambre con particulas- unido por circuitos a dos paneles de
+  datos (SISTEMA a la izquierda, ACTIVIDAD a la derecha), y debajo el registro
+  de la conversacion y la linea de ordenes. Colores, luz, fondo y velocidad se
+  eligen en PERSONALIZAR y se guardan en data_dir()/ventana.json.
+
+  Contrato con Python (src/doombot/ventana/puente.py):
+    JS -> Py   iniciar() / enviar(t) / responder(id, si) / parar() / nuevo()
+               abrir_enlace(url) / configuracion() / guardar_clave(p, c, m)
+               probar_clave(p) / preferencias() / guardar_preferencias(d)
+    Py -> JS   DOOM.evento({tipo, ...}) — ver DOOM.evento.
+
+  Sin pywebview, con #demo en la URL se simula una orden: sirve para disenar.
+-->
+<style>
+  :root {
+    /* Los colores del tema los pone JS (aplicarTema): aqui solo el arranque. */
+    --c1: #29d3ff; --c1-06: rgba(41,211,255,.06); --c1-10: rgba(41,211,255,.10);
+    --c1-20: rgba(41,211,255,.20); --c1-40: rgba(41,211,255,.40); --c1-60: rgba(41,211,255,.60);
+    --c2: #8ff3ff; --c2-40: rgba(143,243,255,.40);
+    --modo: #29d3ff;
+    --luz: 1; --fondo: .6;
+    --negro: #020409;
+    --panel-bg: linear-gradient(180deg, rgba(4,12,20,.86), rgba(2,6,12,.82));
+    --texto: #d6ecf4; --tenue: #7d96a5; --muy-tenue: #46596a;
+    --ok: #3dffa0; --mal: #ff4d5e; --aviso: #ffab2e;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, "Noto Sans", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--negro); color: var(--texto);
+    font: 14px/1.55 var(--sans);
+    display: grid; grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+  #fondo { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  body.crt::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
+  }
+  body > header, main.hud { position: relative; z-index: 1; }
+
+  /* -- piezas HUD comunes ------------------------------------------------------ */
+  .etq { font: 600 10px/1 var(--mono); letter-spacing: .26em; text-transform: uppercase; color: var(--c1);
+         text-shadow: 0 0 calc(8px * var(--luz)) var(--c1-60); }
+  .codigo { font: 10px/1 var(--mono); letter-spacing: .14em; color: var(--muy-tenue); }
+  .marco {
+    position: relative; min-height: 0;
+    background: var(--panel-bg);
+    border: 1px solid var(--c1-20);
+    box-shadow: 0 0 calc(22px * var(--luz)) var(--c1-06), inset 0 0 calc(30px * var(--luz)) var(--c1-06);
+  }
+  .marco::before, .marco::after {
+    content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
+    border: 2px solid var(--c1); filter: drop-shadow(0 0 calc(4px * var(--luz)) var(--c1));
+  }
+  .marco::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+  .marco::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+  .marco > .cab-marco {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px 6px;
+    border-bottom: 1px solid var(--c1-10);
+  }
+  .cab-marco .barra { flex: 1; height: 1px; background: linear-gradient(90deg, var(--c1-40), transparent); }
+  button {
+    font: 600 10.5px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase;
+    color: var(--c1); background: rgba(0,0,0,.35);
+    border: 1px solid var(--c1-40); padding: 8px 12px; cursor: pointer;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    transition: background .15s, box-shadow .15s, color .15s;
+  }
+  button:hover:not(:disabled) { background: var(--c1-10); color: #fff; box-shadow: 0 0 calc(12px * var(--luz)) var(--c1-40); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--c1); outline-offset: 2px; }
+
+  /* -- cabecera ------------------------------------------------------------------ */
+  body > header {
+    display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+    border-bottom: 1px solid var(--c1-20);
+    background: linear-gradient(180deg, rgba(3,10,18,.92), rgba(2,4,9,.6));
+  }
+  .logo { display: flex; flex-direction: column; gap: 4px; }
+  .logo b { font: 700 15px/1 var(--mono); letter-spacing: .55em; color: #eafaff;
+            text-shadow: 0 0 calc(10px * var(--luz)) var(--c1-60); }
+  .cab-linea { flex: 1; height: 1px; background: linear-gradient(90deg, var(--c1-40), var(--c1-06) 60%, transparent); }
+  .cab-botones { display: flex; gap: 8px; }
+
+  /* -- la rejilla principal --------------------------------------------------------- */
+  main.hud {
+    min-height: 0; display: grid; column-gap: 18px; row-gap: 14px; padding: 14px 16px 14px;
+    grid-template-columns: 250px minmax(0, 1fr) 220px;
+    grid-template-rows: minmax(220px, 44%) minmax(0, 1fr) auto;
+  }
+  #circuitos { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  main.hud > *:not(#circuitos) { position: relative; z-index: 1; }
+  #panel-izq { grid-column: 1; grid-row: 1 / 4; }
+  #zona-nucleo { grid-column: 2; grid-row: 1; min-height: 0; }
+  #marco-registro { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; }
+  .entrada { grid-column: 2; grid-row: 3; }
+  #pasos { grid-column: 2; grid-row: 2 / 4; }
+  #panel-der { grid-column: 3; grid-row: 1 / 4; }
+  #pasos[hidden], #marco-registro[hidden], .entrada[hidden] { display: none; }
+  .solo-estrecho { display: none; }
+  @media (max-width: 1120px) {
+    main.hud { grid-template-columns: 240px minmax(0, 1fr) 0; column-gap: 14px; }
+    #panel-der { display: none; }
+  }
+  @media (max-width: 820px) {
+    main.hud { grid-template-columns: 0 minmax(0, 1fr) 0; column-gap: 0; }
+    #panel-izq { display: none; }
+    .solo-estrecho { display: flex; }
+  }
+
+  /* -- el nucleo -------------------------------------------------------------------- */
+  #nucleo { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #rotulo {
+    position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 10px; white-space: nowrap;
+    font: 600 10.5px/1 var(--mono); letter-spacing: .3em; text-transform: uppercase; color: var(--modo);
+    text-shadow: 0 0 calc(10px * var(--luz)) var(--modo);
+    padding: 6px 14px; background: rgba(2,6,12,.8); border: 1px solid var(--c1-20);
+  }
+  #rotulo::before, #rotulo::after { content: "◢"; font-size: 8px; color: var(--c1-60); }
+  #rotulo::after { content: "◣"; }
+
+  /* -- visuales: lo que sustituye al nucleo (D-037) ----------------------------------- */
+  #visual { position: absolute; inset: 0 0 34px 0; display: flex; flex-direction: column; z-index: 2; }
+  #visual[hidden] { display: none; }
+  #visual .cab-marco button { padding: 5px 9px; font-size: 9.5px; }
+  #lienzo-visual { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px 12px; color: var(--c1); }
+  #lienzo-visual svg { width: 100%; height: 100%; filter: drop-shadow(0 0 calc(3px * var(--luz)) var(--c1-60)); }
+  #visual.entrando #lienzo-visual { animation: revelar .9s ease-out; }
+  @keyframes revelar { from { clip-path: inset(0 0 100% 0); opacity: .3; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+  #zona-nucleo #nucleo { transition: opacity .5s; }
+  #zona-nucleo.con-visual #nucleo { opacity: .14; }
+  /* main.hud > *:not(#circuitos) pesa como un id: hace falta otro tanto para ganarle. */
+  main.hud > #zona-nucleo.amplio { grid-row: 1 / 3; z-index: 3; }
+  #zona-nucleo.amplio #visual { background: rgba(2, 6, 12, .97); }
+  .ver-visual { padding: 3px 8px; margin-left: 8px; font-size: 9px; }
+
+  /* -- conversaciones y modos (D-038) ------------------------------------------------- */
+  .cab-marco.pestanas { padding: 0; gap: 0; }
+  .pestana { flex: 1; clip-path: none; border: 0; border-bottom: 2px solid transparent; background: transparent;
+             padding: 10px 6px 8px; color: var(--muy-tenue); }
+  .pestana.activa { color: var(--c1); border-bottom-color: var(--c1); text-shadow: 0 0 calc(8px * var(--luz)) var(--c1-60); }
+  .pestana:hover:not(.activa) { background: var(--c1-06); box-shadow: none; }
+  #vista-conv[hidden], #vista-sys[hidden] { display: none; }
+  .barra-conv { display: flex; gap: 6px; margin-bottom: 10px; }
+  .barra-conv button { flex: 1; padding: 7px 4px; font-size: 9px; letter-spacing: .08em; white-space: nowrap; }
+  .carpeta-cab { display: flex; align-items: center; gap: 6px; padding: 6px 4px 4px; font: 600 10px/1.2 var(--mono);
+                 letter-spacing: .12em; text-transform: uppercase; color: var(--tenue); cursor: pointer; user-select: none; }
+  .carpeta-cab:hover { color: var(--c1); }
+  .carpeta-cab .flecha { width: 10px; flex: none; }
+  .carpeta-cab .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .carpeta-cab .num { color: var(--muy-tenue); flex: none; }
+  .acc { margin-left: auto; padding: 2px 7px; font-size: 12px; letter-spacing: 0; clip-path: none; border-color: transparent;
+         background: transparent; opacity: 0; flex: none; }
+  .carpeta-cab:hover .acc, .conv:hover .acc, .conv.actual .acc, .acc:focus-visible { opacity: 1; }
+  .conv { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 16px; border: 1px solid transparent; cursor: pointer;
+          font: 12.5px/1.3 var(--sans); color: var(--texto); }
+  .conv:hover { background: var(--c1-06); border-color: var(--c1-10); }
+  .conv.actual { background: var(--c1-10); border-color: var(--c1-40); }
+  .conv:focus-visible { outline: 2px solid var(--c1); outline-offset: 1px; }
+  .conv .punto { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .conv .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv .f { font: 9.5px/1 var(--mono); color: var(--muy-tenue); flex: none; }
+  .vacio { color: var(--muy-tenue); font-size: 11.5px; padding: 3px 16px 6px; font-style: italic; }
+  .nombre-en-linea { width: 100%; background: rgba(0,0,0,.6); color: var(--texto); border: 1px solid var(--c1-40);
+                     padding: 4px 6px; font: 12.5px/1.2 var(--sans); letter-spacing: 0; text-transform: none; }
+  .menu { position: fixed; z-index: 70; min-width: 190px; max-width: 300px; max-height: 70vh; overflow-y: auto;
+          background: rgba(3,9,16,.97); border: 1px solid var(--c1-40); box-shadow: 0 0 calc(16px * var(--luz)) var(--c1-20);
+          padding: 4px; display: flex; flex-direction: column; }
+  .menu button { clip-path: none; border: 0; text-align: left; padding: 8px 10px; font: 12.5px/1.25 var(--sans);
+                 letter-spacing: 0; text-transform: none; color: var(--texto); background: transparent; }
+  .menu button:hover { background: var(--c1-10); color: #fff; box-shadow: none; }
+  .menu button.peligro { color: var(--mal); }
+  .menu .titulo-menu { font: 600 9.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muy-tenue); padding: 9px 10px 5px; }
+  .menu .modo-op { display: grid; grid-template-columns: 10px 1fr; column-gap: 9px; align-items: baseline; }
+  .menu .modo-op .p { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+  .menu .modo-op .d { grid-column: 2; font-size: 11px; color: var(--tenue); margin-top: 2px; }
+  .menu .modo-op.actual { background: var(--c1-10); }
+  .menu .nota { display: flex; gap: 6px; align-items: flex-start; padding: 3px 10px; font-size: 11.5px; color: var(--tenue); }
+  .menu .nota span { flex: 1; }
+  .menu .nota button { padding: 0 5px; color: var(--mal); flex: none; }
+  .menu .sin-notas { padding: 3px 10px 8px; font-size: 11.5px; color: var(--muy-tenue); font-style: italic; }
+  .modo-boton { height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; white-space: nowrap;
+                color: var(--skill, var(--c1)); border-color: var(--skill, var(--c1-40)); }
+  .punto-modo { width: 8px; height: 8px; border-radius: 50%; background: var(--skill, var(--c1));
+                box-shadow: 0 0 calc(8px * var(--luz)) var(--skill, var(--c1)); }
+
+  /* -- paneles laterales -------------------------------------------------------------- */
+  .lateral { display: flex; flex-direction: column; overflow: hidden; }
+  .lateral .cuerpo-panel { padding: 10px 12px 14px; overflow-y: auto; min-height: 0; flex: 1; }
+  .dato { margin: 12px 0 0; }
+  .dato:first-child { margin-top: 2px; }
+  .dato .valor { font: 13px/1.4 var(--mono); color: var(--texto); margin-top: 5px; overflow-wrap: anywhere; }
+  .dato .valor.grande { font: 700 15px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+                        color: var(--modo); text-shadow: 0 0 calc(10px * var(--luz)) var(--modo); }
+  .lista-mini { list-style: none; margin: 6px 0 0; padding: 0; }
+  .lista-mini li { font: 11.5px/1.45 var(--mono); color: var(--tenue); padding: 3px 0 3px 12px; position: relative;
+                   border-bottom: 1px dashed var(--c1-10); overflow-wrap: anywhere; }
+  .lista-mini li::before { content: ""; position: absolute; left: 0; top: 9px; width: 5px; height: 5px; background: var(--c1);
+                           box-shadow: 0 0 calc(6px * var(--luz)) var(--c1); }
+  .lista-mini li.apagado::before { background: var(--muy-tenue); box-shadow: none; }
+  .barras { display: flex; gap: 3px; align-items: flex-end; height: 34px; margin-top: 6px; }
+  .barras i { flex: 1; background: var(--c1-40); box-shadow: 0 0 calc(6px * var(--luz)) var(--c1-20); transition: height .25s; }
+  .reloj { font: 700 22px/1 var(--mono); letter-spacing: .12em; color: var(--c2);
+           text-shadow: 0 0 calc(12px * var(--luz)) var(--c2-40); }
+
+  /* -- el registro -------------------------------------------------------------------- */
+  #registro { overflow-y: auto; min-height: 0; flex: 1; padding: 6px 16px 16px; scroll-behavior: smooth; }
+  .tu { margin-top: 16px; padding: 9px 12px; border-left: 2px solid var(--c2); background: linear-gradient(90deg, var(--c1-06), transparent);
+        white-space: pre-wrap; word-wrap: break-word; }
+  .tu::before { content: "TÚ ›  "; font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--c2); }
+  .linea { display: flex; gap: 10px; align-items: baseline; padding: 3px 0 3px 4px; font-size: 13.5px; }
+  .linea .marca-l { flex: none; width: 14px; text-align: center; font-family: var(--mono); color: var(--muy-tenue); }
+  .linea .cuerpo { min-width: 0; overflow-wrap: anywhere; }
+  .piensa .cuerpo { color: #a9c2cf; font-style: italic; }
+  .piensa .marca-l { color: var(--c2); }
+  .accion .marca-l { color: var(--c, var(--c1)); text-shadow: 0 0 calc(6px * var(--luz)) var(--c, var(--c1)); }
+  .chip { font: 600 9.5px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--c, var(--c1));
+          border: 1px solid currentColor; padding: 2px 5px; margin-right: 8px; vertical-align: 1px; }
+  .resultado { padding-left: 28px; }
+  .resultado .cuerpo { color: var(--tenue); font: 12px/1.5 var(--mono); }
+  .resultado .marca-l { color: var(--ok); }
+  .fallo-l .cuerpo { color: #ffb0b8; }
+  .fallo-l .marca-l { color: var(--mal); }
+  .pensando-l .cuerpo { color: var(--tenue); font: 12px/1.5 var(--mono); letter-spacing: .06em; }
+  .pensando-l .marca-l::after { content: "◐"; display: inline-block; animation: giro 1s linear infinite; color: var(--c2); }
+  @keyframes giro { to { transform: rotate(360deg); } }
+  .respuesta { margin-top: 10px; padding: 11px 14px; border-left: 2px solid var(--c1);
+               background: linear-gradient(90deg, var(--c1-10), transparent 85%);
+               box-shadow: -6px 0 calc(16px * var(--luz)) -8px var(--c1);
+               white-space: pre-wrap; word-wrap: break-word; font-size: 14.5px; }
+  .respuesta::before { content: "D.O.O.M ›  "; font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--c1); }
+  .respuesta a, .resultado a { color: var(--c2); }
+  .abierto { margin: 6px 0 0 16px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .abierto span { font: 10.5px/1 var(--mono); color: var(--tenue); border: 1px dashed var(--c1-20); padding: 4px 7px; }
+  .fallo { margin-top: 10px; padding: 10px 14px; border: 1px solid rgba(255,77,94,.4); background: rgba(40,6,12,.6);
+           color: #ffc0c6; white-space: pre-wrap; font: 12.5px/1.5 var(--mono); }
+  .sistema { margin-top: 12px; padding: 9px 12px; border: 1px solid var(--c1-10); color: var(--tenue); font-size: 13px; }
+  .permiso { margin: 10px 0 6px 16px; padding: 12px 14px; border: 1px solid rgba(255,171,46,.45);
+             background: rgba(36,22,4,.65); box-shadow: 0 0 calc(18px * var(--luz)) rgba(255,171,46,.12); }
+  .permiso .pregunta { color: #ffe2b8; }
+  .permiso .pregunta::before { content: "⚠ AUTORIZACIÓN  "; font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--aviso); }
+  .permiso .opinion { margin-top: 8px; font-size: 12.5px; color: var(--tenue); }
+  .permiso .opinion b { font: 600 10px/1 var(--mono); letter-spacing: .14em; margin-right: 6px; }
+  .permiso .opinion.bien b { color: var(--ok); } .permiso .opinion.ojo b { color: var(--aviso); }
+  .permiso .botones { margin-top: 10px; display: flex; gap: 8px; }
+  .permiso button.si { color: var(--ok); border-color: rgba(61,255,160,.5); }
+  .permiso button.no { color: var(--mal); border-color: rgba(255,77,94,.5); }
+  .permiso .hecho { margin-top: 8px; font: 11px/1 var(--mono); color: var(--tenue); }
+
+  /* -- la linea de ordenes ------------------------------------------------------------ */
+  .entrada .fila-orden { display: flex; gap: 10px; align-items: flex-end; padding: 10px 12px; }
+  .entrada .prompt { font: 700 16px/42px var(--mono); color: var(--c1); text-shadow: 0 0 calc(10px * var(--luz)) var(--c1); }
+  textarea {
+    flex: 1; resize: none; min-height: 42px; max-height: 160px; overflow-y: hidden;
+    background: rgba(0,0,0,.45); color: var(--texto); border: 1px solid var(--c1-20);
+    padding: 11px 12px; font: 14px/1.4 var(--mono);
+  }
+  textarea::placeholder { color: var(--muy-tenue); }
+  #enviar { height: 42px; padding: 0 18px; }
+  #enviar.parar { color: var(--mal); border-color: rgba(255,77,94,.6); }
+  .pie-estrecho { padding: 0 12px 8px; gap: 12px; font: 10.5px/1.4 var(--mono); color: var(--muy-tenue); }
+
+  /* -- primeros pasos -------------------------------------------------------------------- */
+  #pasos { display: flex; flex-direction: column; }
+  #pasos .pasos-dentro { overflow-y: auto; padding: 4px 18px 24px; min-height: 0; flex: 1; }
+  .pasos-dentro h1 { font: 700 15px/1.3 var(--mono); letter-spacing: .3em; text-transform: uppercase; margin: 10px 0 6px;
+                     color: var(--c1); text-shadow: 0 0 calc(10px * var(--luz)) var(--c1-60); }
+  .pasos-dentro .intro { color: var(--tenue); margin: 0 0 10px; }
+  .pasos-dentro .motivo { font: 12px/1.5 var(--mono); color: #ffc0c6; background: rgba(40,6,12,.6);
+                          border: 1px solid rgba(255,77,94,.4); padding: 8px 12px; white-space: pre-wrap; margin-bottom: 8px; }
+  .pasos-dentro h2 { font: 600 12px/1.3 var(--mono); letter-spacing: .2em; text-transform: uppercase; margin: 22px 0 8px;
+                     display: flex; gap: 10px; align-items: baseline; color: var(--texto); }
+  .pasos-dentro h2 .num { color: var(--c1); }
+  .pasos-dentro h2 .req { color: var(--aviso); font-size: 10px; } .pasos-dentro h2 .opc { color: var(--muy-tenue); font-size: 10px; }
+  .prov, .bloque { border: 1px solid var(--c1-20); padding: 12px 14px; margin: 10px 0; background: rgba(0,0,0,.35); }
+  .prov.lista { border-color: rgba(61,255,160,.4); }
+  .prov-cab { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .prov-cab b { font: 700 14px/1.2 var(--mono); letter-spacing: .08em; }
+  .prov-estado, .linea-estado { font: 11.5px/1.6 var(--mono); }
+  .ok { color: var(--ok); } .falta { color: var(--muy-tenue); } .mal { color: var(--mal); }
+  .prov-nota { color: var(--tenue); font-size: 12.5px; margin-top: 4px; }
+  .prov ol { margin: 8px 0 6px; padding-left: 20px; color: #c3d6df; font-size: 13px; }
+  .prov-gratis { color: var(--tenue); font: 11.5px/1.4 var(--mono); }
+  .fila { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .fila input { flex: 1 1 220px; }
+  .pasos-dentro input {
+    background: rgba(0,0,0,.5); color: var(--texto); border: 1px solid var(--c1-20); padding: 8px 10px;
+    font: 12.5px/1.2 var(--mono); min-width: 0;
+  }
+  .prov-modelo { margin-top: 8px; } .prov-modelo summary { color: var(--muy-tenue); font: 11.5px/1.4 var(--mono); cursor: pointer; }
+  .prov-modelo input { width: 100%; margin-top: 6px; }
+  .prov-res { margin-top: 8px; font: 12px/1.5 var(--mono); color: var(--tenue); white-space: pre-wrap; }
+  .bloque p { margin: 6px 0; color: #c3d6df; font-size: 13px; }
+  code.cmd { display: block; font: 12.5px/1.4 var(--mono); background: rgba(0,0,0,.55); border: 1px solid var(--c1-20);
+             padding: 7px 10px; margin: 6px 0; color: var(--c2); user-select: all; overflow-x: auto; }
+  .nota-claves { margin-top: 18px; color: var(--tenue); font-size: 12.5px; border-left: 2px solid var(--c1-20); padding: 4px 0 4px 12px; }
+  .acciones { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+  /* -- personalizar ---------------------------------------------------------------------- */
+  #ajustes {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(340px, 100%); z-index: 40;
+    transform: translateX(105%); transition: transform .25s ease;
+    display: flex; flex-direction: column;
+  }
+  #ajustes.visible { transform: none; }
+  #ajustes .cuerpo-panel { padding: 12px 16px 20px; overflow-y: auto; flex: 1; }
+  .temas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .tema { padding: 0; height: 58px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch;
+          clip-path: none; border-color: var(--c1-20); overflow: hidden; position: relative; }
+  .tema .muestra { position: absolute; inset: 0; }
+  .tema span:not(.muestra) { position: relative; font: 600 9px/1 var(--mono); letter-spacing: .14em; padding: 5px 4px;
+                             background: rgba(0,0,0,.6); color: #e8f6fb; }
+  .tema.activo { border-color: #fff; box-shadow: 0 0 calc(10px * var(--luz)) var(--c1); }
+  .ajuste { margin-top: 16px; }
+  .ajuste label { display: flex; justify-content: space-between; gap: 8px; font: 11px/1.3 var(--mono); color: var(--texto); letter-spacing: .08em; }
+  .ajuste label output { color: var(--c1); }
+  .ajuste input[type=range] { width: 100%; margin-top: 8px; accent-color: var(--c1); }
+  .colores { display: flex; gap: 14px; margin-top: 8px; }
+  .colores label { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .colores input[type=color] { width: 64px; height: 30px; padding: 0; border: 1px solid var(--c1-40); background: transparent; cursor: pointer; }
+  .interruptor { display: flex; align-items: center; gap: 10px; margin-top: 12px; font: 12px/1.3 var(--sans); color: var(--texto); cursor: pointer; }
+  .ajuste label.interruptor { justify-content: flex-start; font: 12px/1.3 var(--sans); letter-spacing: 0; }
+  .interruptor input { accent-color: var(--c1); width: 16px; height: 16px; flex: none; }
+  .ayuda-ajuste { color: var(--muy-tenue); font-size: 11.5px; margin-top: 4px; }
+
+  .demo-banda {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+    background: repeating-linear-gradient(135deg, #2a1d05 0 12px, #241904 12px 24px);
+    color: #fcd58a; border-bottom: 1px solid #5a3a17;
+    font: 600 11px/1.4 var(--mono); letter-spacing: .14em; text-align: center; padding: 6px 12px;
+  }
+  @media (prefers-reduced-motion: reduce) { #registro { scroll-behavior: auto; } #ajustes { transition: none; } }
+</style>
+</head>
+<body class="crt">
+  <canvas id="fondo" aria-hidden="true"></canvas>
+
+  <header>
+    <div class="logo"><b>D.O.O.M</b><span class="codigo">ASISTENTE LOCAL · NÚCLEO v0.1</span></div>
+    <div class="cab-linea" aria-hidden="true"></div>
+    <div class="cab-botones">
+      <button id="boton-pasos" title="Qué necesita el agente y cómo ponerlo">Primeros pasos</button>
+      <button id="boton-ajustes" title="Colores, luz y efectos">Personalizar</button>
+      <button id="nueva" title="Empieza una conversación nueva">Nueva</button>
+    </div>
+  </header>
+
+  <main class="hud">
+    <canvas id="circuitos" aria-hidden="true"></canvas>
+
+    <aside id="panel-izq" class="marco lateral" aria-label="Conversaciones y sistema">
+      <div class="cab-marco pestanas" role="tablist">
+        <button class="pestana activa" id="tab-conv" role="tab" aria-selected="true" aria-controls="vista-conv">Conversaciones</button>
+        <button class="pestana" id="tab-sys" role="tab" aria-selected="false" aria-controls="vista-sys">Sistema</button>
+      </div>
+      <div class="cuerpo-panel" id="vista-conv" role="tabpanel" aria-labelledby="tab-conv">
+        <div class="barra-conv">
+          <button id="conv-nueva" title="Empieza una conversación nueva">+ Conversación</button>
+          <button id="carpeta-nueva" title="Crea una carpeta para ordenar conversaciones">+ Carpeta</button>
+        </div>
+        <div id="arbol" aria-label="Historial de conversaciones"></div>
+      </div>
+      <div class="cuerpo-panel" id="vista-sys" role="tabpanel" aria-labelledby="tab-sys" hidden>
+        <div class="dato"><div class="reloj" id="sys-reloj">--:--:--</div><div class="codigo" id="sys-fecha"></div></div>
+        <div class="dato"><span class="etq">Estado</span><div class="valor grande" id="sys-estado">iniciando</div></div>
+        <div class="dato"><span class="etq">Modo</span><div class="valor" id="sys-modo">Global</div></div>
+        <div class="dato"><span class="etq">Carga</span><div class="barras" id="sys-carga"></div></div>
+        <div class="dato"><span class="etq">Modelos</span><ul class="lista-mini" id="sys-modelos"><li class="apagado">—</li></ul></div>
+        <div class="dato"><span class="etq">Segunda opinión</span><div class="valor" id="sys-revisor">—</div></div>
+        <div class="dato"><span class="etq">Herramientas</span><div class="valor" id="sys-herr">—</div></div>
+      </div>
+    </aside>
+
+    <section id="zona-nucleo">
+      <canvas id="nucleo" aria-hidden="true"></canvas>
+      <div id="visual" class="marco" role="region" aria-label="Representación" hidden>
+        <div class="cab-marco"><span class="etq" id="visual-titulo">Visual</span><span class="barra"></span>
+          <button id="visual-ampliar" title="Ocupar también el espacio del registro">Ampliar</button>
+          <button id="visual-cerrar" title="Volver al núcleo">Núcleo</button></div>
+        <div id="lienzo-visual"></div>
+      </div>
+      <div id="rotulo" aria-hidden="true"><span id="rotulo-t">iniciando</span></div>
+    </section>
+
+    <section id="marco-registro" class="marco" aria-label="Conversación">
+      <div class="cab-marco"><span class="etq">Registro</span><span class="barra"></span><span class="codigo">LOG // CONVERSACIÓN</span></div>
+      <div id="registro" aria-live="polite"></div>
+    </section>
+
+    <section class="entrada marco" aria-label="Orden">
+      <div class="fila-orden">
+        <button id="modo-boton" class="modo-boton" aria-haspopup="menu" title="Modo de conversación: qué experto te atiende">
+          <span class="punto-modo"></span><span id="modo-nombre">Global</span> ▾</button>
+        <span class="prompt" aria-hidden="true">›</span>
+        <textarea id="orden" rows="1" placeholder="Dime qué hago…  (Intro ejecuta · Mayús+Intro salto de línea)" aria-label="Orden para D.O.O.M"></textarea>
+        <button id="enviar">Ejecutar</button>
+      </div>
+      <div class="pie-estrecho solo-estrecho"><span id="pie-info">—</span></div>
+    </section>
+
+    <section id="pasos" class="marco" hidden aria-label="Primeros pasos"></section>
+
+    <aside id="panel-der" class="marco lateral" aria-label="Actividad">
+      <div class="cab-marco"><span class="etq">Actividad</span><span class="barra"></span><span class="codigo">ACT-02</span></div>
+      <div class="cuerpo-panel">
+        <div class="dato"><span class="etq">Herramienta</span><div class="valor" id="act-herr">ninguna</div></div>
+        <div class="dato"><span class="etq">Pasos de esta orden</span><div class="valor" id="act-pasos">0</div></div>
+        <div class="dato"><span class="etq">Permisos</span><div class="valor" id="act-permisos">0 pedidos</div></div>
+        <div class="dato"><span class="etq">Abierto en esta sesión</span><ul class="lista-mini" id="act-abierto"><li class="apagado">nada todavía</li></ul></div>
+      </div>
+    </aside>
+  </main>
+
+  <aside id="ajustes" class="marco" aria-label="Personalizar" aria-hidden="true">
+    <div class="cab-marco"><span class="etq">Personalizar</span><span class="barra"></span><button id="cerrar-ajustes" title="Cerrar">✕</button></div>
+    <div class="cuerpo-panel">
+      <span class="etq">Tema</span>
+      <div class="temas" id="temas"></div>
+      <div class="ajuste">
+        <span class="etq">Colores</span>
+        <div class="colores">
+          <label>Principal<input type="color" id="aj-c1"></label>
+          <label>Secundario<input type="color" id="aj-c2"></label>
+        </div>
+        <div class="ayuda-ajuste">Al cambiar un color, el tema pasa a «propio».</div>
+      </div>
+      <div class="ajuste"><label for="aj-luz">Brillo y resplandor <output id="o-luz"></output></label><input type="range" id="aj-luz" min="0" max="1.6" step="0.05"></div>
+      <div class="ajuste"><label for="aj-fondo">Rejilla y circuitos <output id="o-fondo"></output></label><input type="range" id="aj-fondo" min="0" max="1" step="0.05"></div>
+      <div class="ajuste"><label for="aj-velocidad">Velocidad de animación <output id="o-velocidad"></output></label><input type="range" id="aj-velocidad" min="0.2" max="2" step="0.05"></div>
+      <div class="ajuste">
+        <label class="interruptor"><input type="checkbox" id="aj-por_herramienta"> El núcleo cambia de color según la herramienta</label>
+        <label class="interruptor"><input type="checkbox" id="aj-circuitos"> Pulsos de datos por los circuitos</label>
+        <label class="interruptor"><input type="checkbox" id="aj-crt"> Líneas de pantalla (efecto CRT)</label>
+      </div>
+      <div class="acciones"><button id="aj-restablecer">Restablecer</button></div>
+    </div>
+  </aside>
+
+<script>
+"use strict";
+/* ==========================================================================
+   0. TEMA Y PREFERENCIAS
+   ========================================================================== */
+const TEMAS = {
+  jarvis:    { nombre: "Jarvis",    c1: "#29d3ff", c2: "#8ff3ff" },
+  holograma: { nombre: "Holograma", c1: "#ffae2b", c2: "#ffd88a" },
+  neon:      { nombre: "Neón",      c1: "#ff2bd6", c2: "#2bf0ff" },
+  matriz:    { nombre: "Matriz",    c1: "#36ff8a", c2: "#b6ffd1" },
+  glaciar:   { nombre: "Glaciar",   c1: "#a8d8ff", c2: "#ffffff" },
+  carmesi:   { nombre: "Carmesí",   c1: "#ff3b4e", c2: "#ffb3ba" },
+};
+const DEFECTO = { tema: "jarvis", c1: "#29d3ff", c2: "#8ff3ff", luz: 1, fondo: 0.6, velocidad: 1,
+                  por_herramienta: true, circuitos: true, crt: true };
+let prefs = Object.assign({}, DEFECTO);
+
+function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgba(c, a) { return `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`; }
+
+function aplicarTema() {
+  const r = document.documentElement.style, a = hexRgb(prefs.c1), b = hexRgb(prefs.c2);
+  r.setProperty("--c1", prefs.c1); r.setProperty("--c2", prefs.c2);
+  for (const [n, v] of [["06", .06], ["10", .10], ["20", .20], ["40", .40], ["60", .60]]) r.setProperty(`--c1-${n}`, rgba(a, v));
+  r.setProperty("--c2-40", rgba(b, .4));
+  r.setProperty("--luz", prefs.luz); r.setProperty("--fondo", prefs.fondo);
+  document.body.classList.toggle("crt", !!prefs.crt);
+  ponerModo(nucleo.modo, true);
+  pintarFondo();
+}
+
+/* ==========================================================================
+   1. EL NUCLEO HOLOGRAFICO
+   Anillos segmentados, marcas, una esfera de alambre con particulas y un
+   anillo brillante alrededor de una pupila oscura. Se dibuja con mezcla
+   aditiva y despues una pasada de resplandor (la escena reducida y vuelta a
+   ampliar), que no necesita WebGL ni filtros de canvas.
+   ========================================================================== */
+const COLOR_MODO = { web: "#2bd9ff", apps: "#b48bff", ficheros: "#ffc23d", terminal: "#3dff9a",
+                     permiso: "#ffab2e", error: "#ff4d5e" };
+const MODOS = {
+  reposo:   { energia: 0.12, etiqueta: "en reposo" },
+  pensando: { energia: 0.65, etiqueta: "pensando" },
+  web:      { energia: 0.85, etiqueta: "navegador" },
+  apps:     { energia: 0.85, etiqueta: "aplicaciones" },
+  ficheros: { energia: 0.80, etiqueta: "ficheros" },
+  terminal: { energia: 0.80, etiqueta: "terminal" },
+  permiso:  { energia: 0.45, etiqueta: "esperando permiso" },
+  hablando: { energia: 0.50, etiqueta: "respondiendo" },
+  visual:   { energia: 0.45, etiqueta: "representando" },
+  error:    { energia: 0.35, etiqueta: "fallo" },
+};
+const FAMILIAS = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal", visual: "visual" };
+
+const nucleo = { modo: "reposo", color: hexRgb(DEFECTO.c1), energia: 0.12, pulso: 0, t: 0, giro: 0, desde: 0 };
+
+function colorDeModo(m) {
+  if (m === "permiso" || m === "error") return COLOR_MODO[m];
+  if (prefs.por_herramienta && COLOR_MODO[m]) return COLOR_MODO[m];
+  if (m === "pensando" || m === "hablando" || m === "visual") return prefs.c2;
+  return prefs.c1;
+}
+function ponerModo(nombre, soloColor) {
+  if (!MODOS[nombre]) nombre = "pensando";
+  if (!soloColor && nombre !== nucleo.modo) nucleo.desde = nucleo.t;
+  nucleo.modo = nombre;
+  document.documentElement.style.setProperty("--modo", colorDeModo(nombre));
+  document.getElementById("rotulo-t").textContent = MODOS[nombre].etiqueta;
+  document.getElementById("sys-estado").textContent = MODOS[nombre].etiqueta;
+}
+function latido(f = 0.5) {
+  nucleo.pulso = Math.min(1.4, nucleo.pulso + f);
+  if (prefs.circuitos) lanzarPulsos(f > 0.4 ? 3 : 1);
+}
+
+const cv = document.getElementById("nucleo"), cn = cv.getContext("2d");
+const escena = document.createElement("canvas"), ce = escena.getContext("2d");
+const mini = document.createElement("canvas"), cm = mini.getContext("2d");
+const mini2 = document.createElement("canvas"), cm2 = mini2.getContext("2d");
+
+// Particulas de la esfera, fijas en latitud y con su propia velocidad.
+const PARTICULAS = Array.from({ length: 170 }, () => ({
+  lat: Math.asin(Math.random() * 2 - 1), lon: Math.random() * Math.PI * 2,
+  v: 0.15 + Math.random() * 0.5, tam: Math.random() < 0.15 ? 2.2 : 1.3,
+}));
+const HEX = "0123456789ABCDEF";
+const glifos = Array.from({ length: 28 }, () => HEX[(Math.random() * 16) | 0]);
+
+function arco(c, x, y, r, a0, a1, ancho, color) {
+  c.beginPath(); c.arc(x, y, r, a0, a1); c.lineWidth = ancho; c.strokeStyle = color; c.stroke();
+}
+function proyectar(lat, lon, giro, incl) {
+  // Esfera unidad: girar alrededor de Y, inclinar alrededor de X.
+  const x = Math.cos(lat) * Math.cos(lon + giro), y = Math.sin(lat), z = Math.cos(lat) * Math.sin(lon + giro);
+  return [x, y * Math.cos(incl) - z * Math.sin(incl), y * Math.sin(incl) + z * Math.cos(incl)];
+}
+// Geometria compartida con los circuitos, en pixeles CSS de la zona del nucleo.
+function geometriaNucleo(w, h) { return { cx: w / 2, cy: h / 2 - 10, R: Math.max(10, Math.min(w, h - 34) * 0.47) }; }
+
+function dibujarNucleo(dt) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const W = Math.max(1, Math.floor(cv.clientWidth * dpr)), H = Math.max(1, Math.floor(cv.clientHeight * dpr));
+  if (cv.width !== W || cv.height !== H) {
+    cv.width = escena.width = W; cv.height = escena.height = H;
+    mini.width = Math.max(1, W >> 2); mini.height = Math.max(1, H >> 2);
+    mini2.width = Math.max(1, W >> 3); mini2.height = Math.max(1, H >> 3);
+  }
+  const vel = prefs.velocidad, E = nucleo.energia, P = nucleo.pulso, t = nucleo.t;
+  const C = nucleo.color, A = hexRgb(prefs.c1), B = hexRgb(prefs.c2);
+  const g = geometriaNucleo(W / dpr, H / dpr);
+  let cx = g.cx * dpr; const cy = g.cy * dpr, R = g.R * dpr * (1 + 0.025 * P);
+  if (nucleo.modo === "error" && Math.random() < 0.25) cx += (Math.random() - 0.5) * 6 * dpr;
+
+  const c = ce;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "source-over";
+  c.clearRect(0, 0, W, H);
+
+  // Disco exterior: oscuro, con un halo suave del color del tema.
+  const disco = c.createRadialGradient(cx, cy, R * 0.25, cx, cy, R * 1.02);
+  disco.addColorStop(0, rgba(A, 0.10)); disco.addColorStop(0.7, rgba(A, 0.05)); disco.addColorStop(1, rgba(A, 0));
+  c.fillStyle = disco; c.beginPath(); c.arc(cx, cy, R * 1.02, 0, Math.PI * 2); c.fill();
+
+  c.globalCompositeOperation = "lighter";
+  const g1 = nucleo.giro;
+
+  // Anillo exterior fino y su gemelo discontinuo.
+  arco(c, cx, cy, R * 0.99, 0, Math.PI * 2, 1.2 * dpr, rgba(A, 0.35 + 0.2 * E));
+  c.setLineDash([3 * dpr, 9 * dpr]); c.lineDashOffset = -t * 20 * vel;
+  arco(c, cx, cy, R * 0.955, 0, Math.PI * 2, 1 * dpr, rgba(A, 0.25 + 0.3 * E)); c.setLineDash([]);
+
+  // Arcos segmentados, girando a contrapelo.
+  const segs = [[0.00, 0.62], [0.70, 1.15], [1.24, 2.05], [2.12, 2.30], [2.40, 3.55], [3.64, 4.70], [4.80, 5.95]];
+  for (const [a0, a1] of segs) arco(c, cx, cy, R * 0.90, a0 + g1 * 0.6, a1 + g1 * 0.6, 3 * dpr, rgba(A, 0.45 + 0.4 * E));
+  for (const [a0, a1] of segs.slice(0, 5)) arco(c, cx, cy, R * 0.86, -a1 - g1 * 0.35, -a0 - g1 * 0.35, 1.2 * dpr, rgba(B, 0.30 + 0.3 * E));
+
+  // Grupos de marcas radiales, como las del anillo de referencia.
+  c.strokeStyle = rgba(A, 0.55 + 0.35 * E); c.lineWidth = 1.4 * dpr;
+  for (let gr = 0; gr < 4; gr++) {
+    const base = gr * Math.PI / 2 - g1 * 0.25 + 0.4;
+    for (let k = 0; k < 11; k++) {
+      const a = base + k * 0.045, r0 = R * 0.775, r1 = R * (k % 5 === 0 ? 0.735 : 0.752);
+      c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.stroke();
+    }
+  }
+
+  // Esfera de alambre: paralelos, meridianos y particulas.
+  const rs = R * 0.66, incl = 0.42, giroE = g1 * 0.9;
+  c.lineWidth = 1 * dpr;
+  const segmento = (p, q, alfa, col) => {
+    c.strokeStyle = rgba(col, alfa); c.beginPath();
+    c.moveTo(cx + p[0] * rs, cy - p[1] * rs); c.lineTo(cx + q[0] * rs, cy - q[1] * rs); c.stroke();
+  };
+  for (let la = -60; la <= 60; la += 30) {
+    const lat = la * Math.PI / 180; let ant = proyectar(lat, 0, giroE, incl);
+    for (let i = 1; i <= 40; i++) {
+      const p = proyectar(lat, i / 40 * Math.PI * 2, giroE, incl);
+      segmento(ant, p, (0.05 + 0.20 * (p[2] + 1) / 2) * (0.5 + E), B); ant = p;
+    }
+  }
+  for (let m = 0; m < 8; m++) {
+    const lon = m / 8 * Math.PI; let ant = proyectar(-Math.PI / 2, lon, giroE, incl);
+    for (let i = 1; i <= 28; i++) {
+      const p = proyectar(-Math.PI / 2 + i / 28 * Math.PI, lon, giroE, incl);
+      segmento(ant, p, (0.04 + 0.18 * (p[2] + 1) / 2) * (0.5 + E), C); ant = p;
+    }
+  }
+  for (const q of PARTICULAS) {
+    q.lon += dt * q.v * (0.3 + 1.6 * E) * vel;
+    const p = proyectar(q.lat, q.lon, giroE, incl), prof = (p[2] + 1) / 2;
+    c.fillStyle = rgba(prof > 0.5 ? C : B, (0.15 + 0.85 * prof) * (0.35 + 0.8 * E));
+    c.fillRect(cx + p[0] * rs * 1.02 - q.tam * dpr / 2, cy - p[1] * rs * 1.02 - q.tam * dpr / 2, q.tam * dpr, q.tam * dpr);
+  }
+  // Tres orbitas inclinadas con su viajero.
+  for (let o = 0; o < 3; o++) {
+    const rx = rs * (1.12 + 0.08 * o), ry = rs * (0.22 + 0.12 * o);
+    c.save(); c.translate(cx, cy); c.rotate(o * 1.05 + 0.3);
+    c.beginPath(); c.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    c.strokeStyle = rgba(C, 0.10 + 0.18 * E); c.lineWidth = 1 * dpr; c.stroke();
+    const a = t * (0.5 + 0.4 * o) * vel * (0.4 + 1.4 * E) + o * 2;
+    c.fillStyle = rgba(C, 0.9); c.beginPath(); c.arc(Math.cos(a) * rx, Math.sin(a) * ry, 2.4 * dpr, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+
+  // Gestos de cada modo.
+  const m = nucleo.modo, desde = t - nucleo.desde;
+  if (m === "web") {                       // barrido de radar
+    const a = t * 2.2 * vel;
+    for (let i = 0; i < 22; i++) {
+      c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, R * 0.88, a - (i + 1) * 0.035, a - i * 0.035); c.closePath();
+      c.fillStyle = rgba(C, 0.16 * (1 - i / 22)); c.fill();
+    }
+  } else if (m === "apps") {               // segmentos que se encienden en cadena
+    const n = 16, activo = Math.floor(t * 8 * vel) % n;
+    for (let i = 0; i < n; i++) {
+      const d = (activo - i + n) % n;
+      arco(c, cx, cy, R * 1.04, i / n * Math.PI * 2 + 0.02, (i + 1) / n * Math.PI * 2 - 0.05, 4 * dpr, rgba(C, d < 4 ? 0.9 - d * 0.2 : 0.08));
+    }
+  } else if (m === "ficheros") {           // linea de lectura que recorre la esfera
+    const y = cy + Math.sin(t * 2.4 * vel) * rs, ancho = Math.sqrt(Math.max(0, rs * rs - (y - cy) ** 2));
+    const grad = c.createLinearGradient(cx - ancho, y, cx + ancho, y);
+    grad.addColorStop(0, rgba(C, 0)); grad.addColorStop(0.5, rgba(C, 0.9)); grad.addColorStop(1, rgba(C, 0));
+    c.strokeStyle = grad; c.lineWidth = 2 * dpr; c.beginPath(); c.moveTo(cx - ancho, y); c.lineTo(cx + ancho, y); c.stroke();
+  } else if (m === "terminal") {           // anillo de caracteres
+    if (Math.random() < 0.3) glifos[(Math.random() * glifos.length) | 0] = HEX[(Math.random() * 16) | 0];
+    c.font = `${10 * dpr}px monospace`; c.textAlign = "center"; c.textBaseline = "middle";
+    glifos.forEach((s, i) => {
+      const a = i / glifos.length * Math.PI * 2 + t * 0.6 * vel;
+      c.fillStyle = rgba(C, 0.5 + 0.5 * Math.sin(t * 6 + i));
+      c.fillText(s, cx + Math.cos(a) * R * 1.07, cy + Math.sin(a) * R * 1.07);
+    });
+  } else if (m === "permiso") {            // anillo de aviso que parpadea
+    c.setLineDash([10 * dpr, 6 * dpr]);
+    arco(c, cx, cy, R * 1.05, 0, Math.PI * 2, 3 * dpr, rgba(C, 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 6))));
+    c.setLineDash([]);
+  }
+  if (desde < 0.6) arco(c, cx, cy, R * (0.45 + desde * 1.2), 0, Math.PI * 2, 2 * dpr, rgba(C, 0.6 * (1 - desde / 0.6)));
+
+  // Anillo central brillante, con sus marcas, y la pupila.
+  const brillo = 0.55 + 0.4 * E + 0.5 * P;
+  arco(c, cx, cy, R * 0.43, 0, Math.PI * 2, R * 0.075, rgba(C, 0.35 * brillo));
+  arco(c, cx, cy, R * 0.43, 0, Math.PI * 2, R * 0.035, rgba(C, 0.75 * brillo));
+  arco(c, cx, cy, R * 0.50, 0, Math.PI * 2, 1 * dpr, rgba(B, 0.5));
+  c.strokeStyle = rgba(B, 0.5 + 0.4 * E); c.lineWidth = 1.2 * dpr;
+  for (const base of [-Math.PI / 2, Math.PI / 6, Math.PI * 5 / 6]) {
+    for (let k = -4; k <= 4; k++) {
+      const a = base + k * 0.07 - g1 * 0.5;
+      c.beginPath(); c.moveTo(cx + Math.cos(a) * R * 0.33, cy + Math.sin(a) * R * 0.33);
+      c.lineTo(cx + Math.cos(a) * R * 0.365, cy + Math.sin(a) * R * 0.365); c.stroke();
+    }
+  }
+  c.globalCompositeOperation = "source-over";
+  const pupila = c.createRadialGradient(cx, cy, 0, cx, cy, R * 0.395);
+  pupila.addColorStop(0, "rgba(0,0,0,0.95)"); pupila.addColorStop(0.7, rgba(C, 0.10)); pupila.addColorStop(1, rgba(C, 0.25));
+  c.fillStyle = pupila; c.beginPath(); c.arc(cx, cy, R * 0.395, 0, Math.PI * 2); c.fill();
+  c.globalCompositeOperation = "lighter";
+  arco(c, cx, cy, R * 0.24, 0, Math.PI * 2, 1 * dpr, rgba(C, 0.25 + 0.3 * E));
+
+  // Componer: la escena, y encima su resplandor (reducida y ampliada).
+  cn.setTransform(1, 0, 0, 1, 0, 0);
+  cn.globalCompositeOperation = "source-over"; cn.globalAlpha = 1;
+  cn.clearRect(0, 0, W, H);
+  cn.drawImage(escena, 0, 0);
+  if (prefs.luz > 0) {
+    cm.clearRect(0, 0, mini.width, mini.height); cm.drawImage(escena, 0, 0, mini.width, mini.height);
+    cm2.clearRect(0, 0, mini2.width, mini2.height); cm2.drawImage(mini, 0, 0, mini2.width, mini2.height);
+    cn.globalCompositeOperation = "lighter";
+    cn.globalAlpha = Math.min(1, 0.75 * prefs.luz); cn.drawImage(mini, 0, 0, W, H);
+    cn.globalAlpha = Math.min(1, 0.65 * prefs.luz); cn.drawImage(mini2, 0, 0, W, H);
+    cn.globalAlpha = 1; cn.globalCompositeOperation = "source-over";
+  }
+}
+
+/* ==========================================================================
+   2. FONDO Y CIRCUITOS
+   ========================================================================== */
+const fondo = document.getElementById("fondo"), cf = fondo.getContext("2d");
+function pintarFondo() {
+  const W = fondo.width = innerWidth, H = fondo.height = innerHeight, A = hexRgb(prefs.c1), f = prefs.fondo;
+  cf.clearRect(0, 0, W, H);
+  if (f <= 0) return;
+  cf.lineWidth = 1;
+  for (let x = 0.5; x < W; x += 32) { cf.strokeStyle = rgba(A, (x % 160 < 32 ? 0.07 : 0.03) * f); cf.beginPath(); cf.moveTo(x, 0); cf.lineTo(x, H); cf.stroke(); }
+  for (let y = 0.5; y < H; y += 32) { cf.strokeStyle = rgba(A, (y % 160 < 32 ? 0.07 : 0.03) * f); cf.beginPath(); cf.moveTo(0, y); cf.lineTo(W, y); cf.stroke(); }
+  // Bloques de datos tenues, como el ruido de fondo de un HUD. Semilla fija:
+  // el fondo no cambia de sitio cada vez que se redimensiona.
+  cf.font = "9px monospace"; let semilla = 7;
+  const azar = () => ((semilla = (semilla * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < 26; i++) {
+    const x = azar() * W, y = azar() * H, filas = 2 + ((azar() * 5) | 0);
+    cf.fillStyle = rgba(A, 0.06 * f);
+    for (let k = 0; k < filas; k++) {
+      let s = ""; for (let j = 0; j < 10; j++) s += HEX[(azar() * 16) | 0];
+      cf.fillText(s, x, y + k * 11);
+    }
+    cf.strokeStyle = rgba(A, 0.05 * f); cf.strokeRect(x - 6, y - 12, 80 + azar() * 60, filas * 11 + 8);
+  }
+  const v = cf.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.75)");
+  cf.fillStyle = v; cf.fillRect(0, 0, W, H);
+}
+
+const ccir = document.getElementById("circuitos"), cc = ccir.getContext("2d");
+let trazas = [], pulsos = [];
+function caja(id, base) {
+  const e = document.getElementById(id);
+  if (!e || e.offsetParent === null) return null;
+  const r = e.getBoundingClientRect();
+  return { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height };
+}
+// Tramo horizontal, codo a 45 grados y otro tramo horizontal: el trazado de
+// una pista de circuito impreso.
+function trazaHorizontal(x0, y0, x1, y1) {
+  const dy = Math.abs(y1 - y0), dir = Math.sign(x1 - x0) || 1, hueco = Math.abs(x1 - x0);
+  if (hueco < dy + 20) return [[x0, y0], [x0 + dir * hueco * 0.3, y0], [x1 - dir * hueco * 0.2, y1], [x1, y1]];
+  const tramo = (hueco - dy) / 2;
+  return [[x0, y0], [x0 + dir * tramo, y0], [x0 + dir * (tramo + dy), y1], [x1, y1]];
+}
+function calcularTrazas() {
+  const main = document.querySelector("main.hud"), base = main.getBoundingClientRect();
+  ccir.width = Math.max(1, Math.floor(base.width)); ccir.height = Math.max(1, Math.floor(base.height));
+  trazas = [];
+  const n = caja("zona-nucleo", base);
+  if (!n) return;
+  const g = geometriaNucleo(n.w, n.h), cx = n.x + g.cx, cy = n.y + g.cy, R = g.R;
+  const borde = a => [cx + Math.cos(a) * R, cy + Math.sin(a) * R];
+  const izq = caja("panel-izq", base), der = caja("panel-der", base);
+  const abajo = caja(enPasos ? "pasos" : "marco-registro", base);
+  if (izq) for (const [a, fy] of [[Math.PI + 0.55, 0.14], [Math.PI, 0.30], [Math.PI - 0.6, 0.47]]) {
+    const [x0, y0] = borde(a); trazas.push(trazaHorizontal(x0, y0, izq.x + izq.w + 2, izq.y + izq.h * fy));
+  }
+  if (der) for (const [a, fy] of [[-0.55, 0.14], [0, 0.30], [0.6, 0.47]]) {
+    const [x0, y0] = borde(a); trazas.push(trazaHorizontal(x0, y0, der.x - 2, der.y + der.h * fy));
+  }
+  if (abajo) for (const d of [-1, 1]) {
+    const [x0, y0] = borde(Math.PI / 2 + d * 0.35), y1 = abajo.y - 2;
+    if (y1 > y0 + 4) trazas.push([[x0, y0], [x0, y0 + (y1 - y0) * 0.4], [x0 + d * 30, y1]]);
+  }
+}
+function longitud(tr) { let L = 0; for (let i = 1; i < tr.length; i++) L += Math.hypot(tr[i][0] - tr[i - 1][0], tr[i][1] - tr[i - 1][1]); return L; }
+function puntoEn(tr, u) {
+  let resto = u * longitud(tr);
+  for (let i = 1; i < tr.length; i++) {
+    const d = Math.hypot(tr[i][0] - tr[i - 1][0], tr[i][1] - tr[i - 1][1]);
+    if (resto <= d) { const k = d ? resto / d : 0; return [tr[i - 1][0] + (tr[i][0] - tr[i - 1][0]) * k, tr[i - 1][1] + (tr[i][1] - tr[i - 1][1]) * k]; }
+    resto -= d;
+  }
+  return tr[tr.length - 1];
+}
+function lanzarPulsos(n) {
+  for (let i = 0; i < n && trazas.length; i++) pulsos.push({ tr: trazas[(Math.random() * trazas.length) | 0], u: 0, v: 0.6 + Math.random() * 0.8 });
+}
+function dibujarCircuitos(dt) {
+  cc.clearRect(0, 0, ccir.width, ccir.height);
+  const f = prefs.fondo; if (f <= 0) return;
+  const A = hexRgb(prefs.c1), C = nucleo.color;
+  cc.lineWidth = 1;
+  for (const tr of trazas) {
+    cc.strokeStyle = rgba(A, 0.22 * f + 0.1); cc.beginPath(); cc.moveTo(tr[0][0], tr[0][1]);
+    for (const p of tr.slice(1)) cc.lineTo(p[0], p[1]);
+    cc.stroke();
+    const fin = tr[tr.length - 1];
+    cc.fillStyle = rgba(A, 0.6); cc.beginPath(); cc.arc(fin[0], fin[1], 2.5, 0, Math.PI * 2); cc.fill();
+    cc.strokeStyle = rgba(A, 0.5); cc.beginPath(); cc.arc(tr[0][0], tr[0][1], 3.5, 0, Math.PI * 2); cc.stroke();
+  }
+  if (!prefs.circuitos) { pulsos = []; return; }
+  if (Math.random() < dt * (0.4 + 3 * nucleo.energia)) lanzarPulsos(1);
+  cc.globalCompositeOperation = "lighter";
+  pulsos = pulsos.filter(p => (p.u += dt * p.v * prefs.velocidad) < 1);
+  for (const p of pulsos) {
+    for (let k = 0; k < 6; k++) {
+      const [x, y] = puntoEn(p.tr, Math.max(0, p.u - k * 0.012));
+      cc.fillStyle = rgba(C, 0.85 * (1 - k / 6)); cc.beginPath(); cc.arc(x, y, 2.2 - k * 0.25, 0, Math.PI * 2); cc.fill();
+    }
+  }
+  cc.globalCompositeOperation = "source-over";
+}
+
+/* ==========================================================================
+   3. EL BUCLE DE ANIMACION
+   ========================================================================== */
+const barras = document.getElementById("sys-carga");
+for (let i = 0; i < 18; i++) barras.appendChild(document.createElement("i"));
+let antes = performance.now(), cuentaBarras = 0;
+function fotograma(ahora) {
+  const dt = Math.min(0.05, (ahora - antes) / 1000); antes = ahora;
+  nucleo.t += dt;
+  const objetivo = hexRgb(colorDeModo(nucleo.modo)), k = 1 - Math.exp(-dt * 3);
+  for (let i = 0; i < 3; i++) nucleo.color[i] += (objetivo[i] - nucleo.color[i]) * k;
+  nucleo.energia += (MODOS[nucleo.modo].energia - nucleo.energia) * k;
+  nucleo.pulso *= Math.exp(-dt * 3);
+  nucleo.giro += dt * (0.15 + 1.1 * nucleo.energia) * prefs.velocidad;
+  // Con un visual delante, el nucleo queda de fondo, quieto: no se gasta en redibujarlo.
+  if (!visualActivo) dibujarNucleo(dt);
+  dibujarCircuitos(dt);
+  if ((cuentaBarras += dt) > 0.12) {
+    cuentaBarras = 0;
+    barras.childNodes.forEach((b, i) => {
+      const h = 10 + 90 * Math.min(1, nucleo.energia * (0.5 + 0.5 * Math.sin(nucleo.t * 3 + i * 0.7)) + nucleo.pulso * 0.3 + Math.random() * 0.12);
+      b.style.height = `${h}%`;
+    });
+  }
+  requestAnimationFrame(fotograma);
+}
+
+function reloj() {
+  const d = new Date();
+  document.getElementById("sys-reloj").textContent = d.toLocaleTimeString("es-ES", { hour12: false });
+  document.getElementById("sys-fecha").textContent = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
+}
+reloj(); setInterval(reloj, 1000);
+
+/* ==========================================================================
+   4. EL REGISTRO
+   ========================================================================== */
+const registro = document.getElementById("registro");
+let familiaActual = "", lineaPensando = null, ocupado = false, pasosOrden = 0, permisos = 0;
+
+function alFondo() { registro.scrollTop = registro.scrollHeight; }
+function el(etiqueta, clase, texto) {
+  const e = document.createElement(etiqueta);
+  if (clase) e.className = clase;
+  if (texto !== undefined) e.textContent = texto;
+  return e;
+}
+// Texto con enlaces pulsables. Un enlace nunca navega dentro de la ventana:
+// se abre en el navegador del usuario a traves de Python.
+function conEnlaces(nodo, texto) {
+  // **negrita** y *cursiva* de markdown: los modelos las usan aunque no se les
+  // pida. La cursiva exige texto pegado a los asteriscos, para no tomar por
+  // cursiva una multiplicacion como "2 * 3 * 4".
+  const trozos = String(texto).split(/\*\*([^*\n]+)\*\*/g);
+  if (trozos.length > 1) {
+    trozos.forEach((t, i) => { if (i % 2) nodo.appendChild(el("b", "", t)); else if (t) conEnlaces(nodo, t); });
+    return nodo;
+  }
+  const cursivas = String(texto).split(/(?<![\w*])\*([^\s*][^*\n]*?[^\s*]|[^\s*])\*(?![\w*])/g);
+  if (cursivas.length > 1) {
+    cursivas.forEach((t, i) => { if (i % 2) nodo.appendChild(el("i", "", t)); else if (t) conEnlaces(nodo, t); });
+    return nodo;
+  }
+  for (const p of String(texto).split(/(https?:\/\/[^\s<>"')\]]+)/g)) {
+    if (/^https?:\/\//.test(p)) {
+      const url = p.replace(/[.,;:!?»]+$/, ""), cola = p.slice(url.length);
+      const a = el("a", "", url); a.href = url;
+      a.addEventListener("click", ev => { ev.preventDefault(); api("abrir_enlace", url); });
+      nodo.appendChild(a);
+      if (cola) nodo.appendChild(document.createTextNode(cola));
+    } else if (p) nodo.appendChild(document.createTextNode(p));
+  }
+  return nodo;
+}
+function linea(clase, marca, texto, color) {
+  const l = el("div", `linea ${clase}`), c = el("span", "cuerpo");
+  if (color) l.style.setProperty("--c", color);
+  conEnlaces(c, texto);
+  l.append(el("span", "marca-l", marca), c);
+  return l;
+}
+function quitarPensando() { if (lineaPensando) { lineaPensando.remove(); lineaPensando = null; } }
+function mostrarPensando(texto) {
+  quitarPensando(); lineaPensando = linea("pensando-l", "", texto);
+  registro.appendChild(lineaPensando); alFondo();
+}
+// La respuesta se escribe palabra a palabra; cada palabra es un latido del nucleo.
+function escribir(nodo, texto, alTerminar) {
+  const palabras = String(texto).split(/(\s+)/);
+  let i = 0, hecho = "";
+  const paso = () => {
+    if (i >= palabras.length) { nodo.textContent = ""; conEnlaces(nodo, texto); alFondo(); alTerminar && alTerminar(); return; }
+    hecho += palabras[i++]; nodo.textContent = hecho;
+    if (palabras[i - 1].trim()) latido(0.16);
+    alFondo();
+    setTimeout(paso, palabras[i - 1].trim() ? 28 : 0);
+  };
+  paso();
+}
+function tarjetaPermiso(id, pregunta, opinion) {
+  const t = el("div", "permiso"); t.dataset.id = id;
+  t.appendChild(el("div", "pregunta", pregunta));
+  if (opinion) {
+    const o = el("div", `opinion ${/^OJO/i.test(opinion) ? "ojo" : "bien"}`);
+    o.append(el("b", "", "SEGUNDA OPINIÓN"), document.createTextNode(opinion));
+    t.appendChild(o);
+  }
+  const botones = el("div", "botones"), si = el("button", "si", "Confirmar"), no = el("button", "no", "No");
+  const decidir = valor => {
+    si.disabled = no.disabled = true;
+    t.appendChild(el("div", "hecho", valor ? "✓ AUTORIZADO" : "✗ NO AUTORIZADO"));
+    ponerModo("pensando"); api("responder", id, valor);
+  };
+  si.addEventListener("click", () => decidir(true));
+  no.addEventListener("click", () => decidir(false));
+  botones.append(si, no); t.appendChild(botones);
+  return t;
+}
+function ponerAbiertas(lista) {
+  const ul = document.getElementById("act-abierto");
+  ul.innerHTML = "";
+  if (!lista.length) { ul.appendChild(el("li", "apagado", "nada todavía")); return; }
+  for (const x of lista.slice(-12).reverse()) ul.appendChild(el("li", "", x.replace(/^https?:\/\//, "")));
+}
+
+/* ==========================================================================
+   4b. GRAFICAS (D-037): el nucleo se aparta para ensenar una grafica precisa
+   ========================================================================== */
+const zonaNucleo = document.getElementById("zona-nucleo"), panelVisual = document.getElementById("visual");
+const lienzoVisual = document.getElementById("lienzo-visual");
+const visuales = [];
+let visualActivo = false;
+const SVGNS = "http://www.w3.org/2000/svg";
+
+function nodoSvg(etiqueta, atributos, texto) {
+  const n = document.createElementNS(SVGNS, etiqueta);
+  for (const [k, v] of Object.entries(atributos || {})) n.setAttribute(k, v);
+  if (texto !== undefined) n.textContent = texto;
+  return n;
+}
+
+// Interprete de formulas propio: + - * / ^, parentesis, x, pi, e y unas pocas
+// funciones. Nada de eval(): una formula es un dato, no codigo.
+function compilar(fuente) {
+  const toks = String(fuente).toLowerCase().match(/\d+\.?\d*|\.\d+|[a-z]+|[-+*\/^(),]/g) || [];
+  let i = 0;
+  const ver = () => toks[i], tomar = () => toks[i++];
+  const FUN = { sin: Math.sin, cos: Math.cos, tan: Math.tan, sqrt: Math.sqrt, abs: Math.abs, exp: Math.exp, log: Math.log10, ln: Math.log };
+  const CTE = { pi: Math.PI, e: Math.E };
+  const expr = () => {
+    let f = termino();
+    while (ver() === "+" || ver() === "-") { const op = tomar(), a = f, b = termino(); f = op === "+" ? x => a(x) + b(x) : x => a(x) - b(x); }
+    return f;
+  };
+  const termino = () => {
+    let f = unario();
+    for (;;) {
+      const t = ver();
+      if (t === "*" || t === "/") { tomar(); const a = f, b = unario(); f = t === "*" ? x => a(x) * b(x) : x => a(x) / b(x); }
+      else if (t !== undefined && (t === "(" || /^[a-z\d.]/.test(t))) { const a = f, b = unario(); f = x => a(x) * b(x); }  // 2x, 3(x+1)
+      else return f;
+    }
+  };
+  const unario = () => {
+    if (ver() === "-") { tomar(); const a = unario(); return x => -a(x); }
+    if (ver() === "+") { tomar(); return unario(); }
+    return potencia();
+  };
+  const potencia = () => {
+    const base = primario();
+    if (ver() === "^") { tomar(); const ex = unario(); return x => Math.pow(base(x), ex(x)); }
+    return base;
+  };
+  const primario = () => {
+    const t = tomar();
+    if (t === undefined) throw new Error("fórmula incompleta");
+    if (/^[\d.]/.test(t)) { const v = parseFloat(t); return () => v; }
+    if (t === "x") return x => x;
+    if (t in CTE) { const v = CTE[t]; return () => v; }
+    if (t === "(" || t in FUN) {
+      if (t !== "(" && tomar() !== "(") throw new Error(`falta "(" tras ${t}`);
+      const a = expr();
+      if (tomar() !== ")") throw new Error('falta ")"');
+      const f = FUN[t];
+      return f ? x => f(a(x)) : a;
+    }
+    throw new Error(`no entiendo «${t}»`);
+  };
+  const f = expr();
+  if (i < toks.length) throw new Error(`sobra «${toks[i]}»`);
+  return f;
+}
+
+function pasoBonito(rango) {
+  const bruto = rango / 10, mag = Math.pow(10, Math.floor(Math.log10(bruto))), r = bruto / mag;
+  return mag * (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10);
+}
+
+// Una grafica descrita por el agente (ya validada en Python) dibujada con precision.
+function svgDeGrafica(g) {
+  const W = 400, H = 300, M = 30, [x0, x1] = g.x, [y0, y1] = g.y;
+  const X = x => M + (x - x0) / (x1 - x0) * (W - 2 * M), Y = y => H - M - (y - y0) / (y1 - y0) * (H - 2 * M);
+  const colores = [prefs.c1, prefs.c2, "#ffc23d", "#3dff9a", "#b48bff", "#ff6b7a"];
+  let n = 0; const siguiente = () => colores[n++ % colores.length];
+  const svg = nodoSvg("svg", { viewBox: `0 0 ${W} ${H}`, "font-family": "monospace" });
+  const capa = nodoSvg("g", { "font-size": "10.5", fill: "currentColor" });
+  svg.appendChild(capa);
+  const pasoX = pasoBonito(x1 - x0), pasoY = pasoBonito(y1 - y0);
+  for (let v = Math.ceil(x0 / pasoX) * pasoX; v <= x1 + 1e-9; v += pasoX) {
+    capa.appendChild(nodoSvg("line", { x1: X(v), y1: Y(y0), x2: X(v), y2: Y(y1), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .7 : .12 }));
+    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: X(v), y: Math.min(H - M + 13, Math.max(M + 10, Y(0) + 13)), "text-anchor": "middle", opacity: .85 }, +v.toFixed(6)));
+  }
+  for (let v = Math.ceil(y0 / pasoY) * pasoY; v <= y1 + 1e-9; v += pasoY) {
+    capa.appendChild(nodoSvg("line", { x1: X(x0), y1: Y(v), x2: X(x1), y2: Y(v), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .7 : .12 }));
+    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: Math.max(M - 4, Math.min(W - M, X(0) - 5)), y: Y(v) + 3.5, "text-anchor": "end", opacity: .85 }, +v.toFixed(6)));
+  }
+  // El origen, y el nombre de cada eje en su extremo (si el eje esta a la vista).
+  if (x0 <= 0 && 0 <= x1 && y0 <= 0 && 0 <= y1) capa.appendChild(nodoSvg("text", { x: X(0) - 5, y: Y(0) + 13, "text-anchor": "end", opacity: .85 }, "0"));
+  if (y0 <= 0 && 0 <= y1) capa.appendChild(nodoSvg("text", { x: W - M + 6, y: Y(0) + 4, "font-style": "italic", opacity: .9 }, "x"));
+  if (x0 <= 0 && 0 <= x1) capa.appendChild(nodoSvg("text", { x: X(0) + 5, y: M - 6, "font-style": "italic", opacity: .9 }, "y"));
+  const leyenda = [];
+  for (const f of g.funciones) {
+    const color = siguiente();
+    let fn; try { fn = compilar(f.f); } catch (err) { leyenda.push([color, `${f.nombre || "f"}: ${err.message}`]); continue; }
+    let d = "", pluma = false;
+    for (let k = 0; k <= 300; k++) {
+      const x = x0 + (x1 - x0) * k / 300, y = fn(x);
+      const fuera = !isFinite(y) || y < y0 - (y1 - y0) * 2 || y > y1 + (y1 - y0) * 2;
+      if (fuera) { pluma = false; continue; }
+      d += `${pluma ? "L" : "M"}${X(x).toFixed(1)} ${Y(y).toFixed(1)}`; pluma = true;
+    }
+    capa.appendChild(nodoSvg("path", { d, fill: "none", stroke: color, "stroke-width": 2 }));
+    leyenda.push([color, `${f.nombre ? f.nombre + "(x) = " : ""}${f.f}`]);
+  }
+  for (const s of g.segmentos) {
+    const color = siguiente();
+    capa.appendChild(nodoSvg("line", { x1: X(s.de[0]), y1: Y(s.de[1]), x2: X(s.a[0]), y2: Y(s.a[1]), stroke: color, "stroke-width": 1.6, "stroke-dasharray": "5 4" }));
+    if (s.nombre) capa.appendChild(nodoSvg("text", { x: (X(s.de[0]) + X(s.a[0])) / 2 + 4, y: (Y(s.de[1]) + Y(s.a[1])) / 2 - 4, fill: color }, s.nombre));
+  }
+  for (const v of g.vectores) {
+    const color = siguiente(), ax = X(v.de[0]), ay = Y(v.de[1]), bx = X(v.a[0]), by = Y(v.a[1]);
+    const ang = Math.atan2(by - ay, bx - ax), L = 9;
+    capa.appendChild(nodoSvg("line", { x1: ax, y1: ay, x2: bx - Math.cos(ang) * L * 0.7, y2: by - Math.sin(ang) * L * 0.7, stroke: color, "stroke-width": 2.2 }));
+    capa.appendChild(nodoSvg("polygon", { fill: color, points: [[bx, by], [bx - L * Math.cos(ang - 0.4), by - L * Math.sin(ang - 0.4)], [bx - L * Math.cos(ang + 0.4), by - L * Math.sin(ang + 0.4)]].map(p => p.join(",")).join(" ") }));
+    // La etiqueta va en mitad del vector, apartada hacia un lado: en la punta
+    // se pisarian las de dos vectores que acaban en el mismo sitio (u+v y v).
+    const etiqueta = v.nombre ? `${v.nombre} (${+(v.a[0] - v.de[0]).toFixed(4)}, ${+(v.a[1] - v.de[1]).toFixed(4)})` : "";
+    if (etiqueta) {
+      const mx = (ax + bx) / 2 - Math.sin(ang) * 12, my = (ay + by) / 2 + Math.cos(ang) * 12;
+      capa.appendChild(nodoSvg("text", { x: mx, y: my, fill: color, "font-size": 11, "font-weight": "bold", "text-anchor": "middle" }, etiqueta));
+    }
+  }
+  for (const p of g.puntos) {
+    const color = siguiente();
+    capa.appendChild(nodoSvg("circle", { cx: X(p.en[0]), cy: Y(p.en[1]), r: 3.5, fill: color }));
+    if (p.nombre) capa.appendChild(nodoSvg("text", { x: X(p.en[0]) + 6, y: Y(p.en[1]) - 6, fill: color, "font-size": 11 }, `${p.nombre} (${p.en[0]}, ${p.en[1]})`));
+  }
+  leyenda.forEach(([color, texto], k) => capa.appendChild(nodoSvg("text", { x: M + 4, y: M + 4 + k * 13, fill: color, "font-size": 10.5 }, texto)));
+  return svg;
+}
+
+// Estadistica: barras, lineas, sectores, histograma y dispersion. Los numeros
+// ya vienen calculados de Python (media, mediana, intervalos, regresion,
+// porcentajes); aqui solo se dibujan, igual de precisos que los ejes.
+function svgDeEstadistica(e) {
+  const W = 400, H = 300, L = 46, R = 14, T = 26, B = 46;
+  const colores = [prefs.c1, "#ffc23d", "#b48bff", "#3dff9a", "#ff6b7a", prefs.c2, "#ff9f43", "#9ad0ff"];
+  const color = i => colores[i % colores.length];
+  const svg = nodoSvg("svg", { viewBox: `0 0 ${W} ${H}`, "font-family": "monospace" });
+  const capa = nodoSvg("g", { "font-size": "10", fill: "currentColor" });
+  svg.appendChild(capa);
+  const txt = (x, y, t, extra) => capa.appendChild(nodoSvg("text", Object.assign({ x, y }, extra || {}), t));
+  const fmt = n => (Math.abs(n) >= 1e5 || (Math.abs(n) < 0.01 && n !== 0)) ? n.toExponential(1) : +n.toFixed(2);
+  const leyenda = pares => {
+    let x = L + 2;
+    for (const [nombre, c] of pares) {
+      if (!nombre) continue;
+      capa.appendChild(nodoSvg("rect", { x, y: 7, width: 9, height: 9, fill: c }));
+      // Cabe la ecuacion entera de una recta de regresion: es el dato que importa.
+      const t = nombre.length > 40 ? nombre.slice(0, 39) + "…" : nombre;
+      txt(x + 13, 15, t, { fill: c }); x += 22 + t.length * 6.2;
+    }
+  };
+  const rangoBonito = (lo, hi) => {
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const p = pasoBonito(hi - lo); return [Math.floor(lo / p) * p, Math.ceil(hi / p) * p];
+  };
+  const ejeY = (v0, v1) => {
+    const paso = pasoBonito(v1 - v0 || 1), Y = v => H - B - (v - v0) / ((v1 - v0) || 1) * (H - T - B);
+    for (let v = Math.ceil(v0 / paso - 1e-9) * paso; v <= v1 + 1e-9; v += paso) {
+      capa.appendChild(nodoSvg("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .6 : .12 }));
+      txt(L - 5, Y(v) + 3.5, fmt(v), { "text-anchor": "end", opacity: .85 });
+    }
+    return Y;
+  };
+  const rotulos = () => {
+    if (e.eje_x) txt((L + W - R) / 2, H - 5, e.eje_x, { "text-anchor": "middle", "font-style": "italic", opacity: .9 });
+    const my = (T + H - B) / 2;
+    if (e.eje_y) txt(11, my, e.eje_y, { "text-anchor": "middle", "font-style": "italic", opacity: .9, transform: `rotate(-90 11 ${my})` });
+  };
+  const etiquetasX = (cats, xc) => {
+    const rotar = cats.length > 6 || cats.some(c => c.length > 7);
+    cats.forEach((c, i) => {
+      const t = c.length > 14 ? c.slice(0, 13) + "…" : c, y = H - B + 14;
+      txt(xc(i), y, t, rotar ? { "text-anchor": "end", transform: `rotate(-35 ${xc(i)} ${y})` } : { "text-anchor": "middle" });
+    });
+  };
+
+  if (e.tipo === "barras" || e.tipo === "lineas") {
+    const todos = e.series.flatMap(s => s.valores);
+    const [v0, v1] = rangoBonito(Math.min(0, ...todos), Math.max(0, ...todos));
+    const Y = ejeY(v0, v1), n = e.categorias.length, banda = (W - L - R) / n, xc = i => L + banda * (i + 0.5);
+    if (e.tipo === "barras") {
+      const k = e.series.length, ancho = banda * 0.78 / k;
+      e.series.forEach((s, j) => s.valores.forEach((v, i) => {
+        const x = L + banda * i + banda * 0.11 + j * ancho;
+        capa.appendChild(nodoSvg("rect", { x, y: Y(Math.max(v, 0)), width: Math.max(1, ancho - 1.5), height: Math.max(0.5, Math.abs(Y(v) - Y(0))),
+          fill: color(j), "fill-opacity": 0.7, stroke: color(j) }));
+        if (n * k <= 24) txt(x + ancho / 2, v >= 0 ? Y(v) - 4 : Y(v) + 11, fmt(v), { "text-anchor": "middle", fill: color(j), "font-size": 9 });
+      }));
+    } else {
+      e.series.forEach((s, j) => {
+        capa.appendChild(nodoSvg("polyline", { points: s.valores.map((v, i) => `${xc(i)},${Y(v)}`).join(" "), fill: "none", stroke: color(j), "stroke-width": 2 }));
+        s.valores.forEach((v, i) => capa.appendChild(nodoSvg("circle", { cx: xc(i), cy: Y(v), r: 3, fill: color(j) })));
+      });
+    }
+    etiquetasX(e.categorias, xc);
+    if (e.series.length > 1 || e.series[0].nombre) leyenda(e.series.map((s, j) => [s.nombre, color(j)]));
+    rotulos();
+  } else if (e.tipo === "histograma") {
+    const bins = e.intervalos, lo = bins[0].desde, hi = bins[bins.length - 1].hasta;
+    const Y = ejeY(0, rangoBonito(0, Math.max(...bins.map(b => b.n)))[1]);
+    const X = v => L + (v - lo) / ((hi - lo) || 1) * (W - L - R);
+    for (const b of bins) capa.appendChild(nodoSvg("rect", { x: X(b.desde), y: Y(b.n), width: Math.max(1, X(b.hasta) - X(b.desde) - 1),
+      height: Y(0) - Y(b.n), fill: color(0), "fill-opacity": 0.6, stroke: color(0) }));
+    const cada = Math.ceil(bins.length / 8);
+    bins.forEach((b, i) => { if (i % cada === 0) txt(X(b.desde), H - B + 14, fmt(b.desde), { "text-anchor": "middle", opacity: .85 }); });
+    txt(X(hi), H - B + 14, fmt(hi), { "text-anchor": "middle", opacity: .85 });
+    const marcas = [[`media ${fmt(e.media)}`, e.media, color(5), "6 3"], [`mediana ${fmt(e.mediana)}`, e.mediana, color(1), "2 3"]];
+    for (const [, v, c, guion] of marcas) capa.appendChild(nodoSvg("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, stroke: c, "stroke-width": 1.8, "stroke-dasharray": guion }));
+    leyenda(marcas.map(([nombre, , c]) => [nombre, c]));
+    rotulos();
+  } else if (e.tipo === "dispersion") {
+    const pts = e.series.flatMap(s => s.puntos);
+    const [x0, x1] = rangoBonito(Math.min(...pts.map(p => p[0])), Math.max(...pts.map(p => p[0])));
+    const [y0, y1] = rangoBonito(Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[1])));
+    const Y = ejeY(y0, y1), X = v => L + (v - x0) / (x1 - x0) * (W - L - R), pasoX = pasoBonito(x1 - x0);
+    for (let v = x0; v <= x1 + 1e-9; v += pasoX) {
+      capa.appendChild(nodoSvg("line", { x1: X(v), x2: X(v), y1: T, y2: H - B, stroke: "currentColor", "stroke-opacity": .12 }));
+      txt(X(v), H - B + 14, fmt(v), { "text-anchor": "middle", opacity: .85 });
+    }
+    const recorte = nodoSvg("clipPath", { id: "area-dispersion" });
+    recorte.appendChild(nodoSvg("rect", { x: L, y: T, width: W - L - R, height: H - T - B }));
+    svg.appendChild(recorte);
+    const pares = [];
+    e.series.forEach((s, j) => {
+      for (const p of s.puntos) capa.appendChild(nodoSvg("circle", { cx: X(p[0]), cy: Y(p[1]), r: 3, fill: color(j), "fill-opacity": 0.8 }));
+      let nombre = s.nombre;
+      if (s.regresion) {
+        const r = s.regresion, f = x => r.pendiente * x + r.ordenada;
+        capa.appendChild(nodoSvg("line", { x1: X(x0), y1: Y(f(x0)), x2: X(x1), y2: Y(f(x1)), stroke: color(j), "stroke-width": 1.6, "stroke-dasharray": "6 3", "clip-path": "url(#area-dispersion)" }));
+        nombre = `${s.nombre ? s.nombre + ": " : ""}y=${fmt(r.pendiente)}x${r.ordenada < 0 ? "−" : "+"}${fmt(Math.abs(r.ordenada))} r=${fmt(r.r)}`;
+      }
+      pares.push([nombre, color(j)]);
+    });
+    leyenda(pares);
+    rotulos();
+  } else if (e.tipo === "sectores") {
+    const total = e.valores.reduce((a, b) => a + b, 0), cx = 125, cy = 158, r = 108;
+    let a = -Math.PI / 2;
+    e.valores.forEach((v, i) => {
+      const da = v / total * Math.PI * 2;
+      if (da <= 0) return;
+      const atributos = { fill: color(i), "fill-opacity": 0.72, stroke: "#020409", "stroke-width": 1.5 };
+      if (da >= Math.PI * 2 - 1e-9) capa.appendChild(nodoSvg("circle", Object.assign({ cx, cy, r }, atributos)));
+      else {
+        const p1 = [cx + r * Math.cos(a), cy + r * Math.sin(a)], p2 = [cx + r * Math.cos(a + da), cy + r * Math.sin(a + da)];
+        capa.appendChild(nodoSvg("path", Object.assign({ d: `M${cx} ${cy}L${p1[0]} ${p1[1]}A${r} ${r} 0 ${da > Math.PI ? 1 : 0} 1 ${p2[0]} ${p2[1]}Z` }, atributos)));
+      }
+      if (da > 0.35) txt(cx + r * 0.62 * Math.cos(a + da / 2), cy + r * 0.62 * Math.sin(a + da / 2) + 4, `${e.porcentajes[i]}%`,
+        { "text-anchor": "middle", fill: "#ffffff", "font-weight": "bold", "font-size": 11 });
+      a += da;
+    });
+    const fila = Math.min(18, 250 / e.categorias.length);
+    e.categorias.forEach((c, i) => {
+      const y = 50 + i * fila;
+      capa.appendChild(nodoSvg("rect", { x: 252, y: y - 8, width: 9, height: 9, fill: color(i) }));
+      txt(266, y, `${c.length > 12 ? c.slice(0, 11) + "…" : c}  ${e.porcentajes[i]}%`, { fill: color(i), "font-size": Math.min(10.5, fila - 4) });
+    });
+  }
+  return svg;
+}
+
+function mostrarVisual(v) {
+  let dibujo = null;
+  try { dibujo = v.grafica ? svgDeGrafica(v.grafica) : v.estadistica ? svgDeEstadistica(v.estadistica) : null; }
+  catch (err) { console.warn("Grafica:", err); }
+  lienzoVisual.innerHTML = "";
+  if (dibujo) lienzoVisual.appendChild(dibujo);
+  else lienzoVisual.appendChild(el("div", "fallo", "No he podido mostrar esta gráfica."));
+  document.getElementById("visual-titulo").textContent = v.titulo || "Visual";
+  panelVisual.hidden = false; visualActivo = true;
+  zonaNucleo.classList.add("con-visual");
+  panelVisual.classList.remove("entrando"); void panelVisual.offsetWidth; panelVisual.classList.add("entrando");
+  ponerModo("visual");
+}
+function ocultarVisual() {
+  if (!visualActivo) return;
+  panelVisual.hidden = true; visualActivo = false;
+  zonaNucleo.classList.remove("con-visual", "amplio");
+  document.getElementById("visual-ampliar").textContent = "Ampliar";
+  calcularTrazas();
+}
+document.getElementById("visual-cerrar").addEventListener("click", () => { ocultarVisual(); if (!ocupado) ponerModo("reposo"); });
+document.getElementById("visual-ampliar").addEventListener("click", ev => {
+  const amplio = zonaNucleo.classList.toggle("amplio");
+  ev.target.textContent = amplio ? "Reducir" : "Ampliar";
+  calcularTrazas();
+});
+
+/* ==========================================================================
+   5. LOS EVENTOS DE PYTHON
+   ========================================================================== */
+const DOOM = window.DOOM = {
+  evento(e) {
+    switch (e.tipo) {
+      case "estado":
+        if (e.estado === "pensando") {
+          ocultarVisual(); ponerModo("pensando"); latido(0.8); pasosOrden = 0;
+          document.getElementById("act-pasos").textContent = "0";
+        }
+        break;
+      case "pensando":
+        familiaActual = ""; ponerModo("pensando");
+        document.getElementById("act-herr").textContent = "pensando…";
+        mostrarPensando(e.paso > 1 ? `procesando el siguiente paso (${e.paso})…` : "procesando…");
+        break;
+      case "herramienta":
+        familiaActual = e.familia || ""; ponerModo(familiaActual || "pensando"); latido(0.7);
+        document.getElementById("act-herr").textContent = `${e.nombre}${familiaActual ? ` · ${familiaActual}` : ""}`;
+        document.getElementById("act-pasos").textContent = String(++pasosOrden);
+        break;
+      case "comentario":
+        quitarPensando(); registro.appendChild(linea("piensa", "◇", e.texto)); latido(0.3); alFondo();
+        break;
+      case "accion": {
+        quitarPensando();
+        const color = familiaActual ? colorDeModo(familiaActual) : null;
+        const l = linea("accion", "▸", "", color), cuerpo = l.querySelector(".cuerpo");
+        if (familiaActual) cuerpo.appendChild(el("span", "chip", FAMILIAS[familiaActual]));
+        conEnlaces(cuerpo, e.texto);
+        registro.appendChild(l); alFondo();
+        break;
+      }
+      case "resultado": registro.appendChild(linea("resultado", "└", e.texto)); alFondo(); break;
+      case "error": quitarPensando(); registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo(); break;
+      case "abiertas": ponerAbiertas(e.lista || []); break;
+      case "visual": {
+        const v = { titulo: e.titulo, grafica: e.grafica, estadistica: e.estadistica };
+        visuales.push(v); mostrarVisual(v); latido(0.9);
+        const l = linea("accion", "◆", "", colorDeModo("visual")), cuerpo = l.querySelector(".cuerpo");
+        cuerpo.append(el("span", "chip", "visual"), document.createTextNode(e.titulo));
+        const ver = el("button", "ver-visual", "Ver"); ver.addEventListener("click", () => mostrarVisual(v));
+        cuerpo.appendChild(ver); registro.appendChild(l); alFondo();
+        break;
+      }
+      case "permiso":
+        quitarPensando(); ponerModo("permiso"); latido(0.6);
+        document.getElementById("act-permisos").textContent = `${++permisos} pedido${permisos > 1 ? "s" : ""}`;
+        registro.appendChild(tarjetaPermiso(e.id, e.pregunta, e.opinion)); alFondo();
+        break;
+      case "permiso_fin": {
+        const t = registro.querySelector(`.permiso[data-id="${e.id}"]`);
+        if (t) {
+          t.querySelectorAll("button").forEach(b => b.disabled = true);
+          // Sin respuesta a tiempo, o con "Detener": queda dicho que no se hizo.
+          if (!t.querySelector(".hecho")) t.appendChild(el("div", "hecho", e.si ? "✓ AUTORIZADO" : "✗ NO AUTORIZADO"));
+        }
+        break;
+      }
+      case "historial": refrescarHistorial(); break;
+      case "respuesta": {
+        quitarPensando(); ponerModo("hablando");
+        document.getElementById("act-herr").textContent = "ninguna";
+        const r = el("div", "respuesta"); registro.appendChild(r);
+        escribir(r, e.texto, () => {
+          if (e.abiertas && e.abiertas.length) {
+            const a = el("div", "abierto");
+            for (const x of e.abiertas) a.appendChild(el("span", "", `abierto · ${x}`));
+            registro.appendChild(a); alFondo();
+          }
+          setTimeout(() => { if (!ocupado) ponerModo("reposo"); }, 700);
+        });
+        break;
+      }
+      case "fallo":
+        quitarPensando(); ponerModo("error"); latido(0.9);
+        registro.appendChild(el("div", "fallo", e.texto)); alFondo();
+        setTimeout(() => { if (!ocupado) ponerModo("reposo"); }, 2500);
+        break;
+      default: break;
+    }
+    if (e.tipo === "estado") ponerOcupado(e.estado === "pensando");
+  },
+};
+
+/* ==========================================================================
+   6. LA LINEA DE ORDENES
+   ========================================================================== */
+const orden = document.getElementById("orden"), botonEnviar = document.getElementById("enviar");
+function api(metodo, ...args) {
+  const p = window.pywebview && window.pywebview.api;
+  if (p && p[metodo]) return p[metodo](...args);
+  if (window.DEMO && window.DEMO[metodo]) return window.DEMO[metodo](...args);
+  return Promise.resolve(null);
+}
+function ponerOcupado(si) {
+  ocupado = si;
+  botonEnviar.textContent = si ? "Detener" : "Ejecutar";
+  botonEnviar.classList.toggle("parar", si);
+  if (!si) quitarPensando();
+}
+function crecer() {
+  orden.style.height = "auto";
+  orden.style.height = Math.min(orden.scrollHeight + 2, 160) + "px";
+  orden.style.overflowY = orden.scrollHeight > 160 ? "auto" : "hidden";
+}
+async function mandar() {
+  if (ocupado) { api("parar"); return; }
+  const texto = orden.value.trim();
+  if (!texto) return;
+  registro.appendChild(el("div", "tu", texto)); alFondo();
+  orden.value = ""; crecer();
+  const r = await api("enviar", texto);
+  if (r && r.ok === false && r.error) { registro.appendChild(el("div", "fallo", r.error)); alFondo(); }
+  else if (r && r.id && hist.actual !== r.id) { hist.actual = r.id; refrescarHistorial(); }
+}
+orden.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); mandar(); } });
+orden.addEventListener("input", () => { crecer(); latido(0.05); });
+botonEnviar.addEventListener("click", mandar);
+document.getElementById("nueva").addEventListener("click", () => nuevaConversacion(""));
+
+/* ==========================================================================
+   6b. CONVERSACIONES Y MODOS (D-038)
+   El historial por carpetas, a la izquierda, y el selector de modo junto a la
+   linea de ordenes. Todo vive en Python (ventana/historial.py, agent/skills.py):
+   aqui solo se pinta y se piden cambios.
+   ========================================================================== */
+const arbol = document.getElementById("arbol"), botonModo = document.getElementById("modo-boton");
+let hist = { carpetas: [], conversaciones: [], actual: null }, catalogoModos = [], modoActual = "global";
+const plegadas = new Set();
+const datosModo = id => catalogoModos.find(m => m.id === id) || { id: "global", titulo: "Global", descripcion: "", color: "" };
+const colorModo = id => datosModo(id).color || prefs.c1;
+
+function cerrarMenu() { document.querySelectorAll(".menu").forEach(m => m.remove()); }
+function abrirMenu(ancla, construir, arriba) {
+  cerrarMenu();
+  const m = el("div", "menu"); m.setAttribute("role", "menu");
+  construir(m);
+  document.body.appendChild(m);
+  const r = ancla.getBoundingClientRect();
+  const x = Math.min(r.left, innerWidth - m.offsetWidth - 8);
+  const y = arriba ? r.top - m.offsetHeight - 6 : Math.min(r.bottom + 4, innerHeight - m.offsetHeight - 8);
+  m.style.left = `${Math.max(8, x)}px`; m.style.top = `${Math.max(8, y)}px`;
+  const fuera = ev => { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener("mousedown", fuera, true); } };
+  setTimeout(() => document.addEventListener("mousedown", fuera, true), 0);
+  const primero = m.querySelector("button"); if (primero) primero.focus();
+  return m;
+}
+function opcion(menu, texto, accion, clase) {
+  const b = el("button", clase || "", texto); b.setAttribute("role", "menuitem");
+  b.addEventListener("click", ev => { ev.stopPropagation(); accion(b); });
+  menu.appendChild(b); return b;
+}
+// Borrar se confirma en el propio menu: un primer clic avisa, el segundo borra.
+function opcionPeligrosa(menu, texto, accion) {
+  return opcion(menu, texto, b => {
+    if (b.dataset.seguro) { cerrarMenu(); accion(); }
+    else { b.dataset.seguro = "1"; b.textContent = "¿Seguro? Pulsa otra vez"; }
+  }, "peligro");
+}
+// Un nombre se edita en su sitio: Intro guarda, Escape deja como estaba.
+function pedirNombre(contenedor, inicial, alAceptar) {
+  const i = el("input", "nombre-en-linea"); i.value = inicial || ""; i.maxLength = 80;
+  contenedor.replaceChildren(i); i.focus(); i.select();
+  let hecho = false;
+  const fin = ok => {
+    if (hecho) return; hecho = true;
+    if (ok && i.value.trim() && i.value.trim() !== inicial) alAceptar(i.value.trim()); else pintarArbol();
+  };
+  i.addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Enter") fin(true); if (ev.key === "Escape") fin(false); });
+  i.addEventListener("click", ev => ev.stopPropagation());
+  i.addEventListener("blur", () => fin(true));
+}
+function fechaCorta(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
+
+function pintarArbol() {
+  arbol.innerHTML = "";
+  const grupos = new Map(hist.carpetas.map(c => [c, []])), sueltas = [];
+  for (const c of hist.conversaciones) {
+    if (!c.carpeta) { sueltas.push(c); continue; }
+    if (!grupos.has(c.carpeta)) grupos.set(c.carpeta, []);
+    grupos.get(c.carpeta).push(c);
+  }
+  for (const [nombre, lista] of grupos) arbol.appendChild(grupo(nombre, lista));
+  arbol.appendChild(grupo("", sueltas));
+}
+function grupo(nombre, lista) {
+  const g = el("div", "carpeta"), cab = el("div", "carpeta-cab"), plegada = plegadas.has(nombre);
+  const titulo = el("span", "n", nombre || "Sin carpeta");
+  cab.append(el("span", "flecha", plegada ? "▸" : "▾"), titulo, el("span", "num", String(lista.length)));
+  cab.addEventListener("click", () => { if (plegada) plegadas.delete(nombre); else plegadas.add(nombre); pintarArbol(); });
+  const acc = el("button", "acc", "⋯"); acc.title = "Opciones"; acc.setAttribute("aria-label", `Opciones de ${nombre || "Sin carpeta"}`);
+  acc.addEventListener("click", ev => {
+    ev.stopPropagation();
+    abrirMenu(acc, m => {
+      opcion(m, "Conversación nueva aquí", () => { cerrarMenu(); nuevaConversacion(nombre); });
+      if (!nombre) return;
+      opcion(m, "Renombrar carpeta", () => {
+        cerrarMenu(); pedirNombre(titulo, nombre, async v => { await api("renombrar_carpeta", nombre, v); refrescarHistorial(); });
+      });
+      opcionPeligrosa(m, "Borrar carpeta (sus conversaciones se quedan)", async () => { await api("borrar_carpeta", nombre); refrescarHistorial(); });
+    });
+  });
+  cab.appendChild(acc); g.appendChild(cab);
+  if (!plegada) {
+    if (!lista.length) g.appendChild(el("div", "vacio", nombre ? "vacía" : "nada todavía"));
+    for (const c of lista) g.appendChild(itemConversacion(c));
+  }
+  return g;
+}
+function itemConversacion(c) {
+  const fila = el("div", `conv${c.id === hist.actual ? " actual" : ""}`);
+  fila.tabIndex = 0; fila.setAttribute("role", "button");
+  const punto = el("span", "punto"); punto.style.background = colorModo(c.modo); punto.title = `Modo ${datosModo(c.modo).titulo}`;
+  const t = el("span", "t", c.titulo); t.title = c.titulo;
+  const acc = el("button", "acc", "⋯"); acc.title = "Opciones"; acc.setAttribute("aria-label", `Opciones de ${c.titulo}`);
+  fila.append(punto, t, el("span", "f", fechaCorta(c.actualizada)), acc);
+  fila.addEventListener("click", () => abrirConversacion(c.id));
+  fila.addEventListener("keydown", ev => { if (ev.key === "Enter" && ev.target === fila) abrirConversacion(c.id); });
+  acc.addEventListener("click", ev => {
+    ev.stopPropagation();
+    abrirMenu(acc, m => {
+      opcion(m, "Renombrar", () => {
+        cerrarMenu(); pedirNombre(t, c.titulo, async v => { await api("renombrar_conversacion", c.id, v); refrescarHistorial(); });
+      });
+      opcion(m, "Mover a…", () => abrirMenu(acc, m2 => {
+        m2.appendChild(el("div", "titulo-menu", "Mover a"));
+        for (const carpeta of [...hist.carpetas, ""]) {
+          if (carpeta === c.carpeta) continue;
+          opcion(m2, carpeta || "Sin carpeta", async () => { cerrarMenu(); await api("mover_conversacion", c.id, carpeta); refrescarHistorial(); });
+        }
+      }));
+      opcionPeligrosa(m, "Borrar conversación", async () => {
+        await api("borrar_conversacion", c.id);
+        if (c.id === hist.actual) limpiarRegistro("Conversación borrada. Empiezas una nueva.");
+        refrescarHistorial();
+      });
+    });
+  });
+  return fila;
+}
+async function refrescarHistorial() {
+  const h = await api("historial");
+  if (h) { hist = h; pintarArbol(); }
+}
+function limpiarRegistro(aviso) {
+  ocultarVisual(); registro.innerHTML = ""; ponerAbiertas([]); permisos = 0;
+  document.getElementById("act-permisos").textContent = "0 pedidos";
+  if (aviso) registro.appendChild(el("div", "sistema", aviso));
+}
+async function nuevaConversacion(carpeta) {
+  if (ocupado) return;
+  const r = await api("nuevo", carpeta || "");
+  if (r && r.ok === false) { registro.appendChild(el("div", "fallo", r.error)); alFondo(); return; }
+  if (enPasos) ocultarPasos();
+  const modo = datosModo(modoActual).titulo;
+  limpiarRegistro(carpeta ? `Conversación nueva en «${carpeta}». Modo ${modo}.` : `Conversación nueva. Modo ${modo}.`);
+  hist.actual = null; pintarArbol(); orden.focus();
+}
+async function abrirConversacion(id) {
+  if (ocupado || id === hist.actual) return;
+  const r = await api("abrir_conversacion", id);
+  if (!r || !r.ok) { registro.appendChild(el("div", "fallo", (r && r.error) || "No se pudo abrir.")); alFondo(); return; }
+  if (enPasos) ocultarPasos();
+  reproducir(r.registro || []);
+  ponerModoConversacion(r.modo);
+  hist.actual = r.id; pintarArbol(); orden.focus();
+}
+// Vuelve a pintar una conversacion guardada, sin animaciones ni cambios del nucleo.
+function reproducir(eventos) {
+  limpiarRegistro();
+  const decisiones = new Map(eventos.filter(e => e.tipo === "permiso_fin").map(e => [e.id, e.si]));
+  let familia = "";
+  for (const e of eventos) {
+    switch (e.tipo) {
+      case "tu": registro.appendChild(el("div", "tu", e.texto)); break;
+      case "comentario": registro.appendChild(linea("piensa", "◇", e.texto)); break;
+      case "herramienta": familia = e.familia || ""; break;
+      case "accion": {
+        const l = linea("accion", "▸", "", familia ? colorDeModo(familia) : null), cuerpo = l.querySelector(".cuerpo");
+        if (FAMILIAS[familia]) cuerpo.appendChild(el("span", "chip", FAMILIAS[familia]));
+        conEnlaces(cuerpo, e.texto); registro.appendChild(l); break;
+      }
+      case "resultado": registro.appendChild(linea("resultado", "└", e.texto)); break;
+      case "error": registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); break;
+      case "permiso": {
+        const t = tarjetaPermiso(e.id, e.pregunta, e.opinion), si = decisiones.get(e.id);
+        t.querySelectorAll("button").forEach(b => b.disabled = true);
+        t.appendChild(el("div", "hecho", si ? "✓ AUTORIZADO" : "✗ NO AUTORIZADO"));
+        registro.appendChild(t); break;
+      }
+      case "respuesta": registro.appendChild(conEnlaces(el("div", "respuesta"), e.texto)); break;
+      case "fallo": registro.appendChild(el("div", "fallo", e.texto)); break;
+      case "visual": {
+        const v = { titulo: e.titulo, grafica: e.grafica, estadistica: e.estadistica };
+        const l = linea("accion", "◆", "", colorDeModo("visual")), cuerpo = l.querySelector(".cuerpo");
+        cuerpo.append(el("span", "chip", "visual"), document.createTextNode(e.titulo));
+        const ver = el("button", "ver-visual", "Ver"); ver.addEventListener("click", () => mostrarVisual(v));
+        cuerpo.appendChild(ver); registro.appendChild(l); break;
+      }
+      default: break;
+    }
+  }
+  alFondo();
+}
+
+function ponerModoConversacion(id) {
+  modoActual = id || "global";
+  const m = datosModo(modoActual);
+  document.documentElement.style.setProperty("--skill", colorModo(modoActual));
+  document.getElementById("modo-nombre").textContent = m.titulo;
+  document.getElementById("sys-modo").textContent = m.titulo;
+}
+async function cambiarModo(id) {
+  cerrarMenu();
+  if (ocupado || id === modoActual) return;
+  const r = await api("poner_modo", id);
+  if (!r || !r.ok) { registro.appendChild(el("div", "fallo", (r && r.error) || "No se pudo cambiar de modo.")); alFondo(); return; }
+  ponerModoConversacion(r.modo);
+  const m = datosModo(r.modo);
+  registro.appendChild(el("div", "sistema", `Modo ${m.titulo}${m.descripcion ? ": " + m.descripcion : ""}`)); alFondo();
+  document.getElementById("sys-herr").textContent = `${r.herramientas} disponibles`;
+  latido(0.6); refrescarHistorial();
+}
+botonModo.addEventListener("click", async ev => {
+  ev.stopPropagation();
+  if (document.querySelector(".menu")) { cerrarMenu(); return; }
+  const aprendido = (await api("aprendido", modoActual)) || { notas: [] };
+  abrirMenu(botonModo, m => {
+    m.appendChild(el("div", "titulo-menu", "Modo de conversación"));
+    for (const modo of catalogoModos) {
+      const b = opcion(m, "", () => cambiarModo(modo.id), `modo-op${modo.id === modoActual ? " actual" : ""}`);
+      const p = el("span", "p"); p.style.background = modo.color || prefs.c1;
+      b.append(p, el("span", "", modo.titulo), el("span", "d", modo.descripcion));
+    }
+    m.appendChild(el("div", "titulo-menu", `Aprendido en ${datosModo(modoActual).titulo}`));
+    if (!aprendido.notas.length) m.appendChild(el("div", "sin-notas", "Nada todavía. Dile «recuerda que prefiero…» y lo apuntará."));
+    aprendido.notas.forEach((nota, i) => {
+      const fila = el("div", "nota"), quitar = el("button", "", "✕");
+      quitar.title = "Olvidar esto"; quitar.setAttribute("aria-label", `Olvidar: ${nota}`);
+      quitar.addEventListener("click", async e2 => {
+        e2.stopPropagation(); await api("olvidar_aprendido", modoActual, i); cerrarMenu(); botonModo.click();
+      });
+      fila.append(el("span", "", nota), quitar); m.appendChild(fila);
+    });
+  }, true);
+});
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") cerrarMenu(); });
+document.getElementById("conv-nueva").addEventListener("click", () => nuevaConversacion(""));
+document.getElementById("carpeta-nueva").addEventListener("click", () => {
+  const hueco = el("div", "conv");
+  arbol.prepend(hueco);
+  pedirNombre(hueco, "", async v => { await api("crear_carpeta", v); refrescarHistorial(); });
+});
+for (const [tab, vista, otra, otraVista] of [["tab-conv", "vista-conv", "tab-sys", "vista-sys"], ["tab-sys", "vista-sys", "tab-conv", "vista-conv"]]) {
+  document.getElementById(tab).addEventListener("click", () => {
+    document.getElementById(vista).hidden = false; document.getElementById(otraVista).hidden = true;
+    document.getElementById(tab).classList.add("activa"); document.getElementById(otra).classList.remove("activa");
+    document.getElementById(tab).setAttribute("aria-selected", "true"); document.getElementById(otra).setAttribute("aria-selected", "false");
+  });
+}
+
+/* ==========================================================================
+   7. PRIMEROS PASOS
+   ========================================================================== */
+const pasos = document.getElementById("pasos"), marcoRegistro = document.getElementById("marco-registro");
+const entrada = document.querySelector(".entrada"), botonPasos = document.getElementById("boton-pasos");
+let enPasos = false, bienvenida = false;
+
+function mostrarPasos(motivo) {
+  enPasos = true; pasos.hidden = false; marcoRegistro.hidden = true; entrada.hidden = true;
+  botonPasos.textContent = "Volver al chat"; pintarPasos(motivo); calcularTrazas();
+}
+function ocultarPasos() {
+  enPasos = false; pasos.hidden = true; marcoRegistro.hidden = false; entrada.hidden = false;
+  botonPasos.textContent = "Primeros pasos"; calcularTrazas(); alFondo(); orden.focus();
+}
+async function irAlChat() { if (await arrancar()) ocultarPasos(); }
+
+function seccion(num, titulo, etiqueta, requerido) {
+  const h = el("h2");
+  h.append(el("span", "num", num), el("span", "", titulo), el("span", requerido ? "req" : "opc", etiqueta));
+  return h;
+}
+function lineaEstado(ok, texto) { return el("div", `linea-estado ${ok ? "ok" : "falta"}`, `${ok ? "✓" : "·"} ${texto}`); }
+function comando(texto) { return el("code", "cmd", texto); }
+
+function tarjetaProveedor(p) {
+  const t = el("div", `prov${p.configurada ? " lista" : ""}`), cab = el("div", "prov-cab");
+  const estado = el("span", `prov-estado ${p.configurada ? "ok" : "falta"}`,
+    p.configurada ? `✓ clave guardada${p.final ? ` (…${p.final})` : ""}` : "sin clave");
+  cab.append(el("b", "", p.titulo), estado); t.appendChild(cab);
+  if (p.nota) t.appendChild(el("div", "prov-nota", p.nota));
+  const ol = el("ol"); for (const x of p.pasos) ol.appendChild(el("li", "", x)); t.appendChild(ol);
+  t.appendChild(el("div", "prov-gratis", `Gratis: ${p.gratis}`));
+  const fila = el("div", "fila"), abrir = el("button", "", "Abrir la página ↗");
+  abrir.addEventListener("click", () => api("abrir_enlace", p.alta));
+  const campo = el("input");
+  Object.assign(campo, { type: "password", autocomplete: "off", spellcheck: false,
+    placeholder: p.configurada ? "Pega otra clave para sustituirla" : "Pega aquí la clave" });
+  campo.setAttribute("aria-label", `Clave de ${p.titulo}`);
+  const guardar = el("button", "", "Guardar"), probar = el("button", "", "Probar");
+  probar.disabled = !p.configurada;
+  fila.append(abrir, campo, guardar, probar); t.appendChild(fila);
+  const det = el("details", "prov-modelo"), modelo = el("input");
+  det.appendChild(el("summary", "", `Modelo: ${p.modelo}`));
+  modelo.value = p.modelo; modelo.spellcheck = false; modelo.setAttribute("aria-label", `Modelo de ${p.titulo}`);
+  det.append(modelo, el("div", "prov-nota", "Cámbialo solo si el proveedor ya no ofrece este. Se aplica al pulsar Guardar."));
+  t.appendChild(det);
+  const res = el("div", "prov-res"); t.appendChild(res);
+  const hacerPrueba = async () => {
+    res.className = "prov-res"; res.textContent = "Probando…";
+    const r = await api("probar_clave", p.id);
+    res.className = `prov-res ${r && r.ok ? "ok" : "mal"}`;
+    res.textContent = r ? `${r.ok ? "✓" : "✗"} ${r.detalle}` : "✗ sin respuesta";
+    if (r && r.ok) { latido(0.9); ponerModo("hablando"); setTimeout(() => ponerModo("reposo"), 1500); }
+  };
+  guardar.addEventListener("click", async () => {
+    const r = await api("guardar_clave", p.id, campo.value, modelo.value);
+    if (!r || !r.ok) { res.className = "prov-res mal"; res.textContent = `✗ ${r ? r.error : "no se pudo guardar"}`; return; }
+    campo.value = ""; campo.placeholder = "Pega otra clave para sustituirla";
+    estado.className = "prov-estado ok"; estado.textContent = `✓ clave guardada (…${r.final})`;
+    t.classList.add("lista"); probar.disabled = false;
+    det.querySelector("summary").textContent = `Modelo: ${modelo.value.trim() || p.modelo}`;
+    await hacerPrueba();
+  });
+  campo.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); guardar.click(); } });
+  probar.addEventListener("click", hacerPrueba);
+  return t;
+}
+function bloqueNavegador(n) {
+  const b = el("div", "bloque");
+  b.append(lineaEstado(n.playwright, "Playwright instalado"), lineaEstado(n.chromium, "Chromium descargado"));
+  if (n.playwright && n.chromium) b.appendChild(el("p", "", "Listo: el agente puede leer páginas, pulsar y rellenar en su propio navegador, aparte del tuyo."));
+  else {
+    b.appendChild(el("p", "", "Sin esto, el agente abre páginas en tu navegador pero no puede leerlas ni pulsar en ellas. Se instala una vez, desde la carpeta del proyecto:"));
+    b.append(comando('pip install -e ".[agent-web]"'), comando("python -m playwright install chromium"));
+  }
+  return b;
+}
+function bloqueOllama(o) {
+  const b = el("div", "bloque");
+  b.appendChild(lineaEstado(o.responde, o.responde ? `Ollama responde en ${o.host}` : `Ollama no responde en ${o.host}`));
+  if (o.responde && o.en_lista) { b.appendChild(el("p", "", "En uso: está en tu lista de modelos.")); return b; }
+  b.appendChild(el("p", "", "Gratis y sin conexión: lo que lee el agente no sale del equipo. Necesita memoria de sobra, y va mucho mejor con una tarjeta gráfica."));
+  if (!o.responde) {
+    const d = el("button", "", "Descargar Ollama ↗"); d.addEventListener("click", () => api("abrir_enlace", o.descarga));
+    b.append(d, el("p", "", "Después, descarga un modelo:"), comando(`ollama pull ${o.sugerido}`));
+  }
+  b.appendChild(el("p", "", `Y añade ollama:${o.sugerido} al final de DOOMBOT_MODELOS en el fichero .env.`));
+  return b;
+}
+async function pintarPasos(motivo) {
+  pasos.innerHTML = "";
+  const cab = el("div", "cab-marco");
+  cab.append(el("span", "etq", "Primeros pasos"), el("span", "barra"), el("span", "codigo", "INIT // CONFIG"));
+  const d = el("div", "pasos-dentro");
+  pasos.append(cab, d);
+  d.appendChild(el("h1", "", "Configuración inicial"));
+  d.appendChild(el("p", "intro", "Para actuar, D.O.O.M necesita al menos un modelo de lenguaje. Estos son gratuitos y sin tarjeta: crea una clave, pégala aquí y pruébala."));
+  if (motivo) d.appendChild(el("div", "motivo", motivo));
+  const est = await api("configuracion");
+  if (!est) { d.appendChild(el("p", "intro", "No puedo leer la configuración.")); return; }
+  d.appendChild(seccion("01", "Modelos de lenguaje", "necesario · al menos uno", true));
+  for (const p of est.proveedores) d.appendChild(tarjetaProveedor(p));
+  d.appendChild(seccion("02", "Navegador propio del agente", "opcional"));
+  d.appendChild(bloqueNavegador(est.navegador));
+  d.appendChild(seccion("03", "Modelo local, sin internet", "opcional"));
+  d.appendChild(bloqueOllama(est.ollama));
+  d.appendChild(el("div", "nota-claves",
+    `Las claves son de tu cuenta, no de este ordenador: la misma sirve en cualquier equipo. Se guardan solo en ${est.env}, ` +
+    "que no se sube a GitHub; en otro ordenador, vuelve a pegarlas aquí. Si prefieres, crea una por equipo: así puedes revocar solo la de uno."));
+  const acciones = el("div", "acciones"), ir = el("button", "", "Ir al chat");
+  ir.addEventListener("click", irAlChat); acciones.appendChild(ir); d.appendChild(acciones);
+}
+botonPasos.addEventListener("click", () => { if (enPasos) irAlChat(); else if (!ocupado) mostrarPasos(); });
+
+/* ==========================================================================
+   8. PERSONALIZAR
+   ========================================================================== */
+const ajustes = document.getElementById("ajustes"), temas = document.getElementById("temas");
+for (const [id, t] of Object.entries(TEMAS)) {
+  const b = el("button", "tema"); b.dataset.tema = id; b.title = t.nombre;
+  const m = el("span", "muestra");
+  m.style.background = `radial-gradient(circle at 50% 40%, ${t.c2} 0 7%, ${t.c1} 13%, transparent 30%), ` +
+    `radial-gradient(circle at 50% 40%, transparent 36%, ${t.c1}88 38%, transparent 42%), #03060b`;
+  b.append(m, el("span", "", t.nombre));
+  b.addEventListener("click", () => cambiar({ tema: id, c1: t.c1, c2: t.c2 }));
+  temas.appendChild(b);
+}
+function reflejarAjustes() {
+  temas.querySelectorAll(".tema").forEach(b => b.classList.toggle("activo", b.dataset.tema === prefs.tema));
+  document.getElementById("aj-c1").value = prefs.c1;
+  document.getElementById("aj-c2").value = prefs.c2;
+  for (const k of ["luz", "fondo", "velocidad"]) {
+    document.getElementById(`aj-${k}`).value = prefs[k];
+    document.getElementById(`o-${k}`).textContent = `${Math.round(prefs[k] * 100)}%`;
+  }
+  for (const k of ["por_herramienta", "circuitos", "crt"]) document.getElementById(`aj-${k}`).checked = !!prefs[k];
+}
+let guardadoPendiente = null;
+function cambiar(cambios) {
+  Object.assign(prefs, cambios);
+  aplicarTema(); reflejarAjustes(); latido(0.4);
+  clearTimeout(guardadoPendiente);
+  guardadoPendiente = setTimeout(async () => {
+    const r = await api("guardar_preferencias", prefs);
+    if (r) { prefs = Object.assign({}, DEFECTO, r); reflejarAjustes(); }
+  }, 400);
+}
+document.getElementById("aj-c1").addEventListener("input", ev => cambiar({ tema: "propio", c1: ev.target.value }));
+document.getElementById("aj-c2").addEventListener("input", ev => cambiar({ tema: "propio", c2: ev.target.value }));
+for (const k of ["luz", "fondo", "velocidad"]) document.getElementById(`aj-${k}`).addEventListener("input", ev => cambiar({ [k]: parseFloat(ev.target.value) }));
+for (const k of ["por_herramienta", "circuitos", "crt"]) document.getElementById(`aj-${k}`).addEventListener("change", ev => cambiar({ [k]: ev.target.checked }));
+document.getElementById("aj-restablecer").addEventListener("click", () => cambiar(Object.assign({}, DEFECTO)));
+function abrirAjustes(si) {
+  ajustes.classList.toggle("visible", si); ajustes.setAttribute("aria-hidden", String(!si));
+  if (si) document.getElementById("cerrar-ajustes").focus();
+}
+document.getElementById("boton-ajustes").addEventListener("click", () => abrirAjustes(!ajustes.classList.contains("visible")));
+document.getElementById("cerrar-ajustes").addEventListener("click", () => abrirAjustes(false));
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") abrirAjustes(false); });
+
+/* ==========================================================================
+   9. ARRANQUE
+   ========================================================================== */
+async function arrancar() {
+  ponerModo("reposo");
+  const info = await api("iniciar");
+  const lista = document.getElementById("sys-modelos");
+  lista.innerHTML = "";
+  if (!info) { lista.appendChild(el("li", "apagado", "sin conexión con el agente")); return false; }
+  if (!info.ok) {
+    lista.appendChild(el("li", "apagado", "ninguno disponible"));
+    ponerModo("error"); setTimeout(() => ponerModo("reposo"), 2500);
+    mostrarPasos(info.error);
+    return false;
+  }
+  for (const m of info.modelos) lista.appendChild(el("li", "", m));
+  for (const a of info.avisos || []) lista.appendChild(Object.assign(el("li", "apagado", a.split(":")[0].replace(/'/g, "")), { title: a }));
+  document.getElementById("sys-revisor").textContent = info.revisor ? "activada" : "desactivada";
+  document.getElementById("sys-herr").textContent = `${info.herramientas} disponibles`;
+  document.getElementById("pie-info").textContent =
+    `${info.modelos.length} modelo${info.modelos.length > 1 ? "s" : ""} · ${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión" : "");
+  catalogoModos = info.modos || [];
+  ponerModoConversacion(info.actual || "global");
+  refrescarHistorial();
+  orden.disabled = botonEnviar.disabled = false;
+  if (!bienvenida) {
+    bienvenida = true;
+    registro.appendChild(el("div", "sistema",
+      "Núcleo en línea. Escribe lo que quieres que haga: te iré contando lo que pienso, lo que abro y lo que hago; antes de algo que no se deshace, te preguntaré."));
+  }
+  if (!enPasos) orden.focus();
+  return true;
+}
+async function empezar() {
+  const p = await api("preferencias");
+  if (p) prefs = Object.assign({}, DEFECTO, p);
+  aplicarTema(); reflejarAjustes();
+  requestAnimationFrame(() => { calcularTrazas(); requestAnimationFrame(fotograma); });
+  await arrancar();
+}
+window.addEventListener("resize", () => { pintarFondo(); calcularTrazas(); });
+new ResizeObserver(() => calcularTrazas()).observe(document.querySelector("main.hud"));
+
+/* ==========================================================================
+   10. DEMO (#demo): una orden simulada, para disenar sin agente
+   ========================================================================== */
+const MODOS_DEMO = [
+  { id: "global", titulo: "Global", descripcion: "Todo a la vez: todas las herramientas y los expertos.", color: "" },
+  { id: "ciencias", titulo: "Ciencias", descripcion: "Matemáticas, física, química y estadística paso a paso.", color: "#ffc23d" },
+  { id: "diseno", titulo: "Diseño", descripcion: "Diseño visual e interfaces.", color: "#b48bff" },
+  { id: "investigacion", titulo: "Investigación", descripcion: "Conversación e investigación en internet.", color: "#2bd9ff" },
+  { id: "programacion", titulo: "Programación", descripcion: "Lee, explica, modifica y prueba código.", color: "#3dff9a" },
+];
+const HIST_DEMO = { actual: null, carpetas: ["Estudios", "Proyecto D.O.O.M"], conversaciones: [
+  { id: "1", titulo: "Energía cinética de una pelota", carpeta: "Estudios", modo: "ciencias", actualizada: new Date().toISOString() },
+  { id: "2", titulo: "Refactor del puente de la ventana", carpeta: "Proyecto D.O.O.M", modo: "programacion", actualizada: new Date().toISOString() },
+  { id: "3", titulo: "Paleta para el HUD", carpeta: "Proyecto D.O.O.M", modo: "diseno", actualizada: "2026-10-11T18:00:00" },
+  { id: "4", titulo: "¿Qué tiempo hace en Madrid?", carpeta: "", modo: "investigacion", actualizada: "2026-10-10T09:30:00" },
+] };
+if (location.hash === "#demo") {
+  const t = (ms, f) => setTimeout(f, ms);
+  document.body.prepend(el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS"));
+  document.body.style.paddingTop = "28px";
+  orden.placeholder = "Demostración: lo que escribas no llega a ningún agente";
+  let prefsDemo = null;
+  window.DEMO = {
+    preferencias: () => Promise.resolve(prefsDemo),
+    guardar_preferencias: (p) => { prefsDemo = Object.assign({}, p); return Promise.resolve(prefsDemo); },
+    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 19, revisor: true,
+      actual: "global", modos: MODOS_DEMO }),
+    historial: () => Promise.resolve(HIST_DEMO),
+    abrir_conversacion: (id) => { HIST_DEMO.actual = id; const c = HIST_DEMO.conversaciones.find(x => x.id === id);
+      return Promise.resolve({ ok: true, id, titulo: c.titulo, modo: c.modo, registro: [
+        { tipo: "tu", texto: c.titulo }, { tipo: "comentario", texto: "(Simulación) Así se ve una conversación guardada al reabrirla." },
+        { tipo: "herramienta", nombre: "calcular", familia: "" }, { tipo: "accion", texto: "Calculo 9.81 * 2.5^2 / 2" },
+        { tipo: "resultado", texto: "9.81 * 2.5^2 / 2 = 30.65625" }, { tipo: "respuesta", texto: "La energía es 30,66 J (simulado)." }] }); },
+    poner_modo: (id) => Promise.resolve({ ok: true, modo: id, herramientas: id === "global" ? 19 : 7 }),
+    aprendido: () => Promise.resolve({ notas: ["2026-10-13 Prefiere las respuestas con unidades del SI", "2026-10-13 Quiere los pasos numerados"] }),
+    olvidar_aprendido: () => Promise.resolve({ ok: true }),
+    crear_carpeta: (n) => { HIST_DEMO.carpetas.push(n); return Promise.resolve({ ok: true }); },
+    renombrar_conversacion: () => Promise.resolve({ ok: true }), mover_conversacion: () => Promise.resolve({ ok: true }),
+    borrar_conversacion: () => Promise.resolve({ ok: true }), renombrar_carpeta: () => Promise.resolve({ ok: true }), borrar_carpeta: () => Promise.resolve({ ok: true }),
+    nuevo: () => Promise.resolve(null), parar: () => Promise.resolve(null), abrir_enlace: () => Promise.resolve(null),
+    configuracion: () => Promise.resolve({
+      proveedores: [
+        { id: "groq", titulo: "Groq", alta: "https://console.groq.com/keys", pasos: ["Abre la página y entra con Google o GitHub.", "Create API Key.", "Copia la clave y pégala aquí."], gratis: "30/min, 1.000/día", nota: "La más rápida. Empieza por esta.", modelo: "openai/gpt-oss-120b", en_lista: true, configurada: true, final: "ab12" },
+        { id: "gemini", titulo: "Gemini (Google)", alta: "https://aistudio.google.com/apikey", pasos: ["Abre la página.", "Create API key.", "Copia y pega."], gratis: "según modelo", nota: "Segundo modelo para contrastar.", modelo: "gemini-3.8-flash", en_lista: true, configurada: false, final: "" },
+      ],
+      listos: 1, navegador: { playwright: true, chromium: false },
+      ollama: { host: "http://127.0.0.1:11434", responde: false, en_lista: false, descarga: "https://ollama.com/download", sugerido: "qwen3:4b" },
+      env: "/ruta/al/proyecto/.env",
+    }),
+    guardar_clave: () => Promise.resolve({ ok: true, final: "9z9z" }),
+    probar_clave: (id) => Promise.resolve({ ok: true, detalle: `${id} responde (simulado).` }),
+    responder: () => {
+      t(500, () => { DOOM.evento({ tipo: "herramienta", nombre: "cerrar_aplicacion", familia: "apps" }); DOOM.evento({ tipo: "accion", texto: "Cierro Calculadora" }); });
+      t(900, () => DOOM.evento({ tipo: "resultado", texto: "Pedido el cierre de la ventana 'Calculator'." }));
+      t(1300, () => { DOOM.evento({ tipo: "respuesta", texto: "(Simulación: no he hecho nada de verdad.) Así se vería una respuesta: «He buscado el tiempo en Madrid según https://www.aemet.es y he abierto y cerrado la Calculadora».", completo: true, abiertas: ["Calculator", "https://duckduckgo.com/?q=tiempo+Madrid"] }); DOOM.evento({ tipo: "estado", estado: "reposo" }); });
+      return Promise.resolve(null);
+    },
+    enviar: (texto) => {
+      const E = e => DOOM.evento(e);
+      E({ tipo: "estado", estado: "pensando" }); E({ tipo: "pensando", paso: 1 });
+      const visual = /vector|gr[aá]fic|funci/i.test(texto) ? {
+        titulo: "Suma de vectores u + v",
+        grafica: { x: [-1, 7], y: [-1, 6], vectores: [{ de: [0, 0], a: [4, 1], nombre: "u" }, { de: [4, 1], a: [5, 4], nombre: "v" }, { de: [0, 0], a: [5, 4], nombre: "u+v" }],
+                   puntos: [], segmentos: [], funciones: [{ f: "0.8x", nombre: "r" }] },
+      } : /estad|barra|venta|dato|histogram|sector/i.test(texto) ? {
+        titulo: "Ventas por trimestre",
+        estadistica: { tipo: "barras", eje_x: "trimestre", eje_y: "ventas (miles €)", categorias: ["T1", "T2", "T3", "T4"],
+                       series: [{ nombre: "2025", valores: [12, 18, 15, 22] }, { nombre: "2026", valores: [14, 21, 19, 27] }] },
+      } : null;
+      if (visual) {
+        t(900, () => E({ tipo: "error", texto: `SIMULACIÓN: no hay agente detrás; esto es un ejemplo fijo para ver cómo se representa («${texto}»).` }));
+        t(1300, () => E({ tipo: "comentario", texto: "Lo represento para que se vea mejor." }));
+        t(1600, () => { E({ tipo: "herramienta", nombre: "mostrar_visual", familia: "visual" }); E({ tipo: "accion", texto: `Lo represento: ${visual.titulo}` }); });
+        t(2000, () => { E(Object.assign({ tipo: "visual" }, visual)); E({ tipo: "resultado", texto: `Mostrado en la pantalla del usuario: «${visual.titulo}».` }); });
+        t(2600, () => { E({ tipo: "respuesta", texto: "(Simulación.) Así se vería: el núcleo se aparta y en su lugar queda la representación; con «Núcleo» vuelves.", completo: true, abiertas: [] }); E({ tipo: "estado", estado: "reposo" }); });
+        return Promise.resolve({ ok: true });
+      }
+      t(900, () => E({ tipo: "error", texto: `SIMULACIÓN: no hay agente detrás. Tu orden («${texto}») no llega a ningún sitio; lo que sigue es un guion fijo para ver el diseño.` }));
+      t(1200, () => E({ tipo: "comentario", texto: "Voy a buscar el tiempo en Madrid en mi navegador y luego abro la calculadora." }));
+      t(1500, () => { E({ tipo: "herramienta", nombre: "navegar", familia: "web" }); E({ tipo: "accion", texto: "Navego a el tiempo en Madrid" }); });
+      t(3200, () => { E({ tipo: "resultado", texto: "Pagina: «tiempo Madrid at DuckDuckGo» (https://duckduckgo.com/?q=tiempo+Madrid)" }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid"] }); });
+      t(3400, () => E({ tipo: "pensando", paso: 2 }));
+      t(4300, () => { E({ tipo: "herramienta", nombre: "abrir_aplicacion", familia: "apps" }); E({ tipo: "accion", texto: "Abro calculadora" }); });
+      t(5600, () => { E({ tipo: "resultado", texto: "Abierta Calculator." }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid", "Calculator"] }); });
+      t(5800, () => E({ tipo: "pensando", paso: 3 }));
+      t(6600, () => { E({ tipo: "herramienta", nombre: "buscar_ficheros", familia: "ficheros" }); E({ tipo: "accion", texto: "Busco «informe» en ~" }); });
+      t(7800, () => E({ tipo: "resultado", texto: "/home/usuario/Descargas/informe.pdf" }));
+      t(8000, () => { E({ tipo: "herramienta", nombre: "ejecutar_comando", familia: "terminal" }); E({ tipo: "accion", texto: "Ejecuto: ls ~/Descargas" }); });
+      t(9200, () => E({ tipo: "resultado", texto: "informe.pdf  notas.txt" }));
+      t(9400, () => E({ tipo: "pensando", paso: 4 }));
+      t(10200, () => E({ tipo: "permiso", id: 1, pregunta: "Voy a cerrar 'calculadora' (si hay algo sin guardar, se puede perder).", opinion: "BIEN: el usuario pidió abrirla y cerrarla. (gemini/gemini-3.8-flash)" }));
+      return Promise.resolve({ ok: true });
+    },
+  };
+  empezar();
+} else if (window.pywebview && window.pywebview.api) empezar();
+else window.addEventListener("pywebviewready", empezar);
+</script>
+</body>
+</html>

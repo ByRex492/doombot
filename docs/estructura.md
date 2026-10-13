@@ -19,6 +19,9 @@ doombot/
 │   ├── chat.py          Modo interactivo: junta todas las capas en un bucle
 │   ├── hud_server.py    Transporte del HUD por WebSocket (D-022)
 │   ├── backends/        Contratos e implementaciones intercambiables
+│   │   ├── openai_compat.py  Cualquier API tipo OpenAI: Groq, Gemini, NVIDIA... (D-034)
+│   │   ├── proveedores.py    Catálogo: de "groq:modelo" a un generador
+│   │   └── varios.py    Cadena (si uno falla, otro) y Consejo (contrastar)
 │   ├── memory/          Qué recuerda D.O.O.M (+ orders.py)
 │   ├── phrases/         Frases textuales y órdenes: qué se puede decir
 │   ├── orders/          Registro: qué capa atiende cada orden
@@ -38,10 +41,30 @@ doombot/
 │   │   ├── claude_code.py  Delega en `claude -p`, headless
 │   │   ├── n8n.py       Dispara workflows por webhook, lista blanca (D-030)
 │   │   └── orders.py    `act` y `flow`
+│   ├── agent/           Agente local: cumple órdenes solo, con herramientas (D-033)
+│   │   ├── bucle.py     Pensar, actuar, observar: confirmación, límites, enmascarado
+│   │   ├── herramientas.py  Qué es una herramienta: función + narración + riesgo
+│   │   ├── sistema.py   Ficheros y comandos; qué es "solo lectura" y qué es sensible
+│   │   ├── apps.py      Reconoce, abre y cierra las aplicaciones instaladas
+│   │   ├── web.py       Navegador propio (Playwright) y el navegador del usuario
+│   │   ├── montaje.py   Elige el cerebro, junta las herramientas, escribe el prompt
+│   │   ├── revision.py  Segunda opinión de otro modelo antes de lo irreversible
+│   │   ├── graficas.py  mostrar_grafica: ejes y estadística, con los cálculos hechos aquí
+│   │   ├── calculo.py   calcular: aritmética exacta sin eval (D-038)
+│   │   ├── skills.py    Modos: leer SKILL.md, aplicar un modo, lo aprendido, expertos
+│   │   ├── consola.py   `python -m doombot agente`
+│   │   └── orders.py    `agent`, desde el chat
+│   ├── ventana/         La aplicación de escritorio: planeta, registro y chat (D-035)
+│   │   ├── puente.py    Ventana <-> agente: js_api, un hilo fijo, confirmaciones
+│   │   ├── primeros_pasos.py  Qué falta para funcionar; guardar y probar claves
+│   │   ├── preferencias.py    Colores, luz y efectos de la ventana (D-036)
+│   │   ├── historial.py Conversaciones en carpetas, guardadas y retomables (D-038)
+│   │   └── lanzador.py  Icono en el menú y en el dock de Linux
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon
 │       └── reader.py    Resuelve la referencia hablada y lo lee como texto
+├── skills/              Modos de D.O.O.M en formato agentskills.io (D-038)
 ├── native/doomkit/      Núcleo en Rust, opcional (ver native/README.md)
 ├── obsidian/            El vault en sí (se versiona, ver su README.md)
 └── tests/
@@ -147,6 +170,44 @@ hay servidor nuevo escuchando entradas ajenas. Un webhook no tiene modo
 `plan` -ejecuta en cuanto llega la petición-, así que la salvaguarda no es un
 nivel de permiso sino una lista blanca en `.env`
 (`DOOMBOT_N8N_WORKFLOWS`): un nombre que no esté ahí no dispara nada.
+
+## El agente local
+
+`agent/` es la tercera forma de actuar, y la única con bucle propio (D-033):
+recibe una orden escrita y la cumple encadenando herramientas, contando cada
+paso. A diferencia de `actions/claude_code.py`, no delega en otro agente: el
+bucle es nuestro y el cerebro es cualquier `ToolCaller` de `backends/base.py`
+-Ollama o Claude, con la misma conversación neutra y cada backend traduciendo
+a su API-.
+
+**Las salvaguardas viven en el bucle, no en cada herramienta**, para que una
+herramienta nueva no pueda saltárselas por olvido: lista blanca (solo lo del
+catálogo), confirmación de lo irreversible, límite de pasos, salidas
+truncadas y resultados viejos enmascarados. Cada herramienta solo declara
+*cuándo* es irreversible, en función de sus argumentos: `ls` no se pregunta,
+`rm` sí.
+
+**Dónde va una herramienta nueva:** en el módulo de `agent/` que le toque, con
+su `narrar` (lo que ve el usuario) y su `confirmar` (cuándo pide permiso), y
+añadida a la lista de `montaje.montar()`.
+
+## La aplicación
+
+`python -m doombot ventana` abre D.O.O.M como un programa: su propia ventana
+(pywebview), sin navegador a la vista (D-016, D-035). Por dentro dibuja
+`ui/ventana/doom.html`: un planeta en WebGL que cambia según el estado y la
+herramienta que usa el agente, el registro de lo que piensa y hace, y la
+caja para escribirle. El agente corre en el mismo proceso.
+
+**No usa el WebSocket del HUD.** El HUD (D-022) conecta dos programas; aquí
+ventana y agente son uno, y `ventana/puente.py` los habla por el `js_api` de
+pywebview: JavaScript llama a métodos de Python, y Python pinta con
+`DOOM.evento({...})`. Todo el trabajo del agente va en un solo hilo, porque
+Playwright solo funciona desde el hilo que lo creó.
+
+**Dónde va un evento nuevo:** se emite desde el puente (`_emitir`) y se pinta
+en el `switch` de `DOOM.evento`, en `doom.html`. Abriendo `doom.html#demo`
+sin pywebview se simula una orden completa, para diseñar sin agente.
 
 ## El vault de Obsidian
 

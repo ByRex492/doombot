@@ -66,6 +66,13 @@ voice-aec = [
     "webrtcvad-wheels>=2.0",
     "scipy>=1.10",
 ]
+# El navegador propio del agente (D-033). Ademas del paquete hace falta el
+# navegador en si, una vez por equipo: `python -m playwright install chromium`
+# (~170 MB). Aparte del resto: el agente abre apps, maneja ficheros y abre
+# paginas en el navegador del usuario sin esto; solo pierde leer y pulsar.
+agent-web = [
+    "playwright>=1.45",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

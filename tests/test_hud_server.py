@@ -10,9 +10,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-import websockets
 
-from doombot.hud_server import ServidorHUD
+# El servidor del HUD es el extra "hud"; sin el, se salta en vez de romper
+# la recogida de toda la suite.
+websockets = pytest.importorskip("websockets")
+
+from doombot.hud_server import ServidorHUD  # noqa: E402
 
 
 @pytest.fixture

@@ -21,7 +21,15 @@ from typing import Any
 
 import httpx
 
-from doombot.backends.base import BackendError, Turno
+from doombot.backends.base import (
+    BackendError,
+    EspecHerramienta,
+    LlamadaHerramienta,
+    MensajeAgente,
+    PasoModelo,
+    ResultadoHerramienta,
+    Turno,
+)
 from doombot.config import Settings, settings
 
 _BASE_URL = "https://api.anthropic.com/v1/messages"
@@ -101,6 +109,84 @@ class AnthropicGenerator:
                         return
         except httpx.HTTPError as e:
             raise self._error(e) from e
+
+    # -- llamada a herramientas (D-033) ---------------------------------------
+    def paso(
+        self,
+        conversacion: Sequence[MensajeAgente],
+        herramientas: Sequence[EspecHerramienta],
+        *,
+        system: str | None = None,
+    ) -> PasoModelo:
+        """Un turno del agente: el modelo responde o pide herramientas.
+
+        Mismo contrato que ``OllamaGenerator.paso``. La diferencia de formato
+        queda aqui dentro: Anthropic devuelve bloques ``tool_use`` con su
+        ``id``, y espera los resultados como bloques ``tool_result`` dentro de
+        un mensaje del usuario, no como un rol propio.
+        """
+        mensajes: list[dict[str, Any]] = []
+
+        def anadir(rol: str, bloque: dict[str, Any]) -> None:
+            # La API exige alternar roles: varios resultados seguidos, o un
+            # resultado seguido de una tarea nueva, van en el mismo mensaje.
+            if mensajes and mensajes[-1]["role"] == rol:
+                mensajes[-1]["content"].append(bloque)
+            else:
+                mensajes.append({"role": rol, "content": [bloque]})
+
+        for m in conversacion:
+            if isinstance(m, str):
+                anadir("user", {"type": "text", "text": m})
+            elif isinstance(m, PasoModelo):
+                if m.texto or not m.llamadas:
+                    anadir("assistant", {"type": "text", "text": m.texto or "(sin texto)"})
+                for ll in m.llamadas:
+                    anadir(
+                        "assistant",
+                        {
+                            "type": "tool_use",
+                            "id": ll.id,
+                            "name": ll.nombre,
+                            "input": ll.argumentos,
+                        },
+                    )
+            elif isinstance(m, ResultadoHerramienta):
+                anadir(
+                    "user",
+                    {"type": "tool_result", "tool_use_id": m.id, "content": m.contenido},
+                )
+
+        cuerpo: dict[str, Any] = {
+            "model": self._model,
+            # Escribir un fichero entero cabe en un solo turno: 1024 se queda
+            # corto para eso, aunque sobre para una respuesta hablada.
+            "max_tokens": max(self._max_tokens, 4096),
+            "temperature": 0,
+            "messages": mensajes,
+            "tools": [
+                {"name": h.nombre, "description": h.descripcion, "input_schema": h.parametros}
+                for h in herramientas
+            ],
+        }
+        if system:
+            cuerpo["system"] = system
+
+        datos = self._post(cuerpo)
+        textos = []
+        llamadas = []
+        for b in datos.get("content", []):
+            if b.get("type") == "text":
+                textos.append(b.get("text", ""))
+            elif b.get("type") == "tool_use":
+                llamadas.append(
+                    LlamadaHerramienta(
+                        id=str(b.get("id", "")),
+                        nombre=str(b.get("name", "")),
+                        argumentos=b.get("input") or {},
+                    )
+                )
+        return PasoModelo(texto="".join(textos).strip(), llamadas=tuple(llamadas))
 
     # -- extras utiles fuera del contrato ------------------------------------
     def is_available(self) -> bool:

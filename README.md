@@ -80,6 +80,7 @@ extras se combinan según lo que necesites (ver `pyproject.toml`):
 | `voice-tts` | `kokoro-onnx` | Hablar en voz alta (D-021) |
 | `voice-aec` | Cancelación de eco + VAD | Barge-in: cortar a D.O.O.M hablándole encima (D-027) |
 | `hud` | `pywebview`, `websockets` | La ventana del HUD (D-016, D-022) |
+| `agent-web` | `playwright` | El navegador propio del agente (D-033); después, `python -m playwright install chromium` |
 
 Requiere **Python 3.12** exacto. Ni 3.13 ni 3.14: el stack de audio e IA no
 publica wheels para esas versiones.
@@ -285,6 +286,120 @@ D.O.O.M puede tocar el mundo real, de dos formas con riesgos distintos (ver
 
 Ambas piden confirmación hablada antes de ejecutar de verdad (D-031, ver
 Órdenes arriba).
+
+### El agente local
+
+```
+python -m doombot agente
+```
+
+Una consola al estilo de Claude Code: escribes lo que quieres y D.O.O.M lo
+hace solo, contando cada paso (D-033). Así se ve (ejemplo):
+
+```
+doom> abre el navegador y busca el tiempo en Madrid
+  · Abro tu navegador con la búsqueda.
+  → Abro el tiempo en Madrid en tu navegador
+    ✓ Abierta https://duckduckgo.com/?q=el+tiempo+en+Madrid en el navegador del usuario.
+D.O.O.M.: Te he abierto la búsqueda del tiempo en Madrid.
+```
+
+Reconoce las aplicaciones instaladas (por nombre o por tipo: "el navegador",
+"algo para música"), las abre y las cierra; abre páginas en tu navegador o las
+lee y maneja en uno propio, aparte del tuyo (extra `agent-web`); lee, busca y
+escribe ficheros; ejecuta comandos. **Pregunta antes de lo irreversible**:
+sobrescribir, cerrar una aplicación, cualquier comando que no sea de solo
+lectura, pulsar "comprar"/"enviar"/"aceptar", o leer ficheros con claves.
+
+El cerebro es intercambiable (`DOOMBOT_AGENT_BRAIN=ollama|anthropic`). Con
+Ollama todo se queda en el equipo, pero un modelo pequeño elige mal las
+herramientas; con Claude decide mucho mejor, a cambio de que la conversación
+-y lo que el agente lee- salga de la máquina. `/nuevo` olvida lo anterior,
+`/abiertas` lista lo que ha abierto, Ctrl+C corta la tarea. Desde
+`python -m doombot chat` es la orden `agente <lo que sea>`.
+
+### La aplicación
+
+```
+python -m doombot ventana
+```
+
+D.O.O.M en su propia ventana, como cualquier programa, con aspecto de HUD
+(D-036): en el centro un núcleo holográfico que reacciona -cambia de color y
+de gesto según use el navegador, aplicaciones, ficheros o la terminal, y se
+pone ámbar cuando espera tu permiso-; a los lados, los paneles SISTEMA y
+ACTIVIDAD unidos a él por circuitos; debajo, lo que piensa, lo que abre y lo
+que hace, paso a paso, y la línea de órdenes. En **Personalizar** se elige
+tema (Jarvis, Holograma, Neón, Matriz, Glaciar, Carmesí) o colores propios,
+brillo, rejilla, velocidad y efectos; se guarda en este equipo. Las confirmaciones son botones, con la segunda opinión del otro
+modelo debajo. Mientras trabaja, el botón de enviar pasa a ser **Parar**.
+
+**Primeros pasos.** Si no hay ningún modelo configurado, la ventana empieza
+por ahí (y después está siempre en la cabecera): cómo conseguir cada clave
+gratuita, un enlace a la página, una caja para pegarla y los botones
+**Guardar** -la escribe en `.env`, que queda legible solo por ti- y
+**Probar** -una petición mínima para ver que responde-. También dice si está
+el navegador propio del agente y si hay un Ollama local.
+
+Las claves son de tu cuenta, no del equipo: la misma vale en cualquier
+ordenador, pero `.env` no se sube a GitHub, así que en cada equipo se pegan
+de nuevo.
+
+**Gráficas.** Si le pides que represente datos, estadísticas, funciones o
+vectores ("represéntame u=(4,1) y v=(1,3)", "haz un histograma de estas
+notas", "compara las ventas de 2025 y 2026 en barras"), el núcleo se aparta y
+aparece la gráfica: ejes, barras, líneas, sectores, histograma o dispersión
+con recta de regresión. Las medias, porcentajes y demás los calcula D.O.O.M
+con exactitud, no el modelo. **Ampliar** ocupa también el registro y
+**Núcleo** vuelve (D-037).
+
+**Modos y conversaciones.** Junto a la línea de órdenes se elige el modo: *Global* (todo, con
+los expertos a mano) o una skill -Diseño, Investigación, Programación, Ciencias-, cada una con
+sus instrucciones, sus herramientas y sus modelos. Cuando le dices algo como "recuerda que
+prefiero…", lo apunta (tras confirmarlo) y lo tiene en cuenta en ese modo y en el global; en el
+mismo selector se ve lo aprendido y se puede olvidar. Las skills son carpetas en `skills/`
+(formato agentskills.io): una nueva es una carpeta nueva. A la izquierda, en *Conversaciones*,
+el historial por carpetas: se retoma cualquier conversación donde se dejó, con su modo.
+
+**Icono en el menú y en el dock (Linux):**
+
+```bash
+.venv/bin/python -m doombot lanzador
+```
+
+Crea `~/.local/share/applications/doombot.desktop` con el icono del núcleo
+y lo fija al final del dock; desde ahí se abre sin terminal, y lo que escriba
+la aplicación va a `ventana.log` en la carpeta de datos. `--sin-dock` no lo
+fija. Para quitarlo, basta con borrar ese fichero.
+
+Necesita el extra `hud` (`pywebview`). En Linux usa el GTK y el WebKit del
+sistema; como el `.venv` no ve los paquetes del sistema, se enlazan una vez:
+
+```bash
+ln -s /usr/lib/python3/dist-packages/gi .venv/lib/python3.12/site-packages/
+ln -s /usr/lib/python3/dist-packages/cairo .venv/lib/python3.12/site-packages/
+```
+
+En Windows no hace falta nada: usa WebView2, que ya trae el sistema.
+
+### Varios modelos gratuitos
+
+Para no depender de un solo modelo ni de un solo proveedor (D-034):
+
+```
+DOOMBOT_AGENT_BRAIN=varios
+DOOMBOT_MODELOS=groq:openai/gpt-oss-120b,gemini:gemini-3.8-flash,nvidia:nvidia/nemotron-3-super-120b-a12b
+DOOMBOT_GROQ_API_KEY=...
+```
+
+- **En cadena**: responde el primero; si falla o se le acaba la cuota gratuita, el siguiente.
+- **En consejo**: `/contrasta <pregunta>` (o `contrasta ...` en el chat) pregunta a todos a la
+  vez y un juez dice en qué coinciden y en qué no.
+- **Segunda opinión**: antes de algo irreversible, otro modelo distinto del que lo propuso dice
+  si encaja con lo que pediste; lo ves junto a la pregunta de confirmación.
+
+Las claves son gratuitas y sin tarjeta (ver `.env.example`). Ojo: con proveedores en la nube, lo
+que el agente lee sale del equipo.
 
 ## Desarrollo
 

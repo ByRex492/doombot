@@ -126,3 +126,61 @@ def test_solo_hay_herramienta_visual_si_hay_pantalla():
     assert "mostrar_visual" not in sin.agente.herramientas
     assert "mostrar_visual" in con.agente.herramientas
     assert con.agente.herramientas["mostrar_visual"].familia == "visual"
+
+
+# -- el dibujante -------------------------------------------------------------------------
+class Dibujante:
+    def __init__(self, *respuestas: str) -> None:
+        self.respuestas = list(respuestas)
+        self.pedidos: list[tuple[str, str]] = []
+
+    def generate(self, prompt, *, system=None, historial=()):
+        self.pedidos.append((prompt, system))
+        return self.respuestas.pop(0)
+
+
+def test_un_encargo_lo_dibuja_el_dibujante_y_se_limpia():
+    pintado = []
+    dibujante = Dibujante(
+        'Aqui tienes:\n<svg viewBox="0 0 400 300"><path d="M0 0L9 9" onclick="x()"/></svg>\nListo.'
+    )
+    respuesta = Visual(pintado.append, dibujante).mostrar("Caballo", encargo="de perfil, al galope")
+
+    assert "Mostrado" in respuesta
+    assert pintado[0]["svg"].startswith("<svg") and "onclick" not in pintado[0]["svg"]
+    pedido, instrucciones = dibujante.pedidos[0]
+    assert "Caballo" in pedido and "al galope" in pedido
+    assert "currentColor" in instrucciones and "Nunca negro" in instrucciones
+
+
+def test_si_el_dibujo_no_vale_se_pide_otra_vez_una_sola_vez():
+    dibujante = Dibujante("no es un svg", '<svg viewBox="0 0 4 3"><rect/></svg>')
+    pintado = []
+    Visual(pintado.append, dibujante).mostrar("Algo", encargo="x")
+    assert len(dibujante.pedidos) == 2 and "no era un SVG valido" in dibujante.pedidos[1][0]
+    assert "<rect" in pintado[0]["svg"]
+
+    with pytest.raises(ValueError):
+        Visual(pintado.append, Dibujante("nada", "tampoco")).mostrar("Algo", encargo="x")
+
+
+def test_el_dibujante_va_primero_y_el_resto_detras():
+    from doombot.agent.visual import elegir_dibujante
+    from doombot.backends.varios import Cadena
+    from doombot.config import Settings
+
+    class G:
+        def __init__(self, nombre):
+            self.proveedor, self.model_name = nombre, f"{nombre}/m"
+
+    groq, gemini = G("groq"), G("gemini")
+    assert elegir_dibujante(Cadena([groq, gemini]), "gemini").generadores == [gemini, groq]
+
+    # Un preferido que no esta en la cadena se monta aparte, si hay clave.
+    cfg = Settings(ollama_host="http://x", log_level="INFO", claves=(("groq", "k"),))
+    cadena = elegir_dibujante(Cadena([gemini]), "groq:qwen/qwen3.8-27b, gemini", cfg=cfg)
+    assert [g.model_name for g in cadena.generadores] == ["groq/qwen/qwen3.8-27b", "gemini/m"]
+
+    # Sin clave, se salta sin romper.
+    sin_clave = Settings(ollama_host="http://x", log_level="INFO")
+    assert elegir_dibujante(Cadena([gemini]), "groq:qwen/x", cfg=sin_clave).generadores == [gemini]

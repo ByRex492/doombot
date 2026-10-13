@@ -19,7 +19,7 @@ from pathlib import Path
 from doombot.agent.apps import Aplicaciones
 from doombot.agent.bucle import Agente, Narrador
 from doombot.agent.sistema import herramientas as herramientas_sistema
-from doombot.agent.visual import Visual
+from doombot.agent.visual import DIBUJANTES_POR_DEFECTO, Visual, elegir_dibujante
 from doombot.agent.web import Web
 from doombot.backends.base import ToolCaller
 from doombot.config import Settings, settings
@@ -137,7 +137,10 @@ def montar(
     apps = Aplicaciones()
     web = Web()
     # mostrar_visual solo existe donde hay donde pintar (la ventana, D-037).
-    visual = [*Visual(pantalla).herramientas()] if pantalla is not None else []
+    visual = []
+    if pantalla is not None:
+        dibujante = elegir_dibujante(cerebro_, cfg.modelo_dibujo or DIBUJANTES_POR_DEFECTO, cfg=cfg)
+        visual = Visual(pantalla, dibujante).herramientas()
     agente = Agente(
         cerebro_,
         [*herramientas_sistema(), *apps.herramientas(), *web.herramientas(), *visual],

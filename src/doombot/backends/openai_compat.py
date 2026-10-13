@@ -269,7 +269,9 @@ class OpenAICompatGenerator:
         if isinstance(e, httpx.ConnectError):
             return BackendError(f"{self.model_name}: sin conexion con {self.proveedor}.")
         if isinstance(e, httpx.TimeoutException):
-            return BackendError(f"{self.model_name}: tardo demasiado en responder.")
+            # Pasajero, como un 429: la cadena lo aparta un rato en vez de volver
+            # a esperarlo un minuto entero en el paso siguiente.
+            return LimiteAlcanzado(f"{self.model_name}: tardo demasiado en responder.")
         return BackendError(f"{self.model_name}: {e}")
 
     def __repr__(self) -> str:

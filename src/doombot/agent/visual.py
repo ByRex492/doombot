@@ -20,6 +20,7 @@ esta en ella no pasa.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import re
@@ -209,25 +210,133 @@ def limpiar_grafica(dato: Any) -> dict[str, Any]:
     return limpia
 
 
+# -- el dibujante -------------------------------------------------------------------
+# Un modelo con instrucciones solo de dibujo, sin herramientas ni conversacion
+# alrededor: dibuja bastante mejor que el agente improvisando el SVG en mitad de
+# una orden. Cuesta una peticion mas, y solo cuando hay que dibujar.
+INSTRUCCIONES_DIBUJO = """Eres un ilustrador que dibuja en SVG para una interfaz oscura.
+Devuelve SOLO el codigo SVG, sin explicaciones ni markdown.
+
+Como trabajar:
+1. Dentro del SVG, empieza con un comentario <!-- plan: ... --> donde decides la postura, las
+   partes que lleva el objeto y la posicion y tamaño de cada una en el lienzo de 400x300.
+2. Despues dibuja cada parte por separado, siguiendo el plan, con formas geometricas sencillas:
+   ellipse, circle, rect con rx, line y path con curvas Q o C. Mejor pocas formas bien colocadas
+   que una sola linea larga e improvisada.
+
+Reglas:
+- <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">. Sin fondo: es transparente.
+- Color: stroke="currentColor"; si rellenas, fill="currentColor" con fill-opacity entre 0.12 y 0.35.
+  Nunca negro ni blanco: el fondo ya es oscuro.
+- Proporciones reales. Vista de perfil para animales y objetos. Centrado, ocupando el 70-80%.
+- Trazo de 2 a 3, stroke-linecap="round" y stroke-linejoin="round".
+- "Silueta": las mismas partes, todas con fill="currentColor" fill-opacity="0.3".
+- Esquemas y diagramas: cajas con rect redondeado, texto legible (font-size 12 a 14,
+  fill="currentColor"), flechas con <marker>.
+- Prohibido: script, image, foreignObject, enlaces, style, atributos on*.
+
+Ejemplo de como se trabaja (una taza; es solo una guia de metodo y estilo: cada objeto o
+animal tiene sus propias partes y proporciones):
+<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor"
+ stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<!-- plan: taza de frente, ligeramente desde arriba. cuerpo: rect redondeado (150,110) 110x120.
+ boca: elipse arriba (205,110) 55x12. asa: curva a la derecha de (260,140) a (260,200). plato:
+ elipse ancha (205,235) 105x14. vapor: tres curvas sobre la taza. -->
+<rect x="150" y="110" width="110" height="120" rx="18" fill="currentColor" fill-opacity="0.15"/>
+<ellipse cx="205" cy="110" rx="55" ry="12"/>
+<path d="M260 140 C300 140 300 200 260 200"/>
+<ellipse cx="205" cy="235" rx="105" ry="14" fill="currentColor" fill-opacity="0.12"/>
+<path d="M185 90 Q175 75 185 60 M205 88 Q195 70 205 52 M225 90 Q215 75 225 60" stroke-width="2"/>
+</svg>"""
+
+
+# Medido el 13/10/2026 con el mismo encargo ("un caballo de perfil") y estas
+# instrucciones: qwen3.8-27b dibujo el unico caballo reconocible de los modelos
+# gratuitos de Groq, en 2 s; gpt-oss-120b, el que mejor usa herramientas, dibujo
+# algo parecido a un perro. Gemini estaba saturado y no se pudo medir. Ver D-037.
+DIBUJANTES_POR_DEFECTO = ("groq:qwen/qwen3.8-27b", "gemini")
+
+
+def elegir_dibujante(
+    cerebro: Any, preferidos: Any = DIBUJANTES_POR_DEFECTO, cfg: Any = None
+) -> Any:
+    """El modelo que dibuja: los preferidos primero, y el resto de la cadena detras.
+
+    Cada preferido es un proveedor (``gemini``: el de la cadena) o una entrada
+    ``proveedor:modelo``, que se monta aparte si hay clave -no hace falta que
+    este en ``DOOMBOT_MODELOS``-. Si ninguno responde, dibuja el resto.
+    """
+    from doombot.backends.proveedores import construir, partir
+    from doombot.backends.varios import Cadena, etiqueta
+
+    if isinstance(preferidos, str):
+        preferidos = [p.strip() for p in preferidos.split(",") if p.strip()]
+    cadena = list(cerebro.generadores) if isinstance(cerebro, Cadena) else [cerebro]
+    elegidos: list[Any] = []
+    for pref in preferidos:
+        if ":" in pref:
+            proveedor, modelo = partir(pref)
+            ya = [g for g in cadena if etiqueta(g) == f"{proveedor}/{modelo}"]
+            if ya:
+                elegidos += [g for g in ya if g not in elegidos]
+            elif cfg is not None:
+                # Sin clave para ese proveedor: se salta.
+                with contextlib.suppress(ValueError):
+                    elegidos.append(construir(pref, cfg))
+        else:
+            elegidos += [g for g in cadena if etiqueta(g).startswith(pref) and g not in elegidos]
+    return Cadena([*elegidos, *(g for g in cadena if g not in elegidos)])
+
+
+# -- la herramienta -----------------------------------------------------------------
 # -- la herramienta -----------------------------------------------------------------
 class Visual:
     """``mostrar_visual``: pinta en la pantalla que le pasen (la ventana)."""
 
-    def __init__(self, pantalla: Callable[[dict[str, Any]], None]) -> None:
+    def __init__(self, pantalla: Callable[[dict[str, Any]], None], dibujante: Any = None) -> None:
         self._pantalla = pantalla
+        self._dibujante = dibujante
         self.mostrados: list[str] = []
 
-    def mostrar(self, titulo: str, svg: str = "", grafica: Any = None) -> str:
+    def mostrar(self, titulo: str, encargo: str = "", grafica: Any = None, svg: str = "") -> str:
         titulo = (titulo or "").strip()[:80] or "Visual"
         if grafica:
             datos = {"titulo": titulo, "grafica": limpiar_grafica(grafica)}
+        elif encargo and self._dibujante is not None:
+            datos = {"titulo": titulo, "svg": self._dibujar(titulo, encargo)}
         elif svg:
             datos = {"titulo": titulo, "svg": limpiar_svg(svg)}
         else:
-            return "Error: pasa una grafica (para matematicas) o un svg (para dibujos y esquemas)."
+            return (
+                "Error: pasa una grafica (para matematicas) o un encargo (para dibujos y esquemas)."
+            )
         self._pantalla(datos)
         self.mostrados.append(titulo)
         return f"Mostrado en la pantalla del usuario: «{titulo}». Explicaselo brevemente."
+
+    def _dibujar(self, titulo: str, encargo: str) -> str:
+        """Le pide el dibujo al dibujante y lo limpia. Un SVG roto se pide una vez mas."""
+        from doombot.backends.base import BackendError
+
+        pedido = f"Dibuja: {titulo}. {encargo}"
+        for intento in range(2):
+            try:
+                crudo = self._dibujante.generate(pedido, system=INSTRUCCIONES_DIBUJO)
+            except BackendError as e:
+                raise ValueError(f"El dibujante no responde: {e}") from e
+            # El modelo a veces escribe algo antes o despues: se aisla el <svg>.
+            inicio, fin = crudo.find("<svg"), crudo.rfind("</svg>")
+            try:
+                return limpiar_svg(
+                    crudo[inicio : fin + 6] if inicio >= 0 and fin > inicio else crudo
+                )
+            except ValueError as e:
+                if intento:
+                    raise
+                pedido += (
+                    f"\n\nEl intento anterior no era un SVG valido ({e}). Devuelve solo el SVG."
+                )
+        raise AssertionError("inalcanzable")
 
     def herramientas(self) -> list[Herramienta]:
         return [
@@ -236,18 +345,19 @@ class Visual:
                 "Muestra en la pantalla del usuario una grafica, un esquema o un dibujo, en el "
                 "lugar del nucleo. Usalo cuando pidan representar, dibujar, graficar o explicar "
                 "algo visualmente, y tambien cuando un esquema explique mejor que el texto. "
-                "Para matematicas usa `grafica`: objeto con x e y (rangos [min,max]), "
-                'vectores [{"de":[0,0],"a":[3,2],"nombre":"u"}], puntos [{"en":[1,2],'
+                "Para matematicas (vectores, puntos, rectas, funciones) usa SIEMPRE `grafica`, "
+                "nunca un dibujo: objeto con x e y (rangos [min,max] que incluyan todo, con algo "
+                'de margen), vectores [{"de":[0,0],"a":[3,2],"nombre":"u"}], puntos [{"en":[1,2],'
                 '"nombre":"P"}], segmentos [{"de":[..],"a":[..]}] y funciones [{"f":"x^2-1",'
                 '"nombre":"f"}] (con +-*/^, sin cos tan sqrt abs exp log, pi, e). '
-                "Para dibujos y esquemas usa `svg`: un SVG sencillo con viewBox 0 0 400 300, "
-                'solo formas y texto (sin scripts ni imagenes), con stroke="currentColor" '
-                "para que tome el color de la interfaz. Rellena solo uno de los dos.",
+                "Para dibujos y esquemas usa `encargo`: describe con detalle que dibujar (objeto, "
+                "postura, partes, estilo); lo dibuja un modelo especializado. "
+                "Rellena solo uno de los dos.",
                 self.mostrar,
                 {
                     "titulo": texto("Titulo corto de lo que se muestra."),
                     "grafica": {"type": "object", "description": "Para matematicas (ver arriba)."},
-                    "svg": texto("Para dibujos y esquemas: el SVG completo."),
+                    "encargo": texto("Para dibujos y esquemas: descripcion detallada."),
                 },
                 requeridos=("titulo",),
                 narrar=lambda a: f"Lo represento: {a.get('titulo') or 'visual'}",

@@ -1408,3 +1408,28 @@ dibujar, el agente acabó escribiendo un script de matplotlib. Pedido: que si se
 `DOCTYPE`, entidades; gráficas; firma de Gemini; reintento). En la vista previa: la gráfica de
 vectores con sus etiquetas y el caballo, normal y ampliado.
 
+**Ampliación, mismo día: refinar los dibujos.** El usuario probó en real: los vectores salieron
+bien pero sin números en los ejes, y "la silueta de un caballo" fue una mancha negra.
+
+- *Gráficas*: se rotula el 0 en el origen y el nombre de cada eje; los números, más grandes y
+  menos tenues. La herramienta dice ahora "para matemáticas, SIEMPRE `grafica`, nunca un dibujo".
+- *Dibujante*: el agente ya no improvisa el SVG; describe el encargo y lo dibuja un modelo con
+  instrucciones solo de dibujo -planificar en un comentario las partes y su sitio, componer con
+  formas geométricas, nunca negro ni blanco- y un ejemplo de método (una taza; con un perro de
+  ejemplo, `gpt-oss-120b` dibujaba perros). Un SVG inválido se pide una vez más.
+- *Medido, no supuesto* (13/10/2026, "un caballo de perfil", mismas instrucciones): de los
+  modelos gratuitos de Groq, solo `qwen/qwen3.8-27b` dibujó un caballo reconocible, en 2 s;
+  `gpt-oss-120b`, un perro; `gpt-oss-20b`, peor. Gemini estaba saturado y no se pudo medir.
+  Orden por defecto del dibujante: `groq:qwen/qwen3.8-27b`, después Gemini, después el resto de
+  la cadena (`DOOMBOT_MODELO_DIBUJO` lo cambia; el dibujante no necesita estar en
+  `DOOMBOT_MODELOS`).
+- *Red de seguridad en la ventana*: los rellenos negros o blancos se recolorean al tema (el CSS
+  manda sobre los atributos del SVG), y cada dibujo se encuadra solo -se mide lo dibujado y el
+  `viewBox` se ajusta-, porque los modelos a veces dibujan descentrados o medio fuera.
+- *La cadena*: un modelo que agota el tiempo de respuesta cuenta como pasajero, como un 429, y se
+  aparta un rato.
+
+**Límite honesto.** La calidad del trazo depende del modelo: con los gratuitos, los animales y
+objetos salen reconocibles pero sencillos, y alguno sale mal. Gemini, cuando no está saturado, o
+un modelo de pago dibujarían mejor.
+

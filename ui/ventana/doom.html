@@ -141,6 +141,11 @@
   #visual .cab-marco button { padding: 5px 9px; font-size: 9.5px; }
   #lienzo-visual { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px 12px; color: var(--c1); }
   #lienzo-visual svg { width: 100%; height: 100%; filter: drop-shadow(0 0 calc(3px * var(--luz)) var(--c1-60)); }
+  /* Red de seguridad: un dibujo en negro o blanco sobre este fondo seria una
+     mancha. El CSS manda sobre los atributos del SVG: se recolorea al tema. */
+  #lienzo-visual [fill="black"], #lienzo-visual [fill="#000"], #lienzo-visual [fill="#000000"],
+  #lienzo-visual [fill="white"], #lienzo-visual [fill="#fff"], #lienzo-visual [fill="#ffffff"] { fill: currentColor; fill-opacity: .25; }
+  #lienzo-visual [stroke="black"], #lienzo-visual [stroke="#000"], #lienzo-visual [stroke="#000000"] { stroke: currentColor; }
   #visual.entrando #lienzo-visual { animation: revelar .9s ease-out; }
   @keyframes revelar { from { clip-path: inset(0 0 100% 0); opacity: .3; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
   #zona-nucleo #nucleo { transition: opacity .5s; }
@@ -797,6 +802,12 @@ function el(etiqueta, clase, texto) {
 // Texto con enlaces pulsables. Un enlace nunca navega dentro de la ventana:
 // se abre en el navegador del usuario a traves de Python.
 function conEnlaces(nodo, texto) {
+  // **negrita** de markdown: los modelos la usan aunque no se les pida.
+  const trozos = String(texto).split(/\*\*([^*\n]+)\*\*/g);
+  if (trozos.length > 1) {
+    trozos.forEach((t, i) => { if (i % 2) nodo.appendChild(el("b", "", t)); else if (t) conEnlaces(nodo, t); });
+    return nodo;
+  }
   for (const p of String(texto).split(/(https?:\/\/[^\s<>"')\]]+)/g)) {
     if (/^https?:\/\//.test(p)) {
       const url = p.replace(/[.,;:!?»]+$/, ""), cola = p.slice(url.length);
@@ -939,17 +950,21 @@ function svgDeGrafica(g) {
   const colores = [prefs.c1, prefs.c2, "#ffc23d", "#3dff9a", "#b48bff", "#ff6b7a"];
   let n = 0; const siguiente = () => colores[n++ % colores.length];
   const svg = nodoSvg("svg", { viewBox: `0 0 ${W} ${H}`, "font-family": "monospace" });
-  const capa = nodoSvg("g", { "font-size": "9", fill: "currentColor" });
+  const capa = nodoSvg("g", { "font-size": "10.5", fill: "currentColor" });
   svg.appendChild(capa);
   const pasoX = pasoBonito(x1 - x0), pasoY = pasoBonito(y1 - y0);
   for (let v = Math.ceil(x0 / pasoX) * pasoX; v <= x1 + 1e-9; v += pasoX) {
     capa.appendChild(nodoSvg("line", { x1: X(v), y1: Y(y0), x2: X(v), y2: Y(y1), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .7 : .12 }));
-    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: X(v), y: Math.min(H - M + 12, Math.max(M, Y(0) + 12)), "text-anchor": "middle", opacity: .6 }, +v.toFixed(6)));
+    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: X(v), y: Math.min(H - M + 13, Math.max(M + 10, Y(0) + 13)), "text-anchor": "middle", opacity: .85 }, +v.toFixed(6)));
   }
   for (let v = Math.ceil(y0 / pasoY) * pasoY; v <= y1 + 1e-9; v += pasoY) {
     capa.appendChild(nodoSvg("line", { x1: X(x0), y1: Y(v), x2: X(x1), y2: Y(v), stroke: "currentColor", "stroke-opacity": Math.abs(v) < 1e-9 ? .7 : .12 }));
-    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: Math.max(M - 4, Math.min(W - M, X(0) - 4)), y: Y(v) + 3, "text-anchor": "end", opacity: .6 }, +v.toFixed(6)));
+    if (Math.abs(v) > 1e-9) capa.appendChild(nodoSvg("text", { x: Math.max(M - 4, Math.min(W - M, X(0) - 5)), y: Y(v) + 3.5, "text-anchor": "end", opacity: .85 }, +v.toFixed(6)));
   }
+  // El origen, y el nombre de cada eje en su extremo (si el eje esta a la vista).
+  if (x0 <= 0 && 0 <= x1 && y0 <= 0 && 0 <= y1) capa.appendChild(nodoSvg("text", { x: X(0) - 5, y: Y(0) + 13, "text-anchor": "end", opacity: .85 }, "0"));
+  if (y0 <= 0 && 0 <= y1) capa.appendChild(nodoSvg("text", { x: W - M + 6, y: Y(0) + 4, "font-style": "italic", opacity: .9 }, "x"));
+  if (x0 <= 0 && 0 <= x1) capa.appendChild(nodoSvg("text", { x: X(0) + 5, y: M - 6, "font-style": "italic", opacity: .9 }, "y"));
   const leyenda = [];
   for (const f of g.funciones) {
     const color = siguiente();
@@ -1003,11 +1018,27 @@ function svgDeTexto(texto) {
   return document.importNode(raiz, true);
 }
 
+// Encuadre automatico de los dibujos: el modelo no siempre centra ni usa
+// bien el lienzo (a veces dibuja medio fuera). Se mide lo que hay dibujado y
+// el viewBox se ajusta a eso, con un margen. Las graficas no: sus ejes ya
+// estan donde tienen que estar.
+function encuadrar(svg) {
+  try {
+    const b = svg.getBBox();
+    if (!(b.width > 1 && b.height > 1)) return;
+    const m = Math.max(b.width, b.height) * 0.08;
+    svg.setAttribute("viewBox", `${b.x - m} ${b.y - m} ${b.width + 2 * m} ${b.height + 2 * m}`);
+  } catch (e) { /* sin medidas (no visible aun): se queda como venia */ }
+}
+
 function mostrarVisual(v) {
   const dibujo = v.grafica ? svgDeGrafica(v.grafica) : svgDeTexto(v.svg || "");
   lienzoVisual.innerHTML = "";
   if (!dibujo) { lienzoVisual.appendChild(el("div", "fallo", "No he podido mostrar este dibujo.")); }
-  else lienzoVisual.appendChild(dibujo);
+  else {
+    lienzoVisual.appendChild(dibujo);
+    if (!v.grafica) encuadrar(dibujo);
+  }
   document.getElementById("visual-titulo").textContent = v.titulo || "Visual";
   panelVisual.hidden = false; visualActivo = true;
   zonaNucleo.classList.add("con-visual");

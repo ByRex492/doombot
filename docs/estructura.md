@@ -53,7 +53,8 @@ doombot/
 │   │   └── orders.py    `agent`, desde el chat
 │   ├── ventana/         La aplicación de escritorio: planeta, registro y chat (D-035)
 │   │   ├── puente.py    Ventana <-> agente: js_api, un hilo fijo, confirmaciones
-│   │   └── primeros_pasos.py  Qué falta para funcionar; guardar y probar claves
+│   │   ├── primeros_pasos.py  Qué falta para funcionar; guardar y probar claves
+│   │   └── preferencias.py    Colores, luz y efectos de la ventana (D-036)
 │   ├── obsidian/        Espejo legible de la memoria en el vault
 │   │   └── vault.py     Lee y escribe usuario.md y progreso/
 │   └── files/           Ficheros que el usuario deja en el buzon

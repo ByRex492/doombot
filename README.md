@@ -324,11 +324,14 @@ herramientas; con Claude decide mucho mejor, a cambio de que la conversación
 python -m doombot ventana
 ```
 
-D.O.O.M en su propia ventana, como cualquier programa: arriba un planeta que
-reacciona (cambia de color según use el navegador, aplicaciones, ficheros o
-la terminal, y se pone naranja cuando espera tu permiso); debajo, lo que
-piensa, lo que abre y lo que hace, paso a paso; y abajo, la caja para
-escribirle. Las confirmaciones son botones, con la segunda opinión del otro
+D.O.O.M en su propia ventana, como cualquier programa, con aspecto de HUD
+(D-036): en el centro un núcleo holográfico que reacciona -cambia de color y
+de gesto según use el navegador, aplicaciones, ficheros o la terminal, y se
+pone ámbar cuando espera tu permiso-; a los lados, los paneles SISTEMA y
+ACTIVIDAD unidos a él por circuitos; debajo, lo que piensa, lo que abre y lo
+que hace, paso a paso, y la línea de órdenes. En **Personalizar** se elige
+tema (Jarvis, Holograma, Neón, Matriz, Glaciar, Carmesí) o colores propios,
+brillo, rejilla, velocidad y efectos; se guarda en este equipo. Las confirmaciones son botones, con la segunda opinión del otro
 modelo debajo. Mientras trabaja, el botón de enviar pasa a ser **Parar**.
 
 **Primeros pasos.** Si no hay ningún modelo configurado, la ventana empieza

@@ -5,447 +5,764 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>D.O.O.M</title>
 <!--
-  La ventana de D.O.O.M (D-035). Se abre dentro de su propia ventana de
-  escritorio (pywebview), nunca en una pestaña del navegador.
+  La ventana de D.O.O.M (D-035, aspecto en D-036). Se abre en su propia ventana
+  de escritorio (pywebview), nunca en una pestaña del navegador.
 
-  Tres partes:
-    1. El planeta  (WebGL): reacciona al estado y cambia de color segun la
-       herramienta que use el agente (navegador, apps, ficheros, terminal).
-    2. El registro: lo que piensa, cada accion antes de hacerla, como salio,
-       las confirmaciones como botones y la respuesta final.
-    3. La entrada: se escribe la orden; mientras trabaja, el boton es "Parar".
+  Estilo HUD: un nucleo holografico en el centro -anillos segmentados, marcas,
+  una esfera de alambre con particulas- unido por circuitos a dos paneles de
+  datos (SISTEMA a la izquierda, ACTIVIDAD a la derecha), y debajo el registro
+  de la conversacion y la linea de ordenes. Colores, luz, fondo y velocidad se
+  eligen en PERSONALIZAR y se guardan en data_dir()/ventana.json.
 
   Contrato con Python (src/doombot/ventana/puente.py):
-    JS -> Py   window.pywebview.api.iniciar() / enviar(t) / responder(id, si)
-               / parar() / nuevo() / abrir_enlace(url)
-    Py -> JS   DOOM.evento({tipo, ...}) — ver DOOM.evento abajo.
+    JS -> Py   iniciar() / enviar(t) / responder(id, si) / parar() / nuevo()
+               abrir_enlace(url) / configuracion() / guardar_clave(p, c, m)
+               probar_clave(p) / preferencias() / guardar_preferencias(d)
+    Py -> JS   DOOM.evento({tipo, ...}) — ver DOOM.evento.
 
-  Sin pywebview (abierto suelto para disenar), con #demo en la URL se simula
-  una orden completa, para ver el planeta y el registro sin agente.
+  Sin pywebview, con #demo en la URL se simula una orden: sirve para disenar.
 -->
 <style>
   :root {
-    --fondo: #05070c;
-    --panel: #0b0f18;
-    --borde: #1a2232;
-    --texto: #d9dfeb;
-    --tenue: #7e889a;
-    --muy-tenue: #4b5466;
-    --acento: #5ab4ff;
-    --ok: #4ade80;
-    --mal: #f87171;
-    --aviso: #fb923c;
-    --c-web: #22d3ee;
-    --c-apps: #a78bfa;
-    --c-ficheros: #fbbf24;
-    --c-terminal: #4ade80;
-    --c-pensando: #9b8cff;
+    /* Los colores del tema los pone JS (aplicarTema): aqui solo el arranque. */
+    --c1: #29d3ff; --c1-06: rgba(41,211,255,.06); --c1-10: rgba(41,211,255,.10);
+    --c1-20: rgba(41,211,255,.20); --c1-40: rgba(41,211,255,.40); --c1-60: rgba(41,211,255,.60);
+    --c2: #8ff3ff; --c2-40: rgba(143,243,255,.40);
+    --modo: #29d3ff;
+    --luz: 1; --fondo: .6;
+    --negro: #020409;
+    --panel-bg: linear-gradient(180deg, rgba(4,12,20,.86), rgba(2,6,12,.82));
+    --texto: #d6ecf4; --tenue: #7d96a5; --muy-tenue: #46596a;
+    --ok: #3dffa0; --mal: #ff4d5e; --aviso: #ffab2e;
     --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, "Noto Sans", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: var(--fondo);
-    color: var(--texto);
+    background: var(--negro); color: var(--texto);
     font: 14px/1.55 var(--sans);
-    display: grid;
-    grid-template-rows: auto minmax(200px, 40vh) 1fr auto;
+    display: grid; grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
   }
+  #fondo { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  body.crt::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
+  }
+  body > header, main.hud { position: relative; z-index: 1; }
 
-  /* -- cabecera ------------------------------------------------------------ */
-  header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--borde);
-    background: linear-gradient(180deg, #080b13, var(--fondo));
+  /* -- piezas HUD comunes ------------------------------------------------------ */
+  .etq { font: 600 10px/1 var(--mono); letter-spacing: .26em; text-transform: uppercase; color: var(--c1);
+         text-shadow: 0 0 calc(8px * var(--luz)) var(--c1-60); }
+  .codigo { font: 10px/1 var(--mono); letter-spacing: .14em; color: var(--muy-tenue); }
+  .marco {
+    position: relative; min-height: 0;
+    background: var(--panel-bg);
+    border: 1px solid var(--c1-20);
+    box-shadow: 0 0 calc(22px * var(--luz)) var(--c1-06), inset 0 0 calc(30px * var(--luz)) var(--c1-06);
   }
-  .marca { font: 600 13px/1 var(--mono); letter-spacing: .32em; color: #e8ecf5; }
-  .modelos { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; justify-content: flex-end; }
-  .modelo {
-    font: 11px/1 var(--mono); color: var(--tenue);
-    border: 1px solid var(--borde); border-radius: 999px; padding: 4px 8px;
-    display: inline-flex; align-items: center; gap: 6px;
+  .marco::before, .marco::after {
+    content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
+    border: 2px solid var(--c1); filter: drop-shadow(0 0 calc(4px * var(--luz)) var(--c1));
   }
-  .modelo::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
-  .modelo.sin::before { background: var(--muy-tenue); }
+  .marco::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+  .marco::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+  .marco > .cab-marco {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px 6px;
+    border-bottom: 1px solid var(--c1-10);
+  }
+  .cab-marco .barra { flex: 1; height: 1px; background: linear-gradient(90deg, var(--c1-40), transparent); }
   button {
-    font: 12px/1 var(--sans); color: var(--texto);
-    background: transparent; border: 1px solid var(--borde); border-radius: 8px;
-    padding: 7px 11px; cursor: pointer;
+    font: 600 10.5px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase;
+    color: var(--c1); background: rgba(0,0,0,.35);
+    border: 1px solid var(--c1-40); padding: 8px 12px; cursor: pointer;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    transition: background .15s, box-shadow .15s, color .15s;
   }
-  button:hover:not(:disabled) { border-color: #2c3850; background: #101624; }
-  button:disabled { opacity: .45; cursor: default; }
-  button:focus-visible, textarea:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  button:hover:not(:disabled) { background: var(--c1-10); color: #fff; box-shadow: 0 0 calc(12px * var(--luz)) var(--c1-40); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--c1); outline-offset: 2px; }
 
-  /* -- el planeta ------------------------------------------------------------ */
-  #cielo { position: relative; min-height: 0; }
-  #planeta { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  /* -- cabecera ------------------------------------------------------------------ */
+  body > header {
+    display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+    border-bottom: 1px solid var(--c1-20);
+    background: linear-gradient(180deg, rgba(3,10,18,.92), rgba(2,4,9,.6));
+  }
+  .logo { display: flex; flex-direction: column; gap: 4px; }
+  .logo b { font: 700 15px/1 var(--mono); letter-spacing: .55em; color: #eafaff;
+            text-shadow: 0 0 calc(10px * var(--luz)) var(--c1-60); }
+  .cab-linea { flex: 1; height: 1px; background: linear-gradient(90deg, var(--c1-40), var(--c1-06) 60%, transparent); }
+  .cab-botones { display: flex; gap: 8px; }
+
+  /* -- la rejilla principal --------------------------------------------------------- */
+  main.hud {
+    min-height: 0; display: grid; column-gap: 18px; row-gap: 14px; padding: 14px 16px 14px;
+    grid-template-columns: 220px minmax(0, 1fr) 220px;
+    grid-template-rows: minmax(220px, 44%) minmax(0, 1fr) auto;
+  }
+  #circuitos { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  main.hud > *:not(#circuitos) { position: relative; z-index: 1; }
+  #panel-izq { grid-column: 1; grid-row: 1 / 4; }
+  #zona-nucleo { grid-column: 2; grid-row: 1; min-height: 0; }
+  #marco-registro { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; }
+  .entrada { grid-column: 2; grid-row: 3; }
+  #pasos { grid-column: 2; grid-row: 2 / 4; }
+  #panel-der { grid-column: 3; grid-row: 1 / 4; }
+  #pasos[hidden], #marco-registro[hidden], .entrada[hidden] { display: none; }
+  .solo-estrecho { display: none; }
+  @media (max-width: 1120px) {
+    main.hud { grid-template-columns: 200px minmax(0, 1fr) 0; column-gap: 14px; }
+    #panel-der { display: none; }
+  }
+  @media (max-width: 820px) {
+    main.hud { grid-template-columns: 0 minmax(0, 1fr) 0; column-gap: 0; }
+    #panel-izq { display: none; }
+    .solo-estrecho { display: flex; }
+  }
+
+  /* -- el nucleo -------------------------------------------------------------------- */
+  #nucleo { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #rotulo {
-    position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
-    font: 11px/1 var(--mono); letter-spacing: .22em; text-transform: uppercase;
-    color: var(--tenue); white-space: nowrap;
-    display: inline-flex; align-items: center; gap: 8px;
-    background: rgba(5, 7, 12, .78); border: 1px solid var(--borde); border-radius: 999px;
-    padding: 6px 12px 6px 10px;
+    position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 10px; white-space: nowrap;
+    font: 600 10.5px/1 var(--mono); letter-spacing: .3em; text-transform: uppercase; color: var(--modo);
+    text-shadow: 0 0 calc(10px * var(--luz)) var(--modo);
+    padding: 6px 14px; background: rgba(2,6,12,.8); border: 1px solid var(--c1-20);
   }
-  #rotulo .punto { width: 7px; height: 7px; border-radius: 50%; background: var(--acento); box-shadow: 0 0 10px var(--acento); }
+  #rotulo::before, #rotulo::after { content: "◢"; font-size: 8px; color: var(--c1-60); }
+  #rotulo::after { content: "◣"; }
 
-  /* -- el registro ----------------------------------------------------------- */
-  #registro { overflow-y: auto; min-height: 0; padding: 8px 16px 16px; scroll-behavior: smooth; }
-  #registro > * { max-width: 860px; margin-left: auto; margin-right: auto; }
-  .tu {
-    margin-top: 18px; padding: 10px 14px;
-    background: #111827; border: 1px solid var(--borde); border-radius: 12px;
-    white-space: pre-wrap; word-wrap: break-word;
-  }
-  .tu::before { content: "› "; color: var(--acento); font-family: var(--mono); }
+  /* -- paneles laterales -------------------------------------------------------------- */
+  .lateral { display: flex; flex-direction: column; overflow: hidden; }
+  .lateral .cuerpo-panel { padding: 10px 12px 14px; overflow-y: auto; min-height: 0; flex: 1; }
+  .dato { margin: 12px 0 0; }
+  .dato:first-child { margin-top: 2px; }
+  .dato .valor { font: 13px/1.4 var(--mono); color: var(--texto); margin-top: 5px; overflow-wrap: anywhere; }
+  .dato .valor.grande { font: 700 15px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+                        color: var(--modo); text-shadow: 0 0 calc(10px * var(--luz)) var(--modo); }
+  .lista-mini { list-style: none; margin: 6px 0 0; padding: 0; }
+  .lista-mini li { font: 11.5px/1.45 var(--mono); color: var(--tenue); padding: 3px 0 3px 12px; position: relative;
+                   border-bottom: 1px dashed var(--c1-10); overflow-wrap: anywhere; }
+  .lista-mini li::before { content: ""; position: absolute; left: 0; top: 9px; width: 5px; height: 5px; background: var(--c1);
+                           box-shadow: 0 0 calc(6px * var(--luz)) var(--c1); }
+  .lista-mini li.apagado::before { background: var(--muy-tenue); box-shadow: none; }
+  .barras { display: flex; gap: 3px; align-items: flex-end; height: 34px; margin-top: 6px; }
+  .barras i { flex: 1; background: var(--c1-40); box-shadow: 0 0 calc(6px * var(--luz)) var(--c1-20); transition: height .25s; }
+  .reloj { font: 700 22px/1 var(--mono); letter-spacing: .12em; color: var(--c2);
+           text-shadow: 0 0 calc(12px * var(--luz)) var(--c2-40); }
+
+  /* -- el registro -------------------------------------------------------------------- */
+  #registro { overflow-y: auto; min-height: 0; flex: 1; padding: 6px 16px 16px; scroll-behavior: smooth; }
+  .tu { margin-top: 16px; padding: 9px 12px; border-left: 2px solid var(--c2); background: linear-gradient(90deg, var(--c1-06), transparent);
+        white-space: pre-wrap; word-wrap: break-word; }
+  .tu::before { content: "TÚ ›  "; font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--c2); }
   .linea { display: flex; gap: 10px; align-items: baseline; padding: 3px 0 3px 4px; font-size: 13.5px; }
   .linea .marca-l { flex: none; width: 14px; text-align: center; font-family: var(--mono); color: var(--muy-tenue); }
   .linea .cuerpo { min-width: 0; overflow-wrap: anywhere; }
-  .piensa .cuerpo { color: #b9c1d3; font-style: italic; }
-  .accion .cuerpo { color: var(--texto); }
-  .accion .marca-l { color: var(--c, var(--acento)); }
-  .chip {
-    font: 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
-    color: var(--c, var(--acento)); border: 1px solid currentColor; border-radius: 4px;
-    padding: 2px 5px; margin-right: 8px; opacity: .9; vertical-align: 1px;
-  }
+  .piensa .cuerpo { color: #a9c2cf; font-style: italic; }
+  .piensa .marca-l { color: var(--c2); }
+  .accion .marca-l { color: var(--c, var(--c1)); text-shadow: 0 0 calc(6px * var(--luz)) var(--c, var(--c1)); }
+  .chip { font: 600 9.5px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--c, var(--c1));
+          border: 1px solid currentColor; padding: 2px 5px; margin-right: 8px; vertical-align: 1px; }
   .resultado { padding-left: 28px; }
   .resultado .cuerpo { color: var(--tenue); font: 12px/1.5 var(--mono); }
   .resultado .marca-l { color: var(--ok); }
-  .fallo-l .cuerpo { color: #f3a5a5; font: 12px/1.5 var(--mono); }
+  .fallo-l .cuerpo { color: #ffb0b8; }
   .fallo-l .marca-l { color: var(--mal); }
-  .resultado.fallo-l { padding-left: 28px; }
-  .aviso-l .cuerpo { color: var(--tenue); font-size: 12.5px; }
-  .pensando-l .cuerpo { color: var(--tenue); font-size: 12.5px; }
-  .pensando-l .marca-l::after { content: "◐"; display: inline-block; animation: giro 1s linear infinite; color: var(--c-pensando); }
+  .pensando-l .cuerpo { color: var(--tenue); font: 12px/1.5 var(--mono); letter-spacing: .06em; }
+  .pensando-l .marca-l::after { content: "◐"; display: inline-block; animation: giro 1s linear infinite; color: var(--c2); }
   @keyframes giro { to { transform: rotate(360deg); } }
-
-  .respuesta {
-    margin-top: 10px; padding: 12px 14px 12px 16px;
-    border-left: 2px solid var(--acento); background: linear-gradient(90deg, #0d1424, transparent);
-    white-space: pre-wrap; word-wrap: break-word; font-size: 14.5px;
-  }
-  .respuesta a, .resultado a { color: var(--c-web); }
-  .abierto { margin: 6px 0 0 18px; display: flex; flex-wrap: wrap; gap: 6px; }
-  .abierto span { font: 11px/1 var(--mono); color: var(--tenue); border: 1px dashed var(--borde); border-radius: 6px; padding: 4px 7px; }
-  .fallo { margin-top: 10px; padding: 10px 14px; border: 1px solid #4a1f25; background: #1a0d10; border-radius: 10px; color: #f3b3b3; white-space: pre-wrap; font: 12.5px/1.5 var(--mono); }
-  .sistema { margin-top: 14px; padding: 10px 14px; border: 1px solid var(--borde); border-radius: 10px; color: var(--tenue); font-size: 13px; white-space: pre-wrap; }
-
-  .permiso {
-    margin: 10px 0 6px 18px; padding: 12px 14px;
-    border: 1px solid #5a3a17; background: #170f07; border-radius: 10px;
-  }
-  .permiso .pregunta { color: #fde4c8; }
+  .respuesta { margin-top: 10px; padding: 11px 14px; border-left: 2px solid var(--c1);
+               background: linear-gradient(90deg, var(--c1-10), transparent 85%);
+               box-shadow: -6px 0 calc(16px * var(--luz)) -8px var(--c1);
+               white-space: pre-wrap; word-wrap: break-word; font-size: 14.5px; }
+  .respuesta::before { content: "D.O.O.M ›  "; font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--c1); }
+  .respuesta a, .resultado a { color: var(--c2); }
+  .abierto { margin: 6px 0 0 16px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .abierto span { font: 10.5px/1 var(--mono); color: var(--tenue); border: 1px dashed var(--c1-20); padding: 4px 7px; }
+  .fallo { margin-top: 10px; padding: 10px 14px; border: 1px solid rgba(255,77,94,.4); background: rgba(40,6,12,.6);
+           color: #ffc0c6; white-space: pre-wrap; font: 12.5px/1.5 var(--mono); }
+  .sistema { margin-top: 12px; padding: 9px 12px; border: 1px solid var(--c1-10); color: var(--tenue); font-size: 13px; }
+  .permiso { margin: 10px 0 6px 16px; padding: 12px 14px; border: 1px solid rgba(255,171,46,.45);
+             background: rgba(36,22,4,.65); box-shadow: 0 0 calc(18px * var(--luz)) rgba(255,171,46,.12); }
+  .permiso .pregunta { color: #ffe2b8; }
+  .permiso .pregunta::before { content: "⚠ AUTORIZACIÓN  "; font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--aviso); }
   .permiso .opinion { margin-top: 8px; font-size: 12.5px; color: var(--tenue); }
-  .permiso .opinion b { font: 600 11px/1 var(--mono); letter-spacing: .08em; margin-right: 6px; }
-  .permiso .opinion.bien b { color: var(--ok); }
-  .permiso .opinion.ojo b { color: var(--aviso); }
+  .permiso .opinion b { font: 600 10px/1 var(--mono); letter-spacing: .14em; margin-right: 6px; }
+  .permiso .opinion.bien b { color: var(--ok); } .permiso .opinion.ojo b { color: var(--aviso); }
   .permiso .botones { margin-top: 10px; display: flex; gap: 8px; }
-  .permiso .si { border-color: #2f5b3c; color: #c9f5d6; }
-  .permiso .no { border-color: #5b2f2f; color: #f5c9c9; }
-  .permiso .hecho { margin-top: 8px; font: 12px/1 var(--mono); color: var(--tenue); }
+  .permiso button.si { color: var(--ok); border-color: rgba(61,255,160,.5); }
+  .permiso button.no { color: var(--mal); border-color: rgba(255,77,94,.5); }
+  .permiso .hecho { margin-top: 8px; font: 11px/1 var(--mono); color: var(--tenue); }
 
-  /* -- la entrada -------------------------------------------------------------- */
-  footer { border-top: 1px solid var(--borde); background: var(--panel); padding: 10px 16px 8px; }
-  .caja { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+  /* -- la linea de ordenes ------------------------------------------------------------ */
+  .entrada .fila-orden { display: flex; gap: 10px; align-items: flex-end; padding: 10px 12px; }
+  .entrada .prompt { font: 700 16px/42px var(--mono); color: var(--c1); text-shadow: 0 0 calc(10px * var(--luz)) var(--c1); }
   textarea {
-    flex: 1; resize: none; min-height: 42px; max-height: 180px;
-    background: #070a11; color: var(--texto); border: 1px solid var(--borde); border-radius: 10px;
-    padding: 11px 12px; font: 14px/1.4 var(--sans);
-    overflow-y: hidden;
+    flex: 1; resize: none; min-height: 42px; max-height: 160px; overflow-y: hidden;
+    background: rgba(0,0,0,.45); color: var(--texto); border: 1px solid var(--c1-20);
+    padding: 11px 12px; font: 14px/1.4 var(--mono);
   }
   textarea::placeholder { color: var(--muy-tenue); }
-  #enviar { height: 42px; padding: 0 16px; border-color: #24406a; color: #cfe6ff; }
-  #enviar.parar { border-color: #6a2424; color: #ffd0d0; }
-  .estado-pie {
-    max-width: 860px; margin: 6px auto 0; display: flex; gap: 12px; flex-wrap: wrap;
-    font: 11px/1.4 var(--mono); color: var(--muy-tenue);
-  }
-  .estado-pie .abiertas { margin-left: auto; text-align: right; }
+  #enviar { height: 42px; padding: 0 18px; }
+  #enviar.parar { color: var(--mal); border-color: rgba(255,77,94,.6); }
+  .pie-estrecho { padding: 0 12px 8px; gap: 12px; font: 10.5px/1.4 var(--mono); color: var(--muy-tenue); }
 
-  /* -- primeros pasos ---------------------------------------------------------- */
-  #pasos { grid-row: 3 / 5; grid-column: 1; overflow-y: auto; padding: 4px 16px 28px; background: var(--fondo); }
-  #pasos[hidden], #registro[hidden], footer[hidden] { display: none; }
-  .pasos-dentro { max-width: 860px; margin: 0 auto; }
-  .pasos-dentro h1 { font: 600 19px/1.3 var(--sans); margin: 16px 0 4px; }
+  /* -- primeros pasos -------------------------------------------------------------------- */
+  #pasos { display: flex; flex-direction: column; }
+  #pasos .pasos-dentro { overflow-y: auto; padding: 4px 18px 24px; min-height: 0; flex: 1; }
+  .pasos-dentro h1 { font: 700 15px/1.3 var(--mono); letter-spacing: .3em; text-transform: uppercase; margin: 10px 0 6px;
+                     color: var(--c1); text-shadow: 0 0 calc(10px * var(--luz)) var(--c1-60); }
   .pasos-dentro .intro { color: var(--tenue); margin: 0 0 10px; }
-  .pasos-dentro .motivo {
-    font: 12px/1.5 var(--mono); color: #f3b3b3; background: #1a0d10; border: 1px solid #4a1f25;
-    border-radius: 10px; padding: 8px 12px; white-space: pre-wrap; margin-bottom: 8px;
-  }
-  .pasos-dentro h2 { font: 600 14px/1.3 var(--sans); margin: 22px 0 8px; display: flex; gap: 10px; align-items: baseline; }
-  .pasos-dentro h2 .num { font: 600 12px/1 var(--mono); color: var(--acento); }
-  .pasos-dentro h2 .etq { font: 11px/1 var(--mono); color: var(--muy-tenue); letter-spacing: .06em; }
-  .pasos-dentro h2 .etq.req { color: var(--aviso); }
-  .prov, .bloque { border: 1px solid var(--borde); border-radius: 12px; padding: 12px 14px; margin: 10px 0; background: #080b12; }
-  .prov.lista { border-color: #1f4a30; }
+  .pasos-dentro .motivo { font: 12px/1.5 var(--mono); color: #ffc0c6; background: rgba(40,6,12,.6);
+                          border: 1px solid rgba(255,77,94,.4); padding: 8px 12px; white-space: pre-wrap; margin-bottom: 8px; }
+  .pasos-dentro h2 { font: 600 12px/1.3 var(--mono); letter-spacing: .2em; text-transform: uppercase; margin: 22px 0 8px;
+                     display: flex; gap: 10px; align-items: baseline; color: var(--texto); }
+  .pasos-dentro h2 .num { color: var(--c1); }
+  .pasos-dentro h2 .req { color: var(--aviso); font-size: 10px; } .pasos-dentro h2 .opc { color: var(--muy-tenue); font-size: 10px; }
+  .prov, .bloque { border: 1px solid var(--c1-20); padding: 12px 14px; margin: 10px 0; background: rgba(0,0,0,.35); }
+  .prov.lista { border-color: rgba(61,255,160,.4); }
   .prov-cab { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-  .prov-cab b { font-size: 15px; }
-  .prov-estado { font: 12px/1 var(--mono); }
-  .prov-estado.ok, .linea-estado.ok { color: var(--ok); }
-  .prov-estado.falta, .linea-estado.falta { color: var(--muy-tenue); }
+  .prov-cab b { font: 700 14px/1.2 var(--mono); letter-spacing: .08em; }
+  .prov-estado, .linea-estado { font: 11.5px/1.6 var(--mono); }
+  .ok { color: var(--ok); } .falta { color: var(--muy-tenue); } .mal { color: var(--mal); }
   .prov-nota { color: var(--tenue); font-size: 12.5px; margin-top: 4px; }
-  .prov ol { margin: 8px 0 6px; padding-left: 20px; color: #c3cad8; font-size: 13px; }
-  .prov ol li { margin: 2px 0; }
-  .prov-gratis { color: var(--tenue); font: 12px/1.4 var(--mono); }
+  .prov ol { margin: 8px 0 6px; padding-left: 20px; color: #c3d6df; font-size: 13px; }
+  .prov-gratis { color: var(--tenue); font: 11.5px/1.4 var(--mono); }
   .fila { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
-  .fila input { flex: 1 1 240px; }
+  .fila input { flex: 1 1 220px; }
   .pasos-dentro input {
-    background: #05070c; color: var(--texto); border: 1px solid var(--borde); border-radius: 8px;
-    padding: 8px 10px; font: 13px/1.2 var(--mono); min-width: 0;
+    background: rgba(0,0,0,.5); color: var(--texto); border: 1px solid var(--c1-20); padding: 8px 10px;
+    font: 12.5px/1.2 var(--mono); min-width: 0;
   }
-  .pasos-dentro input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
-  .prov-modelo { margin-top: 8px; }
-  .prov-modelo summary { color: var(--muy-tenue); font: 12px/1.4 var(--mono); cursor: pointer; }
+  .prov-modelo { margin-top: 8px; } .prov-modelo summary { color: var(--muy-tenue); font: 11.5px/1.4 var(--mono); cursor: pointer; }
   .prov-modelo input { width: 100%; margin-top: 6px; }
   .prov-res { margin-top: 8px; font: 12px/1.5 var(--mono); color: var(--tenue); white-space: pre-wrap; }
-  .prov-res.ok { color: var(--ok); } .prov-res.mal { color: var(--mal); }
-  .linea-estado { font: 12.5px/1.6 var(--mono); }
-  .bloque p { margin: 6px 0; color: #c3cad8; font-size: 13px; }
-  .bloque code, .pasos-dentro code.cmd {
-    display: block; font: 12.5px/1.4 var(--mono); background: #05070c; border: 1px solid var(--borde);
-    border-radius: 8px; padding: 7px 10px; margin: 6px 0; color: #cfe6ff; user-select: all; overflow-x: auto;
-  }
-  .nota-claves { margin-top: 18px; color: var(--tenue); font-size: 12.5px; border-left: 2px solid var(--borde); padding: 4px 0 4px 12px; }
+  .bloque p { margin: 6px 0; color: #c3d6df; font-size: 13px; }
+  code.cmd { display: block; font: 12.5px/1.4 var(--mono); background: rgba(0,0,0,.55); border: 1px solid var(--c1-20);
+             padding: 7px 10px; margin: 6px 0; color: var(--c2); user-select: all; overflow-x: auto; }
+  .nota-claves { margin-top: 18px; color: var(--tenue); font-size: 12.5px; border-left: 2px solid var(--c1-20); padding: 4px 0 4px 12px; }
   .acciones { display: flex; justify-content: flex-end; margin-top: 16px; }
-  button.primario { border-color: #24406a; color: #cfe6ff; padding: 9px 16px; font-size: 13px; }
+
+  /* -- personalizar ---------------------------------------------------------------------- */
+  #ajustes {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(340px, 100%); z-index: 40;
+    transform: translateX(105%); transition: transform .25s ease;
+    display: flex; flex-direction: column;
+  }
+  #ajustes.visible { transform: none; }
+  #ajustes .cuerpo-panel { padding: 12px 16px 20px; overflow-y: auto; flex: 1; }
+  .temas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .tema { padding: 0; height: 58px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch;
+          clip-path: none; border-color: var(--c1-20); overflow: hidden; position: relative; }
+  .tema .muestra { position: absolute; inset: 0; }
+  .tema span:not(.muestra) { position: relative; font: 600 9px/1 var(--mono); letter-spacing: .14em; padding: 5px 4px;
+                             background: rgba(0,0,0,.6); color: #e8f6fb; }
+  .tema.activo { border-color: #fff; box-shadow: 0 0 calc(10px * var(--luz)) var(--c1); }
+  .ajuste { margin-top: 16px; }
+  .ajuste label { display: flex; justify-content: space-between; gap: 8px; font: 11px/1.3 var(--mono); color: var(--texto); letter-spacing: .08em; }
+  .ajuste label output { color: var(--c1); }
+  .ajuste input[type=range] { width: 100%; margin-top: 8px; accent-color: var(--c1); }
+  .colores { display: flex; gap: 14px; margin-top: 8px; }
+  .colores label { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .colores input[type=color] { width: 64px; height: 30px; padding: 0; border: 1px solid var(--c1-40); background: transparent; cursor: pointer; }
+  .interruptor { display: flex; align-items: center; gap: 10px; margin-top: 12px; font: 12px/1.3 var(--sans); color: var(--texto); cursor: pointer; }
+  .ajuste label.interruptor { justify-content: flex-start; font: 12px/1.3 var(--sans); letter-spacing: 0; }
+  .interruptor input { accent-color: var(--c1); width: 16px; height: 16px; flex: none; }
+  .ayuda-ajuste { color: var(--muy-tenue); font-size: 11.5px; margin-top: 4px; }
 
   .demo-banda {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 60;
     background: repeating-linear-gradient(135deg, #2a1d05 0 12px, #241904 12px 24px);
     color: #fcd58a; border-bottom: 1px solid #5a3a17;
     font: 600 11px/1.4 var(--mono); letter-spacing: .14em; text-align: center; padding: 6px 12px;
   }
-  @media (prefers-reduced-motion: reduce) { #registro { scroll-behavior: auto; } }
+  @media (prefers-reduced-motion: reduce) { #registro { scroll-behavior: auto; } #ajustes { transition: none; } }
 </style>
 </head>
-<body>
+<body class="crt">
+  <canvas id="fondo" aria-hidden="true"></canvas>
+
   <header>
-    <span class="marca">D.O.O.M</span>
-    <div class="modelos" id="modelos" aria-label="Modelos en uso"></div>
-    <button id="boton-pasos" title="Qué necesita el agente y cómo ponerlo">Primeros pasos</button>
-    <button id="nueva" title="Olvida la conversación y empieza de cero">Nueva</button>
+    <div class="logo"><b>D.O.O.M</b><span class="codigo">ASISTENTE LOCAL · NÚCLEO v0.1</span></div>
+    <div class="cab-linea" aria-hidden="true"></div>
+    <div class="cab-botones">
+      <button id="boton-pasos" title="Qué necesita el agente y cómo ponerlo">Primeros pasos</button>
+      <button id="boton-ajustes" title="Colores, luz y efectos">Personalizar</button>
+      <button id="nueva" title="Olvida la conversación y empieza de cero">Nueva</button>
+    </div>
   </header>
 
-  <section id="cielo" aria-hidden="true">
-    <canvas id="planeta"></canvas>
-    <div id="rotulo"><span class="punto"></span><span id="rotulo-t">iniciando</span></div>
-  </section>
+  <main class="hud">
+    <canvas id="circuitos" aria-hidden="true"></canvas>
 
-  <main id="registro" aria-live="polite"></main>
-  <section id="pasos" hidden aria-label="Primeros pasos"></section>
+    <aside id="panel-izq" class="marco lateral" aria-label="Sistema">
+      <div class="cab-marco"><span class="etq">Sistema</span><span class="barra"></span><span class="codigo">SYS-01</span></div>
+      <div class="cuerpo-panel">
+        <div class="dato"><div class="reloj" id="sys-reloj">--:--:--</div><div class="codigo" id="sys-fecha"></div></div>
+        <div class="dato"><span class="etq">Estado</span><div class="valor grande" id="sys-estado">iniciando</div></div>
+        <div class="dato"><span class="etq">Carga</span><div class="barras" id="sys-carga"></div></div>
+        <div class="dato"><span class="etq">Modelos</span><ul class="lista-mini" id="sys-modelos"><li class="apagado">—</li></ul></div>
+        <div class="dato"><span class="etq">Segunda opinión</span><div class="valor" id="sys-revisor">—</div></div>
+        <div class="dato"><span class="etq">Herramientas</span><div class="valor" id="sys-herr">—</div></div>
+      </div>
+    </aside>
 
-  <footer>
-    <div class="caja">
-      <textarea id="orden" rows="1" placeholder="Dime qué hago…  (Intro envía, Mayús+Intro salto de línea)" aria-label="Orden para D.O.O.M"></textarea>
-      <button id="enviar">Enviar</button>
+    <section id="zona-nucleo" aria-hidden="true">
+      <canvas id="nucleo"></canvas>
+      <div id="rotulo"><span id="rotulo-t">iniciando</span></div>
+    </section>
+
+    <section id="marco-registro" class="marco" aria-label="Conversación">
+      <div class="cab-marco"><span class="etq">Registro</span><span class="barra"></span><span class="codigo">LOG // CONVERSACIÓN</span></div>
+      <div id="registro" aria-live="polite"></div>
+    </section>
+
+    <section class="entrada marco" aria-label="Orden">
+      <div class="fila-orden">
+        <span class="prompt" aria-hidden="true">›</span>
+        <textarea id="orden" rows="1" placeholder="Dime qué hago…  (Intro ejecuta · Mayús+Intro salto de línea)" aria-label="Orden para D.O.O.M"></textarea>
+        <button id="enviar">Ejecutar</button>
+      </div>
+      <div class="pie-estrecho solo-estrecho"><span id="pie-info">—</span></div>
+    </section>
+
+    <section id="pasos" class="marco" hidden aria-label="Primeros pasos"></section>
+
+    <aside id="panel-der" class="marco lateral" aria-label="Actividad">
+      <div class="cab-marco"><span class="etq">Actividad</span><span class="barra"></span><span class="codigo">ACT-02</span></div>
+      <div class="cuerpo-panel">
+        <div class="dato"><span class="etq">Herramienta</span><div class="valor" id="act-herr">ninguna</div></div>
+        <div class="dato"><span class="etq">Pasos de esta orden</span><div class="valor" id="act-pasos">0</div></div>
+        <div class="dato"><span class="etq">Permisos</span><div class="valor" id="act-permisos">0 pedidos</div></div>
+        <div class="dato"><span class="etq">Abierto en esta sesión</span><ul class="lista-mini" id="act-abierto"><li class="apagado">nada todavía</li></ul></div>
+      </div>
+    </aside>
+  </main>
+
+  <aside id="ajustes" class="marco" aria-label="Personalizar" aria-hidden="true">
+    <div class="cab-marco"><span class="etq">Personalizar</span><span class="barra"></span><button id="cerrar-ajustes" title="Cerrar">✕</button></div>
+    <div class="cuerpo-panel">
+      <span class="etq">Tema</span>
+      <div class="temas" id="temas"></div>
+      <div class="ajuste">
+        <span class="etq">Colores</span>
+        <div class="colores">
+          <label>Principal<input type="color" id="aj-c1"></label>
+          <label>Secundario<input type="color" id="aj-c2"></label>
+        </div>
+        <div class="ayuda-ajuste">Al cambiar un color, el tema pasa a «propio».</div>
+      </div>
+      <div class="ajuste"><label for="aj-luz">Brillo y resplandor <output id="o-luz"></output></label><input type="range" id="aj-luz" min="0" max="1.6" step="0.05"></div>
+      <div class="ajuste"><label for="aj-fondo">Rejilla y circuitos <output id="o-fondo"></output></label><input type="range" id="aj-fondo" min="0" max="1" step="0.05"></div>
+      <div class="ajuste"><label for="aj-velocidad">Velocidad de animación <output id="o-velocidad"></output></label><input type="range" id="aj-velocidad" min="0.2" max="2" step="0.05"></div>
+      <div class="ajuste">
+        <label class="interruptor"><input type="checkbox" id="aj-por_herramienta"> El núcleo cambia de color según la herramienta</label>
+        <label class="interruptor"><input type="checkbox" id="aj-circuitos"> Pulsos de datos por los circuitos</label>
+        <label class="interruptor"><input type="checkbox" id="aj-crt"> Líneas de pantalla (efecto CRT)</label>
+      </div>
+      <div class="acciones"><button id="aj-restablecer">Restablecer</button></div>
     </div>
-    <div class="estado-pie">
-      <span id="pie-info">—</span>
-      <span class="abiertas" id="pie-abiertas"></span>
-    </div>
-  </footer>
+  </aside>
 
 <script>
 "use strict";
 /* ==========================================================================
-   1. EL PLANETA
-   Cada "modo" es un conjunto de numeros; el planeta se desliza hacia el del
-   modo actual. Mismo enfoque que ui/prototipo/hud.html: la interfaz no decide
-   nada, recibe estado y anima.
+   0. TEMA Y PREFERENCIAS
    ========================================================================== */
+const TEMAS = {
+  jarvis:    { nombre: "Jarvis",    c1: "#29d3ff", c2: "#8ff3ff" },
+  holograma: { nombre: "Holograma", c1: "#ffae2b", c2: "#ffd88a" },
+  neon:      { nombre: "Neón",      c1: "#ff2bd6", c2: "#2bf0ff" },
+  matriz:    { nombre: "Matriz",    c1: "#36ff8a", c2: "#b6ffd1" },
+  glaciar:   { nombre: "Glaciar",   c1: "#a8d8ff", c2: "#ffffff" },
+  carmesi:   { nombre: "Carmesí",   c1: "#ff3b4e", c2: "#ffb3ba" },
+};
+const DEFECTO = { tema: "jarvis", c1: "#29d3ff", c2: "#8ff3ff", luz: 1, fondo: 0.6, velocidad: 1,
+                  por_herramienta: true, circuitos: true, crt: true };
+let prefs = Object.assign({}, DEFECTO);
+
+function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgba(c, a) { return `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`; }
+
+function aplicarTema() {
+  const r = document.documentElement.style, a = hexRgb(prefs.c1), b = hexRgb(prefs.c2);
+  r.setProperty("--c1", prefs.c1); r.setProperty("--c2", prefs.c2);
+  for (const [n, v] of [["06", .06], ["10", .10], ["20", .20], ["40", .40], ["60", .60]]) r.setProperty(`--c1-${n}`, rgba(a, v));
+  r.setProperty("--c2-40", rgba(b, .4));
+  r.setProperty("--luz", prefs.luz); r.setProperty("--fondo", prefs.fondo);
+  document.body.classList.toggle("crt", !!prefs.crt);
+  ponerModo(nucleo.modo, true);
+  pintarFondo();
+}
+
+/* ==========================================================================
+   1. EL NUCLEO HOLOGRAFICO
+   Anillos segmentados, marcas, una esfera de alambre con particulas y un
+   anillo brillante alrededor de una pupila oscura. Se dibuja con mezcla
+   aditiva y despues una pasada de resplandor (la escena reducida y vuelta a
+   ampliar), que no necesita WebGL ni filtros de canvas.
+   ========================================================================== */
+const COLOR_MODO = { web: "#2bd9ff", apps: "#b48bff", ficheros: "#ffc23d", terminal: "#3dff9a",
+                     permiso: "#ffab2e", error: "#ff4d5e" };
 const MODOS = {
-  reposo:   { atm: [0.32, 0.62, 1.00], energia: 0.10, etiqueta: "en reposo",           css: "#5ab4ff" },
-  pensando: { atm: [0.60, 0.50, 1.00], energia: 0.62, etiqueta: "pensando",            css: "#9b8cff" },
-  web:      { atm: [0.13, 0.83, 0.93], energia: 0.85, etiqueta: "navegador",           css: "#22d3ee" },
-  apps:     { atm: [0.66, 0.55, 0.98], energia: 0.85, etiqueta: "aplicaciones",        css: "#a78bfa" },
-  ficheros: { atm: [0.98, 0.75, 0.14], energia: 0.80, etiqueta: "ficheros",            css: "#fbbf24" },
-  terminal: { atm: [0.29, 0.87, 0.50], energia: 0.80, etiqueta: "terminal",            css: "#4ade80" },
-  permiso:  { atm: [0.98, 0.57, 0.24], energia: 0.45, etiqueta: "esperando tu permiso", css: "#fb923c" },
-  hablando: { atm: [0.45, 0.82, 1.00], energia: 0.50, etiqueta: "respondiendo",        css: "#7cc8ff" },
-  error:    { atm: [0.97, 0.40, 0.40], energia: 0.35, etiqueta: "algo ha fallado",     css: "#f87171" },
+  reposo:   { energia: 0.12, etiqueta: "en reposo" },
+  pensando: { energia: 0.65, etiqueta: "pensando" },
+  web:      { energia: 0.85, etiqueta: "navegador" },
+  apps:     { energia: 0.85, etiqueta: "aplicaciones" },
+  ficheros: { energia: 0.80, etiqueta: "ficheros" },
+  terminal: { energia: 0.80, etiqueta: "terminal" },
+  permiso:  { energia: 0.45, etiqueta: "esperando permiso" },
+  hablando: { energia: 0.50, etiqueta: "respondiendo" },
+  error:    { energia: 0.35, etiqueta: "fallo" },
 };
-const ETIQUETA_FAMILIA = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal" };
+const FAMILIAS = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal" };
 
-const planeta = {
-  modo: "reposo",
-  atm: MODOS.reposo.atm.slice(),
-  energia: MODOS.reposo.energia,
-  pulso: 0,          // golpe corto: llega un evento, se escribe una palabra
-  rot: 0,
-  luna: 0,
-};
-function ponerModo(nombre) {
+const nucleo = { modo: "reposo", color: hexRgb(DEFECTO.c1), energia: 0.12, pulso: 0, t: 0, giro: 0, desde: 0 };
+
+function colorDeModo(m) {
+  if (m === "permiso" || m === "error") return COLOR_MODO[m];
+  if (prefs.por_herramienta && COLOR_MODO[m]) return COLOR_MODO[m];
+  if (m === "pensando" || m === "hablando") return prefs.c2;
+  return prefs.c1;
+}
+function ponerModo(nombre, soloColor) {
   if (!MODOS[nombre]) nombre = "pensando";
-  planeta.modo = nombre;
-  const m = MODOS[nombre];
-  document.getElementById("rotulo-t").textContent = m.etiqueta;
-  const punto = document.querySelector("#rotulo .punto");
-  punto.style.background = m.css; punto.style.boxShadow = `0 0 10px ${m.css}`;
+  if (!soloColor && nombre !== nucleo.modo) nucleo.desde = nucleo.t;
+  nucleo.modo = nombre;
+  document.documentElement.style.setProperty("--modo", colorDeModo(nombre));
+  document.getElementById("rotulo-t").textContent = MODOS[nombre].etiqueta;
+  document.getElementById("sys-estado").textContent = MODOS[nombre].etiqueta;
 }
-function latido(fuerza = 0.5) { planeta.pulso = Math.min(1.4, planeta.pulso + fuerza); }
-
-const VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }`;
-const FRAG = `
-precision highp float;
-uniform vec2 uRes; uniform float uTiempo, uRot, uEnergia, uPulso, uLuna;
-uniform vec3 uAtm;
-
-float hash(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
-float ruido(vec3 x){
-  vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
-  return mix(mix(mix(hash(i), hash(i+vec3(1,0,0)), f.x), mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),
-             mix(mix(hash(i+vec3(0,0,1)), hash(i+vec3(1,0,1)), f.x), mix(hash(i+vec3(0,1,1)), hash(i+vec3(1,1,1)), f.x), f.y), f.z);
-}
-float fbm(vec3 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ v += a*ruido(p); p = p*2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return v; }
-mat3 rotY(float a){ float c = cos(a), s = sin(a); return mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c); }
-mat3 rotX(float a){ float c = cos(a), s = sin(a); return mat3(1.0,0.0,0.0, 0.0,c,s, 0.0,-s,c); }
-
-void main(){
-  float escala = min(uRes.x, uRes.y);
-  vec2 p = (gl_FragCoord.xy - 0.5*uRes) / escala * 2.0;
-  float R = 0.62 * (1.0 + 0.035*uPulso);
-  float r = length(p);
-  vec3 col = vec3(0.0);
-
-  // estrellas, quietas y tenues
-  float st = hash(vec3(floor(gl_FragCoord.xy/2.0), 3.0));
-  col += vec3(step(0.9983, st)) * (0.35 + 0.35*sin(uTiempo*1.5 + st*90.0));
-
-  vec3 L = normalize(vec3(-0.55, 0.42, 0.72));
-  vec3 tierraBase = vec3(0.16, 0.30, 0.34), marBase = vec3(0.025, 0.06, 0.13);
-  vec3 tierra = mix(tierraBase, uAtm*0.55, 0.30);
-  vec3 mar = mix(marBase, uAtm*0.18, 0.35);
-
-  // luna: orbita inclinada; detras del planeta no se ve
-  float va = uLuna;
-  vec3 lp = vec3(cos(va)*1.55*R, sin(va)*0.32*R + 0.05, sin(va));
-  float ld = length(p - lp.xy);
-  float lunaR = 0.055;
-  bool lunaDetras = lp.z < 0.0 && r < R;
-
-  if (r < R){
-    float z = sqrt(R*R - r*r);
-    vec3 n = normalize(vec3(p, z));
-    vec3 q = rotX(0.38) * rotY(uRot) * n;
-    float h = fbm(q*2.2);
-    float esTierra = smoothstep(0.50, 0.555, h);
-    vec3 sup = mix(mar*(0.6 + 0.8*h), tierra*(0.55 + 1.1*(h - 0.45)), esTierra);
-
-    // venas de energia: se encienden cuando trabaja
-    float vena = pow(1.0 - abs(fbm(q*3.6 + vec3(0.0, uTiempo*0.12, uTiempo*0.05))*2.0 - 1.0), 9.0);
-    sup += uAtm * vena * (0.08 + 1.4*uEnergia);
-
-    // nubes, mas lentas que la superficie
-    float nub = smoothstep(0.56, 0.82, fbm(rotY(uTiempo*0.025)*q*3.1 + vec3(0.0, uTiempo*0.015, 0.0)));
-    sup = mix(sup, vec3(0.86, 0.92, 1.0), nub*0.40);
-
-    float dif = clamp(dot(n, L), 0.0, 1.0);
-    col = sup * (0.06 + 0.10*uEnergia + dif*0.95);
-    col += uAtm * 0.35 * (1.0 - dif) * vena * uEnergia;        // lado de noche: luces
-    float fres = pow(1.0 - n.z, 3.0);
-    col += uAtm * fres * (0.55 + 1.1*uEnergia + 0.9*uPulso);     // borde iluminado
-  } else {
-    float d = r - R;
-    float halo = exp(-d*(8.5 - 4.0*uEnergia)) * (0.30 + 0.85*uEnergia + 1.1*uPulso);
-    col += uAtm * halo;
-  }
-
-  if (!lunaDetras){
-    float lm = smoothstep(lunaR, lunaR - 0.012, ld);
-    vec3 ln = normalize(vec3((p - lp.xy)/lunaR, 0.6));
-    vec3 lunaCol = vec3(0.72, 0.76, 0.85) * (0.25 + 0.8*clamp(dot(ln, L), 0.0, 1.0));
-    col = mix(col, lunaCol, lm);
-    col += uAtm * exp(-max(ld - lunaR, 0.0)*40.0) * 0.25 * (0.4 + uEnergia);
-  }
-
-  col = 1.0 - exp(-col*1.25);                                    // tono suave, sin quemar
-  gl_FragColor = vec4(col, 1.0);
-}`;
-
-const lienzo = document.getElementById("planeta");
-const gl = lienzo.getContext("webgl", { antialias: true, premultipliedAlpha: false });
-let uni = null, ctx2d = null;
-
-function compilar(tipo, fuente) {
-  const s = gl.createShader(tipo); gl.shaderSource(s, fuente); gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-  return s;
-}
-try {
-  if (!gl) throw new Error("sin WebGL");
-  const prog = gl.createProgram();
-  gl.attachShader(prog, compilar(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(prog, compilar(gl.FRAGMENT_SHADER, FRAG));
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-  gl.useProgram(prog);
-  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
-  const a = gl.getAttribLocation(prog, "a"); gl.enableVertexAttribArray(a);
-  gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
-  uni = {};
-  for (const n of ["uRes", "uTiempo", "uRot", "uEnergia", "uPulso", "uLuna", "uAtm"]) uni[n] = gl.getUniformLocation(prog, n);
-} catch (e) {
-  // Sin WebGL: una esfera plana con su halo. Se pierde detalle, no funcion.
-  console.warn("Planeta en modo simple:", e);
-  lienzo.replaceWith(lienzo.cloneNode());
-  ctx2d = document.getElementById("planeta").getContext("2d");
+function latido(f = 0.5) {
+  nucleo.pulso = Math.min(1.4, nucleo.pulso + f);
+  if (prefs.circuitos) lanzarPulsos(f > 0.4 ? 3 : 1);
 }
 
-function ajustar() {
-  const c = document.getElementById("planeta");
+const cv = document.getElementById("nucleo"), cn = cv.getContext("2d");
+const escena = document.createElement("canvas"), ce = escena.getContext("2d");
+const mini = document.createElement("canvas"), cm = mini.getContext("2d");
+const mini2 = document.createElement("canvas"), cm2 = mini2.getContext("2d");
+
+// Particulas de la esfera, fijas en latitud y con su propia velocidad.
+const PARTICULAS = Array.from({ length: 170 }, () => ({
+  lat: Math.asin(Math.random() * 2 - 1), lon: Math.random() * Math.PI * 2,
+  v: 0.15 + Math.random() * 0.5, tam: Math.random() < 0.15 ? 2.2 : 1.3,
+}));
+const HEX = "0123456789ABCDEF";
+const glifos = Array.from({ length: 28 }, () => HEX[(Math.random() * 16) | 0]);
+
+function arco(c, x, y, r, a0, a1, ancho, color) {
+  c.beginPath(); c.arc(x, y, r, a0, a1); c.lineWidth = ancho; c.strokeStyle = color; c.stroke();
+}
+function proyectar(lat, lon, giro, incl) {
+  // Esfera unidad: girar alrededor de Y, inclinar alrededor de X.
+  const x = Math.cos(lat) * Math.cos(lon + giro), y = Math.sin(lat), z = Math.cos(lat) * Math.sin(lon + giro);
+  return [x, y * Math.cos(incl) - z * Math.sin(incl), y * Math.sin(incl) + z * Math.cos(incl)];
+}
+// Geometria compartida con los circuitos, en pixeles CSS de la zona del nucleo.
+function geometriaNucleo(w, h) { return { cx: w / 2, cy: h / 2 - 10, R: Math.max(10, Math.min(w, h - 34) * 0.47) }; }
+
+function dibujarNucleo(dt) {
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-  const w = Math.max(1, Math.floor(c.clientWidth * dpr)), h = Math.max(1, Math.floor(c.clientHeight * dpr));
-  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-  return [w, h];
+  const W = Math.max(1, Math.floor(cv.clientWidth * dpr)), H = Math.max(1, Math.floor(cv.clientHeight * dpr));
+  if (cv.width !== W || cv.height !== H) {
+    cv.width = escena.width = W; cv.height = escena.height = H;
+    mini.width = Math.max(1, W >> 2); mini.height = Math.max(1, H >> 2);
+    mini2.width = Math.max(1, W >> 3); mini2.height = Math.max(1, H >> 3);
+  }
+  const vel = prefs.velocidad, E = nucleo.energia, P = nucleo.pulso, t = nucleo.t;
+  const C = nucleo.color, A = hexRgb(prefs.c1), B = hexRgb(prefs.c2);
+  const g = geometriaNucleo(W / dpr, H / dpr);
+  let cx = g.cx * dpr; const cy = g.cy * dpr, R = g.R * dpr * (1 + 0.025 * P);
+  if (nucleo.modo === "error" && Math.random() < 0.25) cx += (Math.random() - 0.5) * 6 * dpr;
+
+  const c = ce;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "source-over";
+  c.clearRect(0, 0, W, H);
+
+  // Disco exterior: oscuro, con un halo suave del color del tema.
+  const disco = c.createRadialGradient(cx, cy, R * 0.25, cx, cy, R * 1.02);
+  disco.addColorStop(0, rgba(A, 0.10)); disco.addColorStop(0.7, rgba(A, 0.05)); disco.addColorStop(1, rgba(A, 0));
+  c.fillStyle = disco; c.beginPath(); c.arc(cx, cy, R * 1.02, 0, Math.PI * 2); c.fill();
+
+  c.globalCompositeOperation = "lighter";
+  const g1 = nucleo.giro;
+
+  // Anillo exterior fino y su gemelo discontinuo.
+  arco(c, cx, cy, R * 0.99, 0, Math.PI * 2, 1.2 * dpr, rgba(A, 0.35 + 0.2 * E));
+  c.setLineDash([3 * dpr, 9 * dpr]); c.lineDashOffset = -t * 20 * vel;
+  arco(c, cx, cy, R * 0.955, 0, Math.PI * 2, 1 * dpr, rgba(A, 0.25 + 0.3 * E)); c.setLineDash([]);
+
+  // Arcos segmentados, girando a contrapelo.
+  const segs = [[0.00, 0.62], [0.70, 1.15], [1.24, 2.05], [2.12, 2.30], [2.40, 3.55], [3.64, 4.70], [4.80, 5.95]];
+  for (const [a0, a1] of segs) arco(c, cx, cy, R * 0.90, a0 + g1 * 0.6, a1 + g1 * 0.6, 3 * dpr, rgba(A, 0.45 + 0.4 * E));
+  for (const [a0, a1] of segs.slice(0, 5)) arco(c, cx, cy, R * 0.86, -a1 - g1 * 0.35, -a0 - g1 * 0.35, 1.2 * dpr, rgba(B, 0.30 + 0.3 * E));
+
+  // Grupos de marcas radiales, como las del anillo de referencia.
+  c.strokeStyle = rgba(A, 0.55 + 0.35 * E); c.lineWidth = 1.4 * dpr;
+  for (let gr = 0; gr < 4; gr++) {
+    const base = gr * Math.PI / 2 - g1 * 0.25 + 0.4;
+    for (let k = 0; k < 11; k++) {
+      const a = base + k * 0.045, r0 = R * 0.775, r1 = R * (k % 5 === 0 ? 0.735 : 0.752);
+      c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.stroke();
+    }
+  }
+
+  // Esfera de alambre: paralelos, meridianos y particulas.
+  const rs = R * 0.66, incl = 0.42, giroE = g1 * 0.9;
+  c.lineWidth = 1 * dpr;
+  const segmento = (p, q, alfa, col) => {
+    c.strokeStyle = rgba(col, alfa); c.beginPath();
+    c.moveTo(cx + p[0] * rs, cy - p[1] * rs); c.lineTo(cx + q[0] * rs, cy - q[1] * rs); c.stroke();
+  };
+  for (let la = -60; la <= 60; la += 30) {
+    const lat = la * Math.PI / 180; let ant = proyectar(lat, 0, giroE, incl);
+    for (let i = 1; i <= 40; i++) {
+      const p = proyectar(lat, i / 40 * Math.PI * 2, giroE, incl);
+      segmento(ant, p, (0.05 + 0.20 * (p[2] + 1) / 2) * (0.5 + E), B); ant = p;
+    }
+  }
+  for (let m = 0; m < 8; m++) {
+    const lon = m / 8 * Math.PI; let ant = proyectar(-Math.PI / 2, lon, giroE, incl);
+    for (let i = 1; i <= 28; i++) {
+      const p = proyectar(-Math.PI / 2 + i / 28 * Math.PI, lon, giroE, incl);
+      segmento(ant, p, (0.04 + 0.18 * (p[2] + 1) / 2) * (0.5 + E), C); ant = p;
+    }
+  }
+  for (const q of PARTICULAS) {
+    q.lon += dt * q.v * (0.3 + 1.6 * E) * vel;
+    const p = proyectar(q.lat, q.lon, giroE, incl), prof = (p[2] + 1) / 2;
+    c.fillStyle = rgba(prof > 0.5 ? C : B, (0.15 + 0.85 * prof) * (0.35 + 0.8 * E));
+    c.fillRect(cx + p[0] * rs * 1.02 - q.tam * dpr / 2, cy - p[1] * rs * 1.02 - q.tam * dpr / 2, q.tam * dpr, q.tam * dpr);
+  }
+  // Tres orbitas inclinadas con su viajero.
+  for (let o = 0; o < 3; o++) {
+    const rx = rs * (1.12 + 0.08 * o), ry = rs * (0.22 + 0.12 * o);
+    c.save(); c.translate(cx, cy); c.rotate(o * 1.05 + 0.3);
+    c.beginPath(); c.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    c.strokeStyle = rgba(C, 0.10 + 0.18 * E); c.lineWidth = 1 * dpr; c.stroke();
+    const a = t * (0.5 + 0.4 * o) * vel * (0.4 + 1.4 * E) + o * 2;
+    c.fillStyle = rgba(C, 0.9); c.beginPath(); c.arc(Math.cos(a) * rx, Math.sin(a) * ry, 2.4 * dpr, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+
+  // Gestos de cada modo.
+  const m = nucleo.modo, desde = t - nucleo.desde;
+  if (m === "web") {                       // barrido de radar
+    const a = t * 2.2 * vel;
+    for (let i = 0; i < 22; i++) {
+      c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, R * 0.88, a - (i + 1) * 0.035, a - i * 0.035); c.closePath();
+      c.fillStyle = rgba(C, 0.16 * (1 - i / 22)); c.fill();
+    }
+  } else if (m === "apps") {               // segmentos que se encienden en cadena
+    const n = 16, activo = Math.floor(t * 8 * vel) % n;
+    for (let i = 0; i < n; i++) {
+      const d = (activo - i + n) % n;
+      arco(c, cx, cy, R * 1.04, i / n * Math.PI * 2 + 0.02, (i + 1) / n * Math.PI * 2 - 0.05, 4 * dpr, rgba(C, d < 4 ? 0.9 - d * 0.2 : 0.08));
+    }
+  } else if (m === "ficheros") {           // linea de lectura que recorre la esfera
+    const y = cy + Math.sin(t * 2.4 * vel) * rs, ancho = Math.sqrt(Math.max(0, rs * rs - (y - cy) ** 2));
+    const grad = c.createLinearGradient(cx - ancho, y, cx + ancho, y);
+    grad.addColorStop(0, rgba(C, 0)); grad.addColorStop(0.5, rgba(C, 0.9)); grad.addColorStop(1, rgba(C, 0));
+    c.strokeStyle = grad; c.lineWidth = 2 * dpr; c.beginPath(); c.moveTo(cx - ancho, y); c.lineTo(cx + ancho, y); c.stroke();
+  } else if (m === "terminal") {           // anillo de caracteres
+    if (Math.random() < 0.3) glifos[(Math.random() * glifos.length) | 0] = HEX[(Math.random() * 16) | 0];
+    c.font = `${10 * dpr}px monospace`; c.textAlign = "center"; c.textBaseline = "middle";
+    glifos.forEach((s, i) => {
+      const a = i / glifos.length * Math.PI * 2 + t * 0.6 * vel;
+      c.fillStyle = rgba(C, 0.5 + 0.5 * Math.sin(t * 6 + i));
+      c.fillText(s, cx + Math.cos(a) * R * 1.07, cy + Math.sin(a) * R * 1.07);
+    });
+  } else if (m === "permiso") {            // anillo de aviso que parpadea
+    c.setLineDash([10 * dpr, 6 * dpr]);
+    arco(c, cx, cy, R * 1.05, 0, Math.PI * 2, 3 * dpr, rgba(C, 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 6))));
+    c.setLineDash([]);
+  }
+  if (desde < 0.6) arco(c, cx, cy, R * (0.45 + desde * 1.2), 0, Math.PI * 2, 2 * dpr, rgba(C, 0.6 * (1 - desde / 0.6)));
+
+  // Anillo central brillante, con sus marcas, y la pupila.
+  const brillo = 0.55 + 0.4 * E + 0.5 * P;
+  arco(c, cx, cy, R * 0.43, 0, Math.PI * 2, R * 0.075, rgba(C, 0.35 * brillo));
+  arco(c, cx, cy, R * 0.43, 0, Math.PI * 2, R * 0.035, rgba(C, 0.75 * brillo));
+  arco(c, cx, cy, R * 0.50, 0, Math.PI * 2, 1 * dpr, rgba(B, 0.5));
+  c.strokeStyle = rgba(B, 0.5 + 0.4 * E); c.lineWidth = 1.2 * dpr;
+  for (const base of [-Math.PI / 2, Math.PI / 6, Math.PI * 5 / 6]) {
+    for (let k = -4; k <= 4; k++) {
+      const a = base + k * 0.07 - g1 * 0.5;
+      c.beginPath(); c.moveTo(cx + Math.cos(a) * R * 0.33, cy + Math.sin(a) * R * 0.33);
+      c.lineTo(cx + Math.cos(a) * R * 0.365, cy + Math.sin(a) * R * 0.365); c.stroke();
+    }
+  }
+  c.globalCompositeOperation = "source-over";
+  const pupila = c.createRadialGradient(cx, cy, 0, cx, cy, R * 0.395);
+  pupila.addColorStop(0, "rgba(0,0,0,0.95)"); pupila.addColorStop(0.7, rgba(C, 0.10)); pupila.addColorStop(1, rgba(C, 0.25));
+  c.fillStyle = pupila; c.beginPath(); c.arc(cx, cy, R * 0.395, 0, Math.PI * 2); c.fill();
+  c.globalCompositeOperation = "lighter";
+  arco(c, cx, cy, R * 0.24, 0, Math.PI * 2, 1 * dpr, rgba(C, 0.25 + 0.3 * E));
+
+  // Componer: la escena, y encima su resplandor (reducida y ampliada).
+  cn.setTransform(1, 0, 0, 1, 0, 0);
+  cn.globalCompositeOperation = "source-over"; cn.globalAlpha = 1;
+  cn.clearRect(0, 0, W, H);
+  cn.drawImage(escena, 0, 0);
+  if (prefs.luz > 0) {
+    cm.clearRect(0, 0, mini.width, mini.height); cm.drawImage(escena, 0, 0, mini.width, mini.height);
+    cm2.clearRect(0, 0, mini2.width, mini2.height); cm2.drawImage(mini, 0, 0, mini2.width, mini2.height);
+    cn.globalCompositeOperation = "lighter";
+    cn.globalAlpha = Math.min(1, 0.75 * prefs.luz); cn.drawImage(mini, 0, 0, W, H);
+    cn.globalAlpha = Math.min(1, 0.65 * prefs.luz); cn.drawImage(mini2, 0, 0, W, H);
+    cn.globalAlpha = 1; cn.globalCompositeOperation = "source-over";
+  }
 }
 
-let antes = performance.now();
+/* ==========================================================================
+   2. FONDO Y CIRCUITOS
+   ========================================================================== */
+const fondo = document.getElementById("fondo"), cf = fondo.getContext("2d");
+function pintarFondo() {
+  const W = fondo.width = innerWidth, H = fondo.height = innerHeight, A = hexRgb(prefs.c1), f = prefs.fondo;
+  cf.clearRect(0, 0, W, H);
+  if (f <= 0) return;
+  cf.lineWidth = 1;
+  for (let x = 0.5; x < W; x += 32) { cf.strokeStyle = rgba(A, (x % 160 < 32 ? 0.07 : 0.03) * f); cf.beginPath(); cf.moveTo(x, 0); cf.lineTo(x, H); cf.stroke(); }
+  for (let y = 0.5; y < H; y += 32) { cf.strokeStyle = rgba(A, (y % 160 < 32 ? 0.07 : 0.03) * f); cf.beginPath(); cf.moveTo(0, y); cf.lineTo(W, y); cf.stroke(); }
+  // Bloques de datos tenues, como el ruido de fondo de un HUD. Semilla fija:
+  // el fondo no cambia de sitio cada vez que se redimensiona.
+  cf.font = "9px monospace"; let semilla = 7;
+  const azar = () => ((semilla = (semilla * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < 26; i++) {
+    const x = azar() * W, y = azar() * H, filas = 2 + ((azar() * 5) | 0);
+    cf.fillStyle = rgba(A, 0.06 * f);
+    for (let k = 0; k < filas; k++) {
+      let s = ""; for (let j = 0; j < 10; j++) s += HEX[(azar() * 16) | 0];
+      cf.fillText(s, x, y + k * 11);
+    }
+    cf.strokeStyle = rgba(A, 0.05 * f); cf.strokeRect(x - 6, y - 12, 80 + azar() * 60, filas * 11 + 8);
+  }
+  const v = cf.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.75)");
+  cf.fillStyle = v; cf.fillRect(0, 0, W, H);
+}
+
+const ccir = document.getElementById("circuitos"), cc = ccir.getContext("2d");
+let trazas = [], pulsos = [];
+function caja(id, base) {
+  const e = document.getElementById(id);
+  if (!e || e.offsetParent === null) return null;
+  const r = e.getBoundingClientRect();
+  return { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height };
+}
+// Tramo horizontal, codo a 45 grados y otro tramo horizontal: el trazado de
+// una pista de circuito impreso.
+function trazaHorizontal(x0, y0, x1, y1) {
+  const dy = Math.abs(y1 - y0), dir = Math.sign(x1 - x0) || 1, hueco = Math.abs(x1 - x0);
+  if (hueco < dy + 20) return [[x0, y0], [x0 + dir * hueco * 0.3, y0], [x1 - dir * hueco * 0.2, y1], [x1, y1]];
+  const tramo = (hueco - dy) / 2;
+  return [[x0, y0], [x0 + dir * tramo, y0], [x0 + dir * (tramo + dy), y1], [x1, y1]];
+}
+function calcularTrazas() {
+  const main = document.querySelector("main.hud"), base = main.getBoundingClientRect();
+  ccir.width = Math.max(1, Math.floor(base.width)); ccir.height = Math.max(1, Math.floor(base.height));
+  trazas = [];
+  const n = caja("zona-nucleo", base);
+  if (!n) return;
+  const g = geometriaNucleo(n.w, n.h), cx = n.x + g.cx, cy = n.y + g.cy, R = g.R;
+  const borde = a => [cx + Math.cos(a) * R, cy + Math.sin(a) * R];
+  const izq = caja("panel-izq", base), der = caja("panel-der", base);
+  const abajo = caja(enPasos ? "pasos" : "marco-registro", base);
+  if (izq) for (const [a, fy] of [[Math.PI + 0.55, 0.14], [Math.PI, 0.30], [Math.PI - 0.6, 0.47]]) {
+    const [x0, y0] = borde(a); trazas.push(trazaHorizontal(x0, y0, izq.x + izq.w + 2, izq.y + izq.h * fy));
+  }
+  if (der) for (const [a, fy] of [[-0.55, 0.14], [0, 0.30], [0.6, 0.47]]) {
+    const [x0, y0] = borde(a); trazas.push(trazaHorizontal(x0, y0, der.x - 2, der.y + der.h * fy));
+  }
+  if (abajo) for (const d of [-1, 1]) {
+    const [x0, y0] = borde(Math.PI / 2 + d * 0.35), y1 = abajo.y - 2;
+    if (y1 > y0 + 4) trazas.push([[x0, y0], [x0, y0 + (y1 - y0) * 0.4], [x0 + d * 30, y1]]);
+  }
+}
+function longitud(tr) { let L = 0; for (let i = 1; i < tr.length; i++) L += Math.hypot(tr[i][0] - tr[i - 1][0], tr[i][1] - tr[i - 1][1]); return L; }
+function puntoEn(tr, u) {
+  let resto = u * longitud(tr);
+  for (let i = 1; i < tr.length; i++) {
+    const d = Math.hypot(tr[i][0] - tr[i - 1][0], tr[i][1] - tr[i - 1][1]);
+    if (resto <= d) { const k = d ? resto / d : 0; return [tr[i - 1][0] + (tr[i][0] - tr[i - 1][0]) * k, tr[i - 1][1] + (tr[i][1] - tr[i - 1][1]) * k]; }
+    resto -= d;
+  }
+  return tr[tr.length - 1];
+}
+function lanzarPulsos(n) {
+  for (let i = 0; i < n && trazas.length; i++) pulsos.push({ tr: trazas[(Math.random() * trazas.length) | 0], u: 0, v: 0.6 + Math.random() * 0.8 });
+}
+function dibujarCircuitos(dt) {
+  cc.clearRect(0, 0, ccir.width, ccir.height);
+  const f = prefs.fondo; if (f <= 0) return;
+  const A = hexRgb(prefs.c1), C = nucleo.color;
+  cc.lineWidth = 1;
+  for (const tr of trazas) {
+    cc.strokeStyle = rgba(A, 0.22 * f + 0.1); cc.beginPath(); cc.moveTo(tr[0][0], tr[0][1]);
+    for (const p of tr.slice(1)) cc.lineTo(p[0], p[1]);
+    cc.stroke();
+    const fin = tr[tr.length - 1];
+    cc.fillStyle = rgba(A, 0.6); cc.beginPath(); cc.arc(fin[0], fin[1], 2.5, 0, Math.PI * 2); cc.fill();
+    cc.strokeStyle = rgba(A, 0.5); cc.beginPath(); cc.arc(tr[0][0], tr[0][1], 3.5, 0, Math.PI * 2); cc.stroke();
+  }
+  if (!prefs.circuitos) { pulsos = []; return; }
+  if (Math.random() < dt * (0.4 + 3 * nucleo.energia)) lanzarPulsos(1);
+  cc.globalCompositeOperation = "lighter";
+  pulsos = pulsos.filter(p => (p.u += dt * p.v * prefs.velocidad) < 1);
+  for (const p of pulsos) {
+    for (let k = 0; k < 6; k++) {
+      const [x, y] = puntoEn(p.tr, Math.max(0, p.u - k * 0.012));
+      cc.fillStyle = rgba(C, 0.85 * (1 - k / 6)); cc.beginPath(); cc.arc(x, y, 2.2 - k * 0.25, 0, Math.PI * 2); cc.fill();
+    }
+  }
+  cc.globalCompositeOperation = "source-over";
+}
+
+/* ==========================================================================
+   3. EL BUCLE DE ANIMACION
+   ========================================================================== */
+const barras = document.getElementById("sys-carga");
+for (let i = 0; i < 18; i++) barras.appendChild(document.createElement("i"));
+let antes = performance.now(), cuentaBarras = 0;
 function fotograma(ahora) {
   const dt = Math.min(0.05, (ahora - antes) / 1000); antes = ahora;
-  const m = MODOS[planeta.modo];
-  const k = 1 - Math.exp(-dt * 2.6);
-  for (let i = 0; i < 3; i++) planeta.atm[i] += (m.atm[i] - planeta.atm[i]) * k;
-  planeta.energia += (m.energia - planeta.energia) * k;
-  planeta.pulso *= Math.exp(-dt * 3.2);
-  planeta.rot += dt * (0.05 + 0.55 * planeta.energia);
-  planeta.luna += dt * (0.25 + 1.6 * planeta.energia);
-  const [w, h] = ajustar();
-
-  if (uni) {
-    gl.viewport(0, 0, w, h);
-    gl.uniform2f(uni.uRes, w, h);
-    gl.uniform1f(uni.uTiempo, ahora / 1000);
-    gl.uniform1f(uni.uRot, planeta.rot);
-    gl.uniform1f(uni.uEnergia, planeta.energia);
-    gl.uniform1f(uni.uPulso, planeta.pulso);
-    gl.uniform1f(uni.uLuna, planeta.luna);
-    gl.uniform3f(uni.uAtm, planeta.atm[0], planeta.atm[1], planeta.atm[2]);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  } else if (ctx2d) {
-    const c = ctx2d, R = Math.min(w, h) * 0.31 * (1 + 0.035 * planeta.pulso);
-    const [r, g, b] = planeta.atm.map(v => Math.round(v * 255));
-    c.fillStyle = "#05070c"; c.fillRect(0, 0, w, h);
-    const halo = c.createRadialGradient(w/2, h/2, R*0.9, w/2, h/2, R*(1.5 + planeta.energia));
-    halo.addColorStop(0, `rgba(${r},${g},${b},${0.35 + 0.5*planeta.energia})`); halo.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = halo; c.fillRect(0, 0, w, h);
-    const esfera = c.createRadialGradient(w/2 - R*0.35, h/2 - R*0.35, R*0.1, w/2, h/2, R);
-    esfera.addColorStop(0, `rgb(${40 + r/4},${60 + g/4},${80 + b/4})`); esfera.addColorStop(1, "#04060c");
-    c.fillStyle = esfera; c.beginPath(); c.arc(w/2, h/2, R, 0, Math.PI*2); c.fill();
+  nucleo.t += dt;
+  const objetivo = hexRgb(colorDeModo(nucleo.modo)), k = 1 - Math.exp(-dt * 3);
+  for (let i = 0; i < 3; i++) nucleo.color[i] += (objetivo[i] - nucleo.color[i]) * k;
+  nucleo.energia += (MODOS[nucleo.modo].energia - nucleo.energia) * k;
+  nucleo.pulso *= Math.exp(-dt * 3);
+  nucleo.giro += dt * (0.15 + 1.1 * nucleo.energia) * prefs.velocidad;
+  dibujarNucleo(dt);
+  dibujarCircuitos(dt);
+  if ((cuentaBarras += dt) > 0.12) {
+    cuentaBarras = 0;
+    barras.childNodes.forEach((b, i) => {
+      const h = 10 + 90 * Math.min(1, nucleo.energia * (0.5 + 0.5 * Math.sin(nucleo.t * 3 + i * 0.7)) + nucleo.pulso * 0.3 + Math.random() * 0.12);
+      b.style.height = `${h}%`;
+    });
   }
   requestAnimationFrame(fotograma);
 }
-requestAnimationFrame(fotograma);
+
+function reloj() {
+  const d = new Date();
+  document.getElementById("sys-reloj").textContent = d.toLocaleTimeString("es-ES", { hour12: false });
+  document.getElementById("sys-fecha").textContent = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
+}
+reloj(); setInterval(reloj, 1000);
 
 /* ==========================================================================
-   2. EL REGISTRO
+   4. EL REGISTRO
    ========================================================================== */
 const registro = document.getElementById("registro");
-let familiaActual = "", lineaPensando = null, ocupado = false;
+let familiaActual = "", lineaPensando = null, ocupado = false, pasosOrden = 0, permisos = 0;
 
 function alFondo() { registro.scrollTop = registro.scrollHeight; }
 function el(etiqueta, clase, texto) {
@@ -454,13 +771,11 @@ function el(etiqueta, clase, texto) {
   if (texto !== undefined) e.textContent = texto;
   return e;
 }
-// Texto con enlaces pulsables. Un enlace no puede navegar dentro de la
-// ventana: se abre en el navegador del usuario a traves de Python.
+// Texto con enlaces pulsables. Un enlace nunca navega dentro de la ventana:
+// se abre en el navegador del usuario a traves de Python.
 function conEnlaces(nodo, texto) {
-  const partes = String(texto).split(/(https?:\/\/[^\s<>"')\]]+)/g);
-  for (const p of partes) {
+  for (const p of String(texto).split(/(https?:\/\/[^\s<>"')\]]+)/g)) {
     if (/^https?:\/\//.test(p)) {
-      // El punto o la coma que cierran la frase no son parte del enlace.
       const url = p.replace(/[.,;:!?»]+$/, ""), cola = p.slice(url.length);
       const a = el("a", "", url); a.href = url;
       a.addEventListener("click", ev => { ev.preventDefault(); api("abrir_enlace", url); });
@@ -471,110 +786,96 @@ function conEnlaces(nodo, texto) {
   return nodo;
 }
 function linea(clase, marca, texto, color) {
-  const l = el("div", `linea ${clase}`);
-  const m = el("span", "marca-l", marca);
-  const c = el("span", "cuerpo");
+  const l = el("div", `linea ${clase}`), c = el("span", "cuerpo");
   if (color) l.style.setProperty("--c", color);
   conEnlaces(c, texto);
-  l.append(m, c);
+  l.append(el("span", "marca-l", marca), c);
   return l;
 }
 function quitarPensando() { if (lineaPensando) { lineaPensando.remove(); lineaPensando = null; } }
 function mostrarPensando(texto) {
-  quitarPensando();
-  lineaPensando = linea("pensando-l", "", texto);
+  quitarPensando(); lineaPensando = linea("pensando-l", "", texto);
   registro.appendChild(lineaPensando); alFondo();
 }
-
-// Escribe la respuesta palabra a palabra; cada palabra es un latido del planeta.
+// La respuesta se escribe palabra a palabra; cada palabra es un latido del nucleo.
 function escribir(nodo, texto, alTerminar) {
   const palabras = String(texto).split(/(\s+)/);
-  let i = 0, acumulado = "";
+  let i = 0, hecho = "";
   const paso = () => {
     if (i >= palabras.length) { nodo.textContent = ""; conEnlaces(nodo, texto); alFondo(); alTerminar && alTerminar(); return; }
-    acumulado += palabras[i++];
-    nodo.textContent = acumulado;
-    if (palabras[i - 1].trim()) latido(0.18);
+    hecho += palabras[i++]; nodo.textContent = hecho;
+    if (palabras[i - 1].trim()) latido(0.16);
     alFondo();
     setTimeout(paso, palabras[i - 1].trim() ? 28 : 0);
   };
   paso();
 }
-
 function tarjetaPermiso(id, pregunta, opinion) {
   const t = el("div", "permiso"); t.dataset.id = id;
   t.appendChild(el("div", "pregunta", pregunta));
   if (opinion) {
-    const ojo = /^OJO/i.test(opinion);
-    const o = el("div", `opinion ${ojo ? "ojo" : "bien"}`);
-    o.appendChild(el("b", "", "SEGUNDA OPINIÓN"));
-    o.appendChild(document.createTextNode(opinion));
+    const o = el("div", `opinion ${/^OJO/i.test(opinion) ? "ojo" : "bien"}`);
+    o.append(el("b", "", "SEGUNDA OPINIÓN"), document.createTextNode(opinion));
     t.appendChild(o);
   }
-  const botones = el("div", "botones");
-  const si = el("button", "si", "Confirmar"), no = el("button", "no", "No");
+  const botones = el("div", "botones"), si = el("button", "si", "Confirmar"), no = el("button", "no", "No");
   const decidir = valor => {
     si.disabled = no.disabled = true;
-    t.appendChild(el("div", "hecho", valor ? "✓ autorizado" : "✗ no autorizado"));
-    ponerModo("pensando");
-    api("responder", id, valor);
+    t.appendChild(el("div", "hecho", valor ? "✓ AUTORIZADO" : "✗ NO AUTORIZADO"));
+    ponerModo("pensando"); api("responder", id, valor);
   };
   si.addEventListener("click", () => decidir(true));
   no.addEventListener("click", () => decidir(false));
   botones.append(si, no); t.appendChild(botones);
   return t;
 }
-
 function ponerAbiertas(lista) {
-  const ult = lista.slice(-4).map(x => x.replace(/^https?:\/\//, ""));
-  document.getElementById("pie-abiertas").textContent = lista.length ? `abierto: ${ult.join(" · ")}` : "";
+  const ul = document.getElementById("act-abierto");
+  ul.innerHTML = "";
+  if (!lista.length) { ul.appendChild(el("li", "apagado", "nada todavía")); return; }
+  for (const x of lista.slice(-12).reverse()) ul.appendChild(el("li", "", x.replace(/^https?:\/\//, "")));
 }
 
 /* ==========================================================================
-   3. LOS EVENTOS DE PYTHON
+   5. LOS EVENTOS DE PYTHON
    ========================================================================== */
 const DOOM = window.DOOM = {
   evento(e) {
     switch (e.tipo) {
       case "estado":
-        if (e.estado === "pensando") { ponerModo("pensando"); latido(0.8); }
+        if (e.estado === "pensando") {
+          ponerModo("pensando"); latido(0.8); pasosOrden = 0;
+          document.getElementById("act-pasos").textContent = "0";
+        }
         break;
       case "pensando":
-        familiaActual = "";
-        ponerModo("pensando");
-        mostrarPensando(e.paso > 1 ? `pensando el siguiente paso (${e.paso})…` : "pensando…");
+        familiaActual = ""; ponerModo("pensando");
+        document.getElementById("act-herr").textContent = "pensando…";
+        mostrarPensando(e.paso > 1 ? `procesando el siguiente paso (${e.paso})…` : "procesando…");
         break;
       case "herramienta":
-        familiaActual = e.familia || "";
-        ponerModo(familiaActual || "pensando"); latido(0.7);
+        familiaActual = e.familia || ""; ponerModo(familiaActual || "pensando"); latido(0.7);
+        document.getElementById("act-herr").textContent = `${e.nombre}${familiaActual ? ` · ${familiaActual}` : ""}`;
+        document.getElementById("act-pasos").textContent = String(++pasosOrden);
         break;
       case "comentario":
-        quitarPensando();
-        registro.appendChild(linea("piensa", "·", e.texto)); latido(0.3); alFondo();
+        quitarPensando(); registro.appendChild(linea("piensa", "◇", e.texto)); latido(0.3); alFondo();
         break;
       case "accion": {
         quitarPensando();
-        const color = familiaActual ? MODOS[familiaActual].css : null;
-        const l = linea("accion", "→", "", color);
-        const cuerpo = l.querySelector(".cuerpo");
-        if (familiaActual) cuerpo.appendChild(el("span", "chip", ETIQUETA_FAMILIA[familiaActual]));
+        const color = familiaActual ? colorDeModo(familiaActual) : null;
+        const l = linea("accion", "▸", "", color), cuerpo = l.querySelector(".cuerpo");
+        if (familiaActual) cuerpo.appendChild(el("span", "chip", FAMILIAS[familiaActual]));
         conEnlaces(cuerpo, e.texto);
         registro.appendChild(l); alFondo();
         break;
       }
-      case "resultado":
-        registro.appendChild(linea("resultado", "✓", e.texto)); alFondo();
-        break;
-      case "error":
-        quitarPensando();
-        registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo();
-        break;
-      case "abiertas":
-        ponerAbiertas(e.lista || []);
-        break;
+      case "resultado": registro.appendChild(linea("resultado", "└", e.texto)); alFondo(); break;
+      case "error": quitarPensando(); registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo(); break;
+      case "abiertas": ponerAbiertas(e.lista || []); break;
       case "permiso":
-        quitarPensando();
-        ponerModo("permiso"); latido(0.6);
+        quitarPensando(); ponerModo("permiso"); latido(0.6);
+        document.getElementById("act-permisos").textContent = `${++permisos} pedido${permisos > 1 ? "s" : ""}`;
         registro.appendChild(tarjetaPermiso(e.id, e.pregunta, e.opinion)); alFondo();
         break;
       case "permiso_fin": {
@@ -583,57 +884,51 @@ const DOOM = window.DOOM = {
         break;
       }
       case "respuesta": {
-        quitarPensando();
-        ponerModo("hablando");
-        const r = el("div", "respuesta");
-        registro.appendChild(r);
+        quitarPensando(); ponerModo("hablando");
+        document.getElementById("act-herr").textContent = "ninguna";
+        const r = el("div", "respuesta"); registro.appendChild(r);
         escribir(r, e.texto, () => {
           if (e.abiertas && e.abiertas.length) {
             const a = el("div", "abierto");
             for (const x of e.abiertas) a.appendChild(el("span", "", `abierto · ${x}`));
             registro.appendChild(a); alFondo();
           }
-          setTimeout(() => { if (!ocupado) ponerModo("reposo"); }, 600);
+          setTimeout(() => { if (!ocupado) ponerModo("reposo"); }, 700);
         });
         break;
       }
       case "fallo":
-        quitarPensando();
-        ponerModo("error"); latido(0.9);
+        quitarPensando(); ponerModo("error"); latido(0.9);
         registro.appendChild(el("div", "fallo", e.texto)); alFondo();
         setTimeout(() => { if (!ocupado) ponerModo("reposo"); }, 2500);
         break;
-      default:
-        break;
+      default: break;
     }
     if (e.tipo === "estado") ponerOcupado(e.estado === "pensando");
   },
 };
 
 /* ==========================================================================
-   4. LA ENTRADA
+   6. LA LINEA DE ORDENES
    ========================================================================== */
-const orden = document.getElementById("orden");
-const botonEnviar = document.getElementById("enviar");
-
+const orden = document.getElementById("orden"), botonEnviar = document.getElementById("enviar");
 function api(metodo, ...args) {
   const p = window.pywebview && window.pywebview.api;
   if (p && p[metodo]) return p[metodo](...args);
-  if (window.DEMO) return window.DEMO[metodo] ? window.DEMO[metodo](...args) : Promise.resolve(null);
+  if (window.DEMO && window.DEMO[metodo]) return window.DEMO[metodo](...args);
   return Promise.resolve(null);
 }
 function ponerOcupado(si) {
   ocupado = si;
-  botonEnviar.textContent = si ? "Parar" : "Enviar";
+  botonEnviar.textContent = si ? "Detener" : "Ejecutar";
   botonEnviar.classList.toggle("parar", si);
   if (!si) quitarPensando();
 }
 function crecer() {
   orden.style.height = "auto";
-  orden.style.height = Math.min(orden.scrollHeight + 2, 180) + "px";
-  orden.style.overflowY = orden.scrollHeight > 180 ? "auto" : "hidden";
+  orden.style.height = Math.min(orden.scrollHeight + 2, 160) + "px";
+  orden.style.overflowY = orden.scrollHeight > 160 ? "auto" : "hidden";
 }
-
 async function mandar() {
   if (ocupado) { api("parar"); return; }
   const texto = orden.value.trim();
@@ -641,89 +936,66 @@ async function mandar() {
   registro.appendChild(el("div", "tu", texto)); alFondo();
   orden.value = ""; crecer();
   const r = await api("enviar", texto);
-  if (r && r.ok === false && r.error) {
-    registro.appendChild(el("div", "fallo", r.error)); alFondo();
-  }
+  if (r && r.ok === false && r.error) { registro.appendChild(el("div", "fallo", r.error)); alFondo(); }
 }
-orden.addEventListener("keydown", ev => {
-  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); mandar(); }
-});
-orden.addEventListener("input", () => { crecer(); latido(0.06); });
+orden.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); mandar(); } });
+orden.addEventListener("input", () => { crecer(); latido(0.05); });
 botonEnviar.addEventListener("click", mandar);
 document.getElementById("nueva").addEventListener("click", () => {
   if (ocupado) return;
-  api("nuevo");
-  registro.innerHTML = "";
-  ponerAbiertas([]);
+  api("nuevo"); registro.innerHTML = ""; ponerAbiertas([]); permisos = 0;
+  document.getElementById("act-permisos").textContent = "0 pedidos";
   registro.appendChild(el("div", "sistema", "Conversación nueva: no recuerdo nada de lo anterior."));
 });
 
 /* ==========================================================================
-   5. PRIMEROS PASOS
-   Antes del chat si no hay ningun modelo; despues, desde la cabecera.
+   7. PRIMEROS PASOS
    ========================================================================== */
-const pasos = document.getElementById("pasos");
-const pie = document.querySelector("footer");
-const botonPasos = document.getElementById("boton-pasos");
+const pasos = document.getElementById("pasos"), marcoRegistro = document.getElementById("marco-registro");
+const entrada = document.querySelector(".entrada"), botonPasos = document.getElementById("boton-pasos");
 let enPasos = false, bienvenida = false;
 
 function mostrarPasos(motivo) {
-  enPasos = true;
-  pasos.hidden = false; registro.hidden = true; pie.hidden = true;
-  botonPasos.textContent = "Volver al chat";
-  pintarPasos(motivo);
+  enPasos = true; pasos.hidden = false; marcoRegistro.hidden = true; entrada.hidden = true;
+  botonPasos.textContent = "Volver al chat"; pintarPasos(motivo); calcularTrazas();
 }
 function ocultarPasos() {
-  enPasos = false;
-  pasos.hidden = true; registro.hidden = false; pie.hidden = false;
-  botonPasos.textContent = "Primeros pasos";
-  alFondo(); orden.focus();
+  enPasos = false; pasos.hidden = true; marcoRegistro.hidden = false; entrada.hidden = false;
+  botonPasos.textContent = "Primeros pasos"; calcularTrazas(); alFondo(); orden.focus();
 }
 async function irAlChat() { if (await arrancar()) ocultarPasos(); }
 
 function seccion(num, titulo, etiqueta, requerido) {
   const h = el("h2");
-  h.append(el("span", "num", num), el("span", "", titulo), el("span", `etq${requerido ? " req" : ""}`, etiqueta));
+  h.append(el("span", "num", num), el("span", "", titulo), el("span", requerido ? "req" : "opc", etiqueta));
   return h;
 }
 function lineaEstado(ok, texto) { return el("div", `linea-estado ${ok ? "ok" : "falta"}`, `${ok ? "✓" : "·"} ${texto}`); }
 function comando(texto) { return el("code", "cmd", texto); }
 
 function tarjetaProveedor(p) {
-  const t = el("div", `prov${p.configurada ? " lista" : ""}`);
-  const cab = el("div", "prov-cab");
+  const t = el("div", `prov${p.configurada ? " lista" : ""}`), cab = el("div", "prov-cab");
   const estado = el("span", `prov-estado ${p.configurada ? "ok" : "falta"}`,
     p.configurada ? `✓ clave guardada${p.final ? ` (…${p.final})` : ""}` : "sin clave");
-  cab.append(el("b", "", p.titulo), estado);
-  t.appendChild(cab);
+  cab.append(el("b", "", p.titulo), estado); t.appendChild(cab);
   if (p.nota) t.appendChild(el("div", "prov-nota", p.nota));
-  const ol = el("ol");
-  for (const x of p.pasos) ol.appendChild(el("li", "", x));
-  t.appendChild(ol);
+  const ol = el("ol"); for (const x of p.pasos) ol.appendChild(el("li", "", x)); t.appendChild(ol);
   t.appendChild(el("div", "prov-gratis", `Gratis: ${p.gratis}`));
-
-  const fila = el("div", "fila");
-  const abrir = el("button", "", "Abrir la página ↗");
+  const fila = el("div", "fila"), abrir = el("button", "", "Abrir la página ↗");
   abrir.addEventListener("click", () => api("abrir_enlace", p.alta));
   const campo = el("input");
   Object.assign(campo, { type: "password", autocomplete: "off", spellcheck: false,
     placeholder: p.configurada ? "Pega otra clave para sustituirla" : "Pega aquí la clave" });
   campo.setAttribute("aria-label", `Clave de ${p.titulo}`);
-  const guardar = el("button", "", "Guardar");
-  const probar = el("button", "", "Probar");
+  const guardar = el("button", "", "Guardar"), probar = el("button", "", "Probar");
   probar.disabled = !p.configurada;
-  fila.append(abrir, campo, guardar, probar);
-  t.appendChild(fila);
-
-  const det = el("details", "prov-modelo");
+  fila.append(abrir, campo, guardar, probar); t.appendChild(fila);
+  const det = el("details", "prov-modelo"), modelo = el("input");
   det.appendChild(el("summary", "", `Modelo: ${p.modelo}`));
-  const modelo = el("input"); modelo.value = p.modelo; modelo.spellcheck = false;
-  modelo.setAttribute("aria-label", `Modelo de ${p.titulo}`);
+  modelo.value = p.modelo; modelo.spellcheck = false; modelo.setAttribute("aria-label", `Modelo de ${p.titulo}`);
   det.append(modelo, el("div", "prov-nota", "Cámbialo solo si el proveedor ya no ofrece este. Se aplica al pulsar Guardar."));
   t.appendChild(det);
-
-  const res = el("div", "prov-res");
-  t.appendChild(res);
+  const res = el("div", "prov-res"); t.appendChild(res);
   const hacerPrueba = async () => {
     res.className = "prov-res"; res.textContent = "Probando…";
     const r = await api("probar_clave", p.id);
@@ -744,115 +1016,153 @@ function tarjetaProveedor(p) {
   probar.addEventListener("click", hacerPrueba);
   return t;
 }
-
 function bloqueNavegador(n) {
   const b = el("div", "bloque");
   b.append(lineaEstado(n.playwright, "Playwright instalado"), lineaEstado(n.chromium, "Chromium descargado"));
-  if (n.playwright && n.chromium) {
-    b.appendChild(el("p", "", "Listo: el agente puede leer páginas, pulsar y rellenar en su propio navegador, aparte del tuyo."));
-  } else {
+  if (n.playwright && n.chromium) b.appendChild(el("p", "", "Listo: el agente puede leer páginas, pulsar y rellenar en su propio navegador, aparte del tuyo."));
+  else {
     b.appendChild(el("p", "", "Sin esto, el agente abre páginas en tu navegador pero no puede leerlas ni pulsar en ellas. Se instala una vez, desde la carpeta del proyecto:"));
     b.append(comando('pip install -e ".[agent-web]"'), comando("python -m playwright install chromium"));
   }
   return b;
 }
-
 function bloqueOllama(o) {
   const b = el("div", "bloque");
   b.appendChild(lineaEstado(o.responde, o.responde ? `Ollama responde en ${o.host}` : `Ollama no responde en ${o.host}`));
-  if (o.responde && o.en_lista) {
-    b.appendChild(el("p", "", "En uso: está en tu lista de modelos."));
-    return b;
-  }
+  if (o.responde && o.en_lista) { b.appendChild(el("p", "", "En uso: está en tu lista de modelos.")); return b; }
   b.appendChild(el("p", "", "Gratis y sin conexión: lo que lee el agente no sale del equipo. Necesita memoria de sobra, y va mucho mejor con una tarjeta gráfica."));
   if (!o.responde) {
-    const d = el("button", "", "Descargar Ollama ↗");
-    d.addEventListener("click", () => api("abrir_enlace", o.descarga));
-    b.appendChild(d);
-    b.appendChild(el("p", "", "Después, descarga un modelo:"));
-    b.appendChild(comando(`ollama pull ${o.sugerido}`));
+    const d = el("button", "", "Descargar Ollama ↗"); d.addEventListener("click", () => api("abrir_enlace", o.descarga));
+    b.append(d, el("p", "", "Después, descarga un modelo:"), comando(`ollama pull ${o.sugerido}`));
   }
   b.appendChild(el("p", "", `Y añade ollama:${o.sugerido} al final de DOOMBOT_MODELOS en el fichero .env.`));
   return b;
 }
-
 async function pintarPasos(motivo) {
   pasos.innerHTML = "";
+  const cab = el("div", "cab-marco");
+  cab.append(el("span", "etq", "Primeros pasos"), el("span", "barra"), el("span", "codigo", "INIT // CONFIG"));
   const d = el("div", "pasos-dentro");
-  d.appendChild(el("h1", "", "Primeros pasos"));
-  d.appendChild(el("p", "intro",
-    "Para actuar, D.O.O.M necesita al menos un modelo de lenguaje. Estos son gratuitos y sin tarjeta: " +
-    "crea una clave, pégala aquí y pruébala."));
+  pasos.append(cab, d);
+  d.appendChild(el("h1", "", "Configuración inicial"));
+  d.appendChild(el("p", "intro", "Para actuar, D.O.O.M necesita al menos un modelo de lenguaje. Estos son gratuitos y sin tarjeta: crea una clave, pégala aquí y pruébala."));
   if (motivo) d.appendChild(el("div", "motivo", motivo));
-  pasos.appendChild(d);
   const est = await api("configuracion");
   if (!est) { d.appendChild(el("p", "intro", "No puedo leer la configuración.")); return; }
-
-  d.appendChild(seccion("1", "Modelos de lenguaje", "necesario: al menos uno", true));
+  d.appendChild(seccion("01", "Modelos de lenguaje", "necesario · al menos uno", true));
   for (const p of est.proveedores) d.appendChild(tarjetaProveedor(p));
-  d.appendChild(seccion("2", "Navegador propio del agente", "opcional"));
+  d.appendChild(seccion("02", "Navegador propio del agente", "opcional"));
   d.appendChild(bloqueNavegador(est.navegador));
-  d.appendChild(seccion("3", "Modelo local, sin internet", "opcional"));
+  d.appendChild(seccion("03", "Modelo local, sin internet", "opcional"));
   d.appendChild(bloqueOllama(est.ollama));
   d.appendChild(el("div", "nota-claves",
-    `Las claves son de tu cuenta, no de este ordenador: la misma sirve en cualquier equipo. ` +
-    `Se guardan solo en ${est.env}, que no se sube a GitHub; en otro ordenador, vuelve a pegarlas ` +
-    `aquí. Si prefieres, crea una por equipo: así puedes revocar solo la de uno.`));
-  const acciones = el("div", "acciones");
-  const ir = el("button", "primario", "Ir al chat");
-  ir.addEventListener("click", irAlChat);
-  acciones.appendChild(ir);
-  d.appendChild(acciones);
+    `Las claves son de tu cuenta, no de este ordenador: la misma sirve en cualquier equipo. Se guardan solo en ${est.env}, ` +
+    "que no se sube a GitHub; en otro ordenador, vuelve a pegarlas aquí. Si prefieres, crea una por equipo: así puedes revocar solo la de uno."));
+  const acciones = el("div", "acciones"), ir = el("button", "", "Ir al chat");
+  ir.addEventListener("click", irAlChat); acciones.appendChild(ir); d.appendChild(acciones);
 }
+botonPasos.addEventListener("click", () => { if (enPasos) irAlChat(); else if (!ocupado) mostrarPasos(); });
 
-botonPasos.addEventListener("click", () => {
-  if (enPasos) irAlChat();
-  else if (!ocupado) mostrarPasos();
-});
+/* ==========================================================================
+   8. PERSONALIZAR
+   ========================================================================== */
+const ajustes = document.getElementById("ajustes"), temas = document.getElementById("temas");
+for (const [id, t] of Object.entries(TEMAS)) {
+  const b = el("button", "tema"); b.dataset.tema = id; b.title = t.nombre;
+  const m = el("span", "muestra");
+  m.style.background = `radial-gradient(circle at 50% 40%, ${t.c2} 0 7%, ${t.c1} 13%, transparent 30%), ` +
+    `radial-gradient(circle at 50% 40%, transparent 36%, ${t.c1}88 38%, transparent 42%), #03060b`;
+  b.append(m, el("span", "", t.nombre));
+  b.addEventListener("click", () => cambiar({ tema: id, c1: t.c1, c2: t.c2 }));
+  temas.appendChild(b);
+}
+function reflejarAjustes() {
+  temas.querySelectorAll(".tema").forEach(b => b.classList.toggle("activo", b.dataset.tema === prefs.tema));
+  document.getElementById("aj-c1").value = prefs.c1;
+  document.getElementById("aj-c2").value = prefs.c2;
+  for (const k of ["luz", "fondo", "velocidad"]) {
+    document.getElementById(`aj-${k}`).value = prefs[k];
+    document.getElementById(`o-${k}`).textContent = `${Math.round(prefs[k] * 100)}%`;
+  }
+  for (const k of ["por_herramienta", "circuitos", "crt"]) document.getElementById(`aj-${k}`).checked = !!prefs[k];
+}
+let guardadoPendiente = null;
+function cambiar(cambios) {
+  Object.assign(prefs, cambios);
+  aplicarTema(); reflejarAjustes(); latido(0.4);
+  clearTimeout(guardadoPendiente);
+  guardadoPendiente = setTimeout(async () => {
+    const r = await api("guardar_preferencias", prefs);
+    if (r) { prefs = Object.assign({}, DEFECTO, r); reflejarAjustes(); }
+  }, 400);
+}
+document.getElementById("aj-c1").addEventListener("input", ev => cambiar({ tema: "propio", c1: ev.target.value }));
+document.getElementById("aj-c2").addEventListener("input", ev => cambiar({ tema: "propio", c2: ev.target.value }));
+for (const k of ["luz", "fondo", "velocidad"]) document.getElementById(`aj-${k}`).addEventListener("input", ev => cambiar({ [k]: parseFloat(ev.target.value) }));
+for (const k of ["por_herramienta", "circuitos", "crt"]) document.getElementById(`aj-${k}`).addEventListener("change", ev => cambiar({ [k]: ev.target.checked }));
+document.getElementById("aj-restablecer").addEventListener("click", () => cambiar(Object.assign({}, DEFECTO)));
+function abrirAjustes(si) {
+  ajustes.classList.toggle("visible", si); ajustes.setAttribute("aria-hidden", String(!si));
+  if (si) document.getElementById("cerrar-ajustes").focus();
+}
+document.getElementById("boton-ajustes").addEventListener("click", () => abrirAjustes(!ajustes.classList.contains("visible")));
+document.getElementById("cerrar-ajustes").addEventListener("click", () => abrirAjustes(false));
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") abrirAjustes(false); });
 
+/* ==========================================================================
+   9. ARRANQUE
+   ========================================================================== */
 async function arrancar() {
   ponerModo("reposo");
   const info = await api("iniciar");
-  const modelos = document.getElementById("modelos");
-  modelos.innerHTML = "";
-  if (!info) { document.getElementById("pie-info").textContent = "sin conexión con el agente"; return false; }
+  const lista = document.getElementById("sys-modelos");
+  lista.innerHTML = "";
+  if (!info) { lista.appendChild(el("li", "apagado", "sin conexión con el agente")); return false; }
   if (!info.ok) {
-    ponerModo("error");
-    setTimeout(() => ponerModo("reposo"), 2500);
+    lista.appendChild(el("li", "apagado", "ninguno disponible"));
+    ponerModo("error"); setTimeout(() => ponerModo("reposo"), 2500);
     mostrarPasos(info.error);
     return false;
   }
-  for (const m of info.modelos) modelos.appendChild(el("span", "modelo", m));
-  for (const a of info.avisos || []) modelos.appendChild(Object.assign(el("span", "modelo sin", a.split(":")[0].replace(/'/g, "")), { title: a }));
+  for (const m of info.modelos) lista.appendChild(el("li", "", m));
+  for (const a of info.avisos || []) lista.appendChild(Object.assign(el("li", "apagado", a.split(":")[0].replace(/'/g, "")), { title: a }));
+  document.getElementById("sys-revisor").textContent = info.revisor ? "activada" : "desactivada";
+  document.getElementById("sys-herr").textContent = `${info.herramientas} disponibles`;
   document.getElementById("pie-info").textContent =
-    `${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión activada" : "");
+    `${info.modelos.length} modelo${info.modelos.length > 1 ? "s" : ""} · ${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión" : "");
   orden.disabled = botonEnviar.disabled = false;
   if (!bienvenida) {
     bienvenida = true;
     registro.appendChild(el("div", "sistema",
-      "Escribe lo que quieres que haga. Te iré contando lo que pienso, lo que abro y lo que hago; " +
-      "antes de algo que no se deshace, te preguntaré."));
+      "Núcleo en línea. Escribe lo que quieres que haga: te iré contando lo que pienso, lo que abro y lo que hago; antes de algo que no se deshace, te preguntaré."));
   }
   if (!enPasos) orden.focus();
   return true;
 }
-if (window.pywebview && window.pywebview.api) arrancar();
-else window.addEventListener("pywebviewready", arrancar);
+async function empezar() {
+  const p = await api("preferencias");
+  if (p) prefs = Object.assign({}, DEFECTO, p);
+  aplicarTema(); reflejarAjustes();
+  requestAnimationFrame(() => { calcularTrazas(); requestAnimationFrame(fotograma); });
+  await arrancar();
+}
+window.addEventListener("resize", () => { pintarFondo(); calcularTrazas(); });
+new ResizeObserver(() => calcularTrazas()).observe(document.querySelector("main.hud"));
 
 /* ==========================================================================
-   6. DEMO (#demo): una orden simulada, para disenar sin agente
+   10. DEMO (#demo): una orden simulada, para disenar sin agente
    ========================================================================== */
 if (location.hash === "#demo") {
   const t = (ms, f) => setTimeout(f, ms);
-  // Que nadie la confunda con la aplicacion: una franja fija arriba y el
-  // aviso en la propia caja de texto.
-  const banda = el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS");
+  document.body.prepend(el("div", "demo-banda", "DEMOSTRACIÓN DEL DISEÑO · SIN AGENTE · LAS RESPUESTAS SON SIMULADAS"));
   document.body.style.paddingTop = "28px";
-  document.body.prepend(banda);
-  document.getElementById("orden").placeholder = "Demostración: lo que escribas no llega a ningún agente";
+  orden.placeholder = "Demostración: lo que escribas no llega a ningún agente";
+  let prefsDemo = null;
   window.DEMO = {
+    preferencias: () => Promise.resolve(prefsDemo),
+    guardar_preferencias: (p) => { prefsDemo = Object.assign({}, p); return Promise.resolve(prefsDemo); },
     iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 15, revisor: true }),
-    nuevo: () => Promise.resolve(null),
+    nuevo: () => Promise.resolve(null), parar: () => Promise.resolve(null), abrir_enlace: () => Promise.resolve(null),
     configuracion: () => Promise.resolve({
       proveedores: [
         { id: "groq", titulo: "Groq", alta: "https://console.groq.com/keys", pasos: ["Abre la página y entra con Google o GitHub.", "Create API Key.", "Copia la clave y pégala aquí."], gratis: "30/min, 1.000/día", nota: "La más rápida. Empieza por esta.", modelo: "openai/gpt-oss-120b", en_lista: true, configurada: true, final: "ab12" },
@@ -864,29 +1174,35 @@ if (location.hash === "#demo") {
     }),
     guardar_clave: () => Promise.resolve({ ok: true, final: "9z9z" }),
     probar_clave: (id) => Promise.resolve({ ok: true, detalle: `${id} responde (simulado).` }),
-    parar: () => Promise.resolve(null),
-    abrir_enlace: () => Promise.resolve(null),
-    responder: () => { t(500, () => { DOOM.evento({ tipo: "herramienta", nombre: "cerrar_aplicacion", familia: "apps" }); DOOM.evento({ tipo: "accion", texto: "Cierro Calculadora" }); }); t(900, () => DOOM.evento({ tipo: "resultado", texto: "Pedido el cierre de la ventana 'Calculator'." })); t(1300, () => { DOOM.evento({ tipo: "respuesta", texto: "(Simulación: no he hecho nada de verdad.) Así se vería una respuesta: «He buscado el tiempo en Madrid según https://www.aemet.es y he abierto y cerrado la Calculadora». Para que actúe de verdad: python -m doombot ventana, con un modelo configurado en .env.", completo: true, abiertas: ["Calculator", "https://duckduckgo.com/?q=tiempo+Madrid"] }); DOOM.evento({ tipo: "estado", estado: "reposo" }); }); return Promise.resolve(null); },
+    responder: () => {
+      t(500, () => { DOOM.evento({ tipo: "herramienta", nombre: "cerrar_aplicacion", familia: "apps" }); DOOM.evento({ tipo: "accion", texto: "Cierro Calculadora" }); });
+      t(900, () => DOOM.evento({ tipo: "resultado", texto: "Pedido el cierre de la ventana 'Calculator'." }));
+      t(1300, () => { DOOM.evento({ tipo: "respuesta", texto: "(Simulación: no he hecho nada de verdad.) Así se vería una respuesta: «He buscado el tiempo en Madrid según https://www.aemet.es y he abierto y cerrado la Calculadora».", completo: true, abiertas: ["Calculator", "https://duckduckgo.com/?q=tiempo+Madrid"] }); DOOM.evento({ tipo: "estado", estado: "reposo" }); });
+      return Promise.resolve(null);
+    },
     enviar: (texto) => {
       const E = e => DOOM.evento(e);
       E({ tipo: "estado", estado: "pensando" }); E({ tipo: "pensando", paso: 1 });
       t(900, () => E({ tipo: "error", texto: `SIMULACIÓN: no hay agente detrás. Tu orden («${texto}») no llega a ningún sitio; lo que sigue es un guion fijo para ver el diseño.` }));
       t(1200, () => E({ tipo: "comentario", texto: "Voy a buscar el tiempo en Madrid en mi navegador y luego abro la calculadora." }));
       t(1500, () => { E({ tipo: "herramienta", nombre: "navegar", familia: "web" }); E({ tipo: "accion", texto: "Navego a el tiempo en Madrid" }); });
-      t(2600, () => { E({ tipo: "resultado", texto: "Pagina: «tiempo Madrid at DuckDuckGo» (https://duckduckgo.com/?q=tiempo+Madrid)" }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid"] }); });
-      t(2800, () => E({ tipo: "pensando", paso: 2 }));
-      t(3800, () => { E({ tipo: "herramienta", nombre: "abrir_aplicacion", familia: "apps" }); E({ tipo: "accion", texto: "Abro calculadora" }); });
-      t(4300, () => { E({ tipo: "resultado", texto: "Abierta Calculator." }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid", "Calculator"] }); });
-      t(4500, () => E({ tipo: "pensando", paso: 3 }));
-      t(5400, () => { E({ tipo: "herramienta", nombre: "ejecutar_comando", familia: "terminal" }); E({ tipo: "accion", texto: "Ejecuto: ls ~/Descargas" }); });
-      t(5900, () => E({ tipo: "resultado", texto: "informe.pdf  notas.txt" }));
-      t(6200, () => E({ tipo: "pensando", paso: 4 }));
-      t(7000, () => E({ tipo: "permiso", id: 1, pregunta: "Voy a cerrar 'calculadora' (si hay algo sin guardar, se puede perder).", opinion: "BIEN: el usuario pidió abrirla y cerrarla. (gemini/gemini-3.8-flash)" }));
+      t(3200, () => { E({ tipo: "resultado", texto: "Pagina: «tiempo Madrid at DuckDuckGo» (https://duckduckgo.com/?q=tiempo+Madrid)" }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid"] }); });
+      t(3400, () => E({ tipo: "pensando", paso: 2 }));
+      t(4300, () => { E({ tipo: "herramienta", nombre: "abrir_aplicacion", familia: "apps" }); E({ tipo: "accion", texto: "Abro calculadora" }); });
+      t(5600, () => { E({ tipo: "resultado", texto: "Abierta Calculator." }); E({ tipo: "abiertas", lista: ["https://duckduckgo.com/?q=tiempo+Madrid", "Calculator"] }); });
+      t(5800, () => E({ tipo: "pensando", paso: 3 }));
+      t(6600, () => { E({ tipo: "herramienta", nombre: "buscar_ficheros", familia: "ficheros" }); E({ tipo: "accion", texto: "Busco «informe» en ~" }); });
+      t(7800, () => E({ tipo: "resultado", texto: "/home/usuario/Descargas/informe.pdf" }));
+      t(8000, () => { E({ tipo: "herramienta", nombre: "ejecutar_comando", familia: "terminal" }); E({ tipo: "accion", texto: "Ejecuto: ls ~/Descargas" }); });
+      t(9200, () => E({ tipo: "resultado", texto: "informe.pdf  notas.txt" }));
+      t(9400, () => E({ tipo: "pensando", paso: 4 }));
+      t(10200, () => E({ tipo: "permiso", id: 1, pregunta: "Voy a cerrar 'calculadora' (si hay algo sin guardar, se puede perder).", opinion: "BIEN: el usuario pidió abrirla y cerrarla. (gemini/gemini-3.8-flash)" }));
       return Promise.resolve({ ok: true });
     },
   };
-  arrancar();
-}
+  empezar();
+} else if (window.pywebview && window.pywebview.api) empezar();
+else window.addEventListener("pywebviewready", empezar);
 </script>
 </body>
 </html>

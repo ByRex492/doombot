@@ -1316,3 +1316,45 @@ cada proveedor viven en el catálogo (`backends/proveedores.py`), no en la venta
 con las claves reales del usuario, Groq (`openai/gpt-oss-120b`) y Gemini (`gemini-3.8-flash`)
 responden -lo que confirma el nombre de modelo de Gemini, que D-034 dejó sin verificar-.
 
+---
+
+## D-036 — Aspecto propio: HUD holográfico estilo JARVIS, personalizable en color y luz
+
+**Contexto.** 13/10/2026. La primera ventana (D-035) se parecía a cualquier otra interfaz
+oscura genérica. El usuario pidió una identidad propia, "medio cyberpunk, similar a JARVIS", con
+dos referencias: un HUD azul con un núcleo de anillos concéntricos y pistas de circuito hacia
+paneles de datos, y una esfera holográfica dorada de filamentos. Y que colores y luz se puedan
+personalizar.
+
+**Decisión.**
+
+1. **Un núcleo holográfico en lugar del planeta**: disco oscuro con anillos segmentados que
+   giran a contrapelo, grupos de marcas radiales, una esfera de alambre (paralelos, meridianos y
+   170 partículas) con tres órbitas inclinadas, y un anillo brillante alrededor de una pupila
+   oscura. Cada herramienta tiene un gesto propio además del color: barrido de radar (`web`),
+   segmentos en cadena (`apps`), línea de lectura (`ficheros`), anillo de caracteres
+   (`terminal`), anillo de aviso parpadeante (permiso) y temblor (error).
+2. **Canvas 2D con mezcla aditiva y una pasada de resplandor casera** (la escena reducida a 1/4
+   y 1/8 y vuelta a ampliar en modo `lighter`), no WebGL ni `ctx.filter`: así no depende de qué
+   soporte WebKitGTK o WebView2 y el brillo es un solo número (`luz`).
+3. **Composición HUD**: paneles SISTEMA (reloj, estado, carga, modelos, segunda opinión) y
+   ACTIVIDAD (herramienta actual, pasos, permisos, lo abierto), unidos al núcleo por pistas de
+   circuito con codos a 45° por las que corren pulsos de datos al pensar y en cada evento.
+   Marcos con esquinas, rejilla y bloques de datos tenues de fondo, efecto CRT opcional. Por
+   debajo de 1120 px se quita el panel derecho; por debajo de 820, también el izquierdo.
+4. **Personalizar**: seis temas (Jarvis, Holograma, Neón, Matriz, Glaciar, Carmesí), dos colores
+   propios, brillo y resplandor, intensidad de rejilla y circuitos, velocidad, y tres
+   interruptores (color por herramienta, pulsos, CRT). Permiso y error conservan siempre ámbar y
+   rojo: son avisos, no decoración.
+5. **Las preferencias son estado local**: `data_dir()/ventana.json`, fuera del repositorio
+   (`ventana/preferencias.py`). Todo pasa por `limpiar()` -claves conocidas, colores `#rrggbb`,
+   números en su rango- porque esos valores acaban en el CSS de la ventana.
+
+**Verificado.** 463 tests (5 de preferencias). La ventana real en este Linux con eventos
+simulados: reposo, navegador con el registro, permiso, y los temas holograma y neón; capturas
+revisadas. Un fallo visto en ellas y arreglado: el cajón de ajustes usaba la clase `abierto`,
+que ya era la de las etiquetas de "lo abierto", y enmarcaba sus rótulos.
+
+**Sin verificar.** En Windows (WebView2) y el rendimiento en un equipo más lento: el núcleo se
+redibuja entero en cada fotograma.
+

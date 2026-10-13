@@ -106,6 +106,17 @@ class Puente:
         if self._montaje is not None:
             self._hilo.submit(self._montaje.agente.olvidar)
 
+    # -- aspecto -----------------------------------------------------------------
+    def preferencias(self) -> dict[str, Any]:
+        from doombot.ventana import preferencias
+
+        return preferencias.leer()
+
+    def guardar_preferencias(self, datos: dict[str, Any]) -> dict[str, Any]:
+        from doombot.ventana import preferencias
+
+        return preferencias.guardar(datos)
+
     # -- primeros pasos ----------------------------------------------------------
     def configuracion(self) -> dict[str, Any]:
         """Que hay configurado y que falta: para la pantalla de primeros pasos."""

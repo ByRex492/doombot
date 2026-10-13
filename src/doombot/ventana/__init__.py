@@ -42,10 +42,10 @@ def abrir(*, montar: Callable[..., Any] | None = None, depurar: bool = False) ->
         "D.O.O.M",
         url=HTML.as_uri(),
         js_api=puente,
-        width=980,
-        height=940,
-        min_size=(560, 640),
-        background_color="#05070C",
+        width=1280,
+        height=880,
+        min_size=(600, 640),
+        background_color="#020409",
     )
     puente._conectar(ventana)
     ventana.events.closed += puente._cerrar

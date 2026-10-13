@@ -860,10 +860,17 @@ function el(etiqueta, clase, texto) {
 // Texto con enlaces pulsables. Un enlace nunca navega dentro de la ventana:
 // se abre en el navegador del usuario a traves de Python.
 function conEnlaces(nodo, texto) {
-  // **negrita** de markdown: los modelos la usan aunque no se les pida.
+  // **negrita** y *cursiva* de markdown: los modelos las usan aunque no se les
+  // pida. La cursiva exige texto pegado a los asteriscos, para no tomar por
+  // cursiva una multiplicacion como "2 * 3 * 4".
   const trozos = String(texto).split(/\*\*([^*\n]+)\*\*/g);
   if (trozos.length > 1) {
     trozos.forEach((t, i) => { if (i % 2) nodo.appendChild(el("b", "", t)); else if (t) conEnlaces(nodo, t); });
+    return nodo;
+  }
+  const cursivas = String(texto).split(/(?<![\w*])\*([^\s*][^*\n]*?[^\s*]|[^\s*])\*(?![\w*])/g);
+  if (cursivas.length > 1) {
+    cursivas.forEach((t, i) => { if (i % 2) nodo.appendChild(el("i", "", t)); else if (t) conEnlaces(nodo, t); });
     return nodo;
   }
   for (const p of String(texto).split(/(https?:\/\/[^\s<>"')\]]+)/g)) {

@@ -1193,6 +1193,29 @@ navegador propio no se ha lanzado (Playwright no instalado aquí).
 Claude como referencia, antes de decidir el cerebro por defecto. El agente por voz (la orden
 `agente` ya existe en el chat, falta probarla hablada). Que el HUD muestre los pasos.
 
+**Adenda (13/10/2026): investigar sin dar vueltas.** El registro de una investigación real
+("investiga la discografía de Saiko", 11 pasos) enseñó cuatro fallos. Los tres primeros eran
+de las herramientas del navegador, no del modelo:
+- *Buscó cuatro veces.* La página de DuckDuckGo se pinta con JavaScript y `leer_pagina` la leía
+  antes de que hubiera resultados. Ahora hay una herramienta `buscar_web` que pide la versión sin
+  JavaScript (`html.duckduckgo.com`) con `httpx` y devuelve una lista numerada de título, enlace y
+  resumen. No abre el navegador, así que es rápida y no depende de cuándo termina de cargar.
+- *La sección que buscaba caía fuera del recorte.* En Wikipedia, "Discografía" está más allá de
+  los 4.000 caracteres que se leían. `leer_pagina(buscar="…")` devuelve ventanas de texto
+  alrededor de cada aparición del término, sin distinguir tildes ni mayúsculas. Pulsar un enlace
+  del índice no servía: mueve la vista, pero se sigue leyendo la página entera desde arriba.
+- *Más enlaces que contenido.* Se lee solo el contenedor principal (`#mw-content-text`, `main`,
+  `article`...) y como mucho 25 elementos, no 60 de menús y pies de página.
+- *Respuesta sin fuentes, y un nombre ambiguo* (una banda chilena y un cantante español). Va al
+  prompt: buscar primero, abrir de una a tres fuentes fiables, no repetir búsquedas, decir si un
+  nombre es ambiguo y citar siempre los enlaces.
+
+*Descartado:* una API de búsqueda con clave (Brave, Tavily). Sería otra clave más que conseguir
+en cada equipo, y la versión HTML de DuckDuckGo basta. Si algún día empieza a pedir captcha,
+`buscar_web` devuelve el error y sugiere `navegar` a la página del buscador. Verificado en real:
+la búsqueda da 10 resultados, y `leer_pagina(buscar="Discografía")` en la página de Wikipedia
+devuelve los álbumes directamente.
+
 ---
 
 ## D-034 — Varios modelos gratuitos: en cadena para no depender de uno, en consejo para contrastar

@@ -1,7 +1,7 @@
 ---
 name: programacion
 description: Programación. Lee, explica, modifica y prueba código; busca documentación; trabaja con cambios pequeños y verificados.
-allowed-tools: listar_directorio leer_fichero buscar_ficheros escribir_fichero ejecutar_comando navegar leer_pagina abrir_en_navegador mostrar_grafica calcular
+allowed-tools: buscar_web listar_directorio leer_fichero buscar_ficheros escribir_fichero ejecutar_comando navegar leer_pagina abrir_en_navegador mostrar_grafica calcular
 metadata:
   titulo: Programación
   color: "#3dff9a"

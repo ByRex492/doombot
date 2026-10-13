@@ -130,6 +130,18 @@ aún no reacciona al micrófono ni a Kokoro como el HUD; juntar los dos es lo si
 **En este portátil**: claves de Groq y Gemini en `.env`; acceso en el dock; Gemini saturado buena
 parte del día (no se pudo verificar en real su firma de razonamiento ni su dibujo).
 
+## 6. Investigar en internet sin dar vueltas (adenda de D-033)
+
+Una investigación real se "ralló": buscó cuatro veces, no llegó a la sección que quería y
+respondió sin fuentes. Arreglado con:
+- una herramienta nueva, `buscar_web`, que usa la versión sin JavaScript de DuckDuckGo;
+- `leer_pagina(buscar=…)`, que va directo a una sección de una página larga;
+- lectura limitada al contenido principal, sin menús;
+- reglas de investigación en el prompt y en la skill de investigación: buscar primero, citar
+  fuentes y avisar de nombres ambiguos.
+
+La ventana muestra ahora las *cursivas*. Verificado en real con el navegador sin ventana.
+
 ## Qué hacer primero en el sobremesa
 
 1. Fusionar `tarea/agente-local` (`git merge --no-ff`), revisar los ficheros de integración de

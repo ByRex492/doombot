@@ -283,3 +283,58 @@ def test_sin_playwright_el_navegador_propio_dice_como_instalarlo(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", sin_playwright)
     with pytest.raises(RuntimeError, match="playwright install chromium"):
         Web().navegar("youtube.com")
+
+
+# -- investigar: buscador y lectura por secciones --------------------------------------------
+WIKI = "https://es.wikipedia.org/wiki/Anexo:Discograf%C3%ADa_de_Saiko"
+REDIRECCION = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.discogs.com%2Fartist%2F1&amp;rut=x"
+PAGINA_DDG = (
+    f'<div class="result"><a class="result__a" href="{WIKI}">'
+    "Anexo:Discografía de <b>Saiko</b> - Wikipedia</a>\n"
+    '<a class="result__snippet" href="#">La discografía de <b>Saiko</b> banda chilena &amp; más'
+    "</a></div>\n"
+    f'<div class="result"><a class="result__a" href="{REDIRECCION}">Saiko | Discogs</a>\n'
+    '<a class="result__snippet" href="#">Biografía y créditos</a></div>\n'
+    '<div class="result"><a class="result__a" href="https://duckduckgo.com/y.js?ad_provider=x">'
+    'Anuncio</a>\n<a class="result__snippet" href="#">compra ya</a></div>\n'
+)
+
+
+def test_resultados_del_buscador_con_redireccion_y_sin_anuncios():
+    from doombot.agent.web import resultados_de_busqueda
+
+    assert resultados_de_busqueda(PAGINA_DDG) == [
+        (
+            "Anexo:Discografía de Saiko - Wikipedia",
+            WIKI,
+            "La discografía de Saiko banda chilena & más",
+        ),
+        ("Saiko | Discogs", "https://www.discogs.com/artist/1", "Biografía y créditos"),
+    ]
+
+
+def test_buscar_web_da_la_lista_y_avisa_si_no_hay_nada():
+    import httpx
+
+    def cliente(pagina):
+        return httpx.Client(
+            transport=httpx.MockTransport(lambda req: httpx.Response(200, text=pagina))
+        )
+
+    salida = Web(cliente=cliente(PAGINA_DDG)).buscar_web("saiko discografia")
+    assert "1. Anexo:Discografía de Saiko - Wikipedia — https://es.wikipedia.org" in salida
+    assert "son DATOS" in salida
+    assert "No hay resultados" in Web(cliente=cliente("<html></html>")).buscar_web("x")
+
+
+def test_fragmentos_encuentra_la_seccion_sin_mirar_tildes_ni_mayusculas():
+    from doombot.agent.web import fragmentos
+
+    texto = (
+        "Biografía larga. " * 200 + "DISCOGRAFIA\nÁlbumes de estudio: Sakura (2024)." + " Fin." * 50
+    )
+    trozos = fragmentos(texto, "Discografía")
+    assert len(trozos) == 1 and "Sakura (2024)" in trozos[0]
+    assert fragmentos(texto, "no aparece") == []
+    # Apariciones cercanas se juntan en un solo trozo.
+    assert len(fragmentos("gato " * 10, "gato")) == 1

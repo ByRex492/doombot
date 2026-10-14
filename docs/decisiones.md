@@ -1622,3 +1622,60 @@ las rechaza y sugiere `navegar`.
   429), los del repaso (otro modelo, OK, cuándo merece, fallo) y el del revisor en un modo.
 
 **Sin verificar**: en Windows, y el modo `siempre` con la cuota de un día entero de uso.
+
+---
+
+## D-040 — Proyectos: las carpetas comparten instrucciones, notas y lo decidido en cada chat
+
+**Contexto.** 14/10/2026. Pedido del usuario: carpetas o proyectos "como los de Claude", con varios
+chats que se retroalimenten. Ejemplo: diseñar una aplicación con una temática en un chat, generar su
+diseño en otro, y que un tercero siga esa línea. Las carpetas de D-038 solo ordenaban; cada chat
+empezaba sin saber nada de los demás.
+
+**Decisión.** Una carpeta **es** un proyecto. No hay una entidad aparte: las conversaciones ya
+viven en carpetas, y así no hay que migrar nada.
+
+1. **Qué recibe cada chat del proyecto** (al final de su prompt, en cualquier modo):
+   - las **instrucciones** del proyecto, escritas por el usuario;
+   - las **notas**: decisiones clave apuntadas con `anotar_en_proyecto`;
+   - el **resumen de cada otra conversación** del proyecto.
+
+   Todo recortado a 5.000 caracteres, porque cada paso del agente lo reenvía.
+2. **Resumen automático.** Tras cada respuesta de un chat del proyecto, la cadena reescribe su
+   resumen: qué se pidió, decidió y produjo, con los datos concretos (nombres, colores,
+   estructuras), en un máximo de 8 líneas. Cuesta una petición por orden, y solo dentro de un
+   proyecto. Si falla, se queda el anterior sin decir nada.
+3. **Dos herramientas**, solo en un proyecto:
+   - `leer_conversacion_proyecto`: lo pedido y lo respondido en otro chat, por su título. No
+     incluye los resultados de herramientas, que pueden traer texto de páginas: son datos
+     intermedios y abultan.
+   - `anotar_en_proyecto`: apunta una decisión. Sin confirmación, a diferencia de `aprender`
+     (D-038): no es "para siempre" ni para todo, solo para este proyecto, y se borra desde su
+     editor.
+4. **Ventana**:
+   - "+ Proyecto" en lugar de "+ Carpeta";
+   - en el menú de cada proyecto, "Proyecto: instrucciones y memoria", un editor con
+     instrucciones, notas (con ✕) y las conversaciones con su resumen (se abren al pulsarlas),
+     en el mismo hueco que Primeros pasos.
+
+   Datos en `conversaciones/proyectos.json`, y cada resumen en su conversación. Renombrar o borrar
+   la carpeta lleva consigo, o borra, sus datos.
+
+**Descartado.**
+- **Mandar las conversaciones enteras** a las demás: no caben en los límites gratuitos, y casi
+  todo es ruido de herramientas. Resumen siempre, y lo completo bajo demanda.
+- **Memoria semántica con embeddings** (`memory/`): para un proyecto de pocas conversaciones, los
+  resúmenes caben enteros y no hay nada que buscar. Queda para la memoria entre proyectos.
+- **El resumen solo al cerrar el chat**: la ventana no sabe cuándo se deja un chat, y el
+  siguiente puede abrirse sin cerrar el anterior.
+
+**Verificado.**
+- Tests de las instrucciones, notas y resúmenes en el contexto, sin el propio chat; de leer otro
+  chat sin lo leído de páginas; de renombrar y borrar; del proyecto en cualquier modo; y de punta
+  a punta por el puente: un chat de diseño deja resumen y nota, y el siguiente los recibe.
+- Un resumen real con la cadena del usuario conservó nombre, colores hexadecimales, tipografía y
+  las cuatro pantallas.
+- El editor, en la vista de demostración.
+
+**Sin verificar**: un proyecto real de varios chats con modelos gratuitos, y cuánto aguanta la
+cuota con el resumen por orden.

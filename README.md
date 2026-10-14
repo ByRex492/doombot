@@ -334,6 +334,13 @@ tema (Jarvis, Holograma, Neón, Matriz, Glaciar, Carmesí) o colores propios,
 brillo, rejilla, velocidad y efectos; se guarda en este equipo. Las confirmaciones son botones, con la segunda opinión del otro
 modelo debajo. Mientras trabaja, el botón de enviar pasa a ser **Parar**.
 
+**Proyectos.** Con "+ Proyecto" se crea una carpeta cuyas conversaciones se
+conocen entre sí (D-040): todas siguen sus instrucciones, sus notas y lo que se
+decidió en las demás. Por ejemplo, en una se diseña una app y en otra se
+genera su pantalla de inicio con ese diseño. En el menú ⋯ del proyecto,
+"Proyecto: instrucciones y memoria" deja escribir las instrucciones y ver o
+borrar lo apuntado.
+
 Antes de darte una respuesta que se apoya en páginas o ficheros, otro modelo
 de la lista la repasa: comprueba los datos contra lo consultado y las fuentes
 (D-039, `DOOMBOT_AGENT_REFINAR`). Para leer páginas usa Jina Reader, que no

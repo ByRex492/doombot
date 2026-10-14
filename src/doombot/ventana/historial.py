@@ -8,6 +8,10 @@ existen aunque esten vacias (``carpetas.json``).
 Es estado privado: lo que se habla con D.O.O.M. Por eso vive en la carpeta de
 datos y no en el repositorio (ver ``paths.data_dir``).
 
+Una carpeta es tambien un **proyecto** (D-040): unas instrucciones, unas notas
+y el resumen de cada conversacion, que reciben todas las demas de la carpeta.
+Asi un chat puede seguir lo que se decidio en otro.
+
 Los identificadores llegan de la ventana: se validan contra un patron antes de
 convertirse en nombre de fichero, para que nada fuera de la carpeta se pueda
 leer ni borrar con un ``../``.
@@ -23,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from doombot.agent.herramientas import Herramienta, texto, truncar
 from doombot.backends.base import (
     LlamadaHerramienta,
     MensajeAgente,
@@ -33,6 +38,14 @@ from doombot.backends.base import (
 _ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 _MAX_TITULO = 80
 _MAX_CARPETA = 60
+_MAX_INSTRUCCIONES = 4000
+_MAX_NOTA = 300
+_MAX_NOTAS = 40
+_MAX_RESUMEN = 1500
+# Lo que cabe del proyecto en el prompt de cada chat: con las capas gratuitas,
+# cada paso del agente lo reenvia (limite de tokens por minuto).
+_MAX_CONTEXTO = 5000
+_MAX_CHAT_LEIDO = 8000
 
 
 def _ahora() -> str:
@@ -224,6 +237,10 @@ class Historial:
             if c["carpeta"] == vieja:
                 self.mover(c["id"], nueva)
         self._guardar_carpetas([nueva if c == vieja else c for c in self.carpetas()])
+        proyectos = self._proyectos()
+        if vieja in proyectos:
+            proyectos[nueva] = proyectos.pop(vieja)
+            self._guardar_proyectos(proyectos)
 
     def borrar_carpeta(self, nombre: str) -> None:
         """Borra la carpeta, no lo que contiene: sus conversaciones pasan a "sin carpeta"."""
@@ -231,3 +248,152 @@ class Historial:
             if c["carpeta"] == nombre:
                 self.mover(c["id"], "")
         self._guardar_carpetas([c for c in self.carpetas() if c != nombre])
+        proyectos = self._proyectos()
+        if proyectos.pop(nombre, None) is not None:
+            self._guardar_proyectos(proyectos)
+
+    # -- proyectos (D-040) -------------------------------------------------------------------
+    def _fichero_proyectos(self) -> Path:
+        return self.carpeta / "proyectos.json"
+
+    def _proyectos(self) -> dict[str, dict[str, Any]]:
+        try:
+            datos = json.loads(self._fichero_proyectos().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return datos if isinstance(datos, dict) else {}
+
+    def _guardar_proyectos(self, datos: dict[str, dict[str, Any]]) -> None:
+        with self._cerrojo:
+            self._fichero_proyectos().write_text(
+                json.dumps(datos, ensure_ascii=False), encoding="utf-8"
+            )
+
+    def _cambiar_proyecto(self, nombre: str, **campos: Any) -> None:
+        nombre = self._carpeta(nombre)
+        if not nombre:
+            raise ValueError("Las conversaciones sin carpeta no son un proyecto.")
+        proyectos = self._proyectos()
+        proyectos.setdefault(nombre, {}).update(campos)
+        self._guardar_proyectos(proyectos)
+
+    def chats_de(self, nombre: str) -> list[dict[str, Any]]:
+        """Las conversaciones del proyecto, con su resumen, de la mas reciente a la mas antigua."""
+        salida = []
+        for c in self.lista():
+            if c["carpeta"] == nombre:
+                conv = self.leer(c["id"]) or {}
+                salida.append({**c, "resumen": conv.get("resumen", "")})
+        return salida
+
+    def proyecto(self, nombre: str) -> dict[str, Any]:
+        datos = self._proyectos().get(nombre, {})
+        return {
+            "nombre": nombre,
+            "instrucciones": datos.get("instrucciones", ""),
+            "notas": list(datos.get("notas", [])),
+            "chats": self.chats_de(nombre),
+        }
+
+    def guardar_instrucciones(self, nombre: str, instrucciones: str) -> None:
+        self._cambiar_proyecto(
+            nombre, instrucciones=(instrucciones or "").strip()[:_MAX_INSTRUCCIONES]
+        )
+
+    def anotar_proyecto(self, nombre: str, nota: str) -> str:
+        nota = " ".join((nota or "").split())[:_MAX_NOTA]
+        if not nota:
+            raise ValueError("La nota esta vacia.")
+        notas = [*self.proyecto(nombre)["notas"], f"{datetime.now():%Y-%m-%d} {nota}"]
+        self._cambiar_proyecto(nombre, notas=notas[-_MAX_NOTAS:])
+        return nota
+
+    def borrar_nota_proyecto(self, nombre: str, indice: int) -> None:
+        notas = self.proyecto(nombre)["notas"]
+        if not 0 <= indice < len(notas):
+            raise ValueError("Esa nota ya no existe.")
+        del notas[indice]
+        self._cambiar_proyecto(nombre, notas=notas)
+
+    def contexto_proyecto(self, nombre: str, excluir: str = "") -> str:
+        """Lo que sabe del proyecto cada chat suyo: instrucciones, notas y los demas chats."""
+        p = self.proyecto(nombre)
+        partes = [
+            f"Esta conversacion es parte del proyecto «{nombre}», que tiene otras. Sigue lo que "
+            "se haya decidido en ellas salvo que el usuario diga otra cosa."
+        ]
+        if p["instrucciones"]:
+            partes.append(f"Instrucciones del proyecto (del usuario):\n{p['instrucciones']}")
+        if p["notas"]:
+            partes.append("Notas del proyecto:\n" + "\n".join(f"- {n}" for n in p["notas"]))
+        otros = [c for c in p["chats"] if c["id"] != excluir]
+        if otros:
+            lineas = [
+                f"- «{c['titulo']}»: {c['resumen'] or '(sin resumen todavia)'}" for c in otros[:12]
+            ]
+            partes.append(
+                "Otras conversaciones del proyecto (resumenes; lo completo, con "
+                "leer_conversacion_proyecto):\n" + "\n".join(lineas)
+            )
+        return truncar("\n\n".join(partes), _MAX_CONTEXTO)
+
+    def leer_chat(self, nombre: str, cual: str) -> str:
+        """Lo que se pidio y se respondio en un chat del proyecto, por su titulo (o parte)."""
+        buscado = " ".join((cual or "").split()).lower()
+        candidatos = [
+            c for c in self.chats_de(nombre) if buscado and buscado in c["titulo"].lower()
+        ] or [c for c in self.chats_de(nombre) if c["id"] == cual]
+        if not candidatos:
+            titulos = ", ".join(f"«{c['titulo']}»" for c in self.chats_de(nombre)) or "ninguna"
+            return f"Error: no hay ninguna conversacion asi en el proyecto. Hay: {titulos}."
+        conv = self.leer(candidatos[0]["id"]) or {}
+        lineas = []
+        for m in conv.get("agente", []):
+            if m.get("t") == "usuario":
+                lineas.append(f"Usuario: {m.get('texto', '')}")
+            elif m.get("t") == "modelo" and not m.get("llamadas") and m.get("texto"):
+                lineas.append(f"D.O.O.M: {m['texto']}")
+        cuerpo = "\n\n".join(lineas) or "(vacia)"
+        return f"Conversacion «{conv.get('titulo', '')}»:\n" + truncar(cuerpo, _MAX_CHAT_LEIDO)
+
+
+class ProyectoActivo:
+    """El proyecto de la conversacion abierta, tal como lo ve el agente (D-040)."""
+
+    def __init__(self, historial: Historial, nombre: str, actual: Any = lambda: "") -> None:
+        self.historial = historial
+        self.nombre = nombre
+        self._actual = actual
+        """Id de la conversacion abierta: no se le cuenta su propio resumen."""
+
+    def contexto(self) -> str:
+        return self.historial.contexto_proyecto(self.nombre, excluir=self._actual())
+
+    def herramientas(self) -> list[Herramienta]:
+        return [
+            Herramienta(
+                "leer_conversacion_proyecto",
+                "Lee lo que se pidio y respondio en otra conversacion de este proyecto (por su "
+                "titulo o parte de el), para seguir lo que se decidio alli: un diseño, un plan, "
+                "unos datos.",
+                lambda conversacion: self.historial.leer_chat(self.nombre, conversacion),
+                {"conversacion": texto("Titulo, o parte del titulo, de la conversacion.")},
+                requeridos=("conversacion",),
+                narrar=lambda a: f"Leo la conversación «{a.get('conversacion')}» del proyecto",
+                familia="consulta",
+            ),
+            Herramienta(
+                "anotar_en_proyecto",
+                "Apunta en el proyecto una decision o dato clave que deban conocer sus demas "
+                "conversaciones (ej. 'Paleta: azul #1e3a8a y dorado'). Una frase concreta. Solo "
+                "lo decidido con el usuario, no lo leido en paginas o ficheros.",
+                lambda nota: (
+                    f"Apuntado en «{self.nombre}»: "
+                    + self.historial.anotar_proyecto(self.nombre, nota)
+                ),
+                {"nota": texto("La decision o el dato, en una frase.")},
+                requeridos=("nota",),
+                narrar=lambda a: f"Lo apunto en el proyecto: {a.get('nota')}",
+                familia="consulta",
+            ),
+        ]

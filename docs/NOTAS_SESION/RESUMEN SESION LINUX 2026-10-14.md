@@ -40,6 +40,23 @@ Suite sin hardware en verde.
   `↻ cambio a Y: X sin cuota por ahora`, con un tipo de narración nuevo (`aviso`), tenue en la
   ventana y con ↻ en la consola. Si no responde ninguno, sigue siendo un error.
 
+## Proyectos (D-040), rama `tarea/proyectos`
+
+Las carpetas son ahora proyectos:
+- cada chat recibe las instrucciones del proyecto, sus notas y el resumen de los demás chats;
+- el resumen se escribe solo tras cada respuesta;
+- dos herramientas: `leer_conversacion_proyecto` y `anotar_en_proyecto`;
+- en la ventana, "+ Proyecto" y un editor del proyecto.
+
+Integración tocada: `agent/skills.py` (`Modos.poner_proyecto`), `ventana/historial.py`,
+`ventana/puente.py`, `doom.html`.
+
+**Probar en real**: un proyecto con dos chats, diseñar en uno y seguir en el otro.
+
+También, en este portátil: NVIDIA en la cadena (`nemotron-3-super` segundo,
+`nemotron-3-ultra` quinto), tras comprobar que llaman bien a herramientas. `kimi-k3` tardó más de
+40 s.
+
 ## Otro equipo (amarinosa)
 
 `python -m doombot ventana` daba "No hay respuesta de Ollama": ese equipo tenía el código antiguo,

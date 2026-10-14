@@ -11,7 +11,12 @@ El orbe de D.O.O.M en tu habitación (realidad mixta), con paneles que coges y m
    Ajustes de las gafas → Modo desarrollador. Reinicia las gafas.
 2. **Cable USB-C de datos** y, dentro de las gafas, aceptar «Permitir depuración USB».
 3. **JDK 17 completo** (con `javac`) y **Android SDK** (`platform-tools`, `platforms;android-34`).
-   - **Windows (sobremesa)**:
+   - **Windows (sobremesa)**: lo hace todo un script, una vez:
+     ```
+     powershell -ExecutionPolicy Bypass -File .\quest-app\scripts\preparar-windows.ps1
+     ```
+     Instala el JDK 17 con winget y el Android SDK, y deja `ANDROID_HOME` y `adb` en el PATH. Te
+     pide aceptar las licencias. A mano, por si falla:
      - instalar Temurin 17 desde https://adoptium.net (marca «Set JAVA_HOME»);
      - bajar las *command-line tools* de Windows desde https://developer.android.com/studio,
        descomprimir en `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest` y ejecutar

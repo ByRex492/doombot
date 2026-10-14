@@ -26,9 +26,11 @@ a 2 del encargo:
   repo).
 
 ## Cómo probarlo (en el sobremesa, con las gafas)
-1. Instalar JDK 17 y Android SDK en Windows (`quest-app/README.md`), conectar las gafas con el modo
-   desarrollador activado y comprobar `adb devices`.
-2. `git switch tarea/quest-nativa` y `quest-app\scripts\deploy.ps1`.
+1. `git fetch` y `git switch tarea/quest-nativa`, y una sola vez:
+   `powershell -ExecutionPolicy Bypass -File .\quest-app\scripts\preparar-windows.ps1`. Instala el
+   JDK 17 y el Android SDK, y comprueba si `adb` ve las gafas. **Es un script escrito en Linux, sin
+   haberlo probado en PowerShell**: si algo falla, `quest-app/README.md` tiene los pasos a mano.
+2. `quest-app\scripts\deploy.ps1`.
 3. En las gafas:
    - [ ] Se ve la habitación (passthrough) con la burbuja centrada y los paneles alrededor.
    - [ ] Pellizcar y arrastrar mueve la burbuja y cada panel; los botones responden al pellizco.

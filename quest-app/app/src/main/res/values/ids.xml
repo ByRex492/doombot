@@ -5,4 +5,8 @@
   <item type="id" name="panel_chat" />
   <item type="id" name="panel_apps" />
   <item type="id" name="panel_ajustes" />
+  <!-- Paneles de informacion que coloca el agente (fase 4): tres huecos. -->
+  <item type="id" name="panel_info_0" />
+  <item type="id" name="panel_info_1" />
+  <item type="id" name="panel_info_2" />
 </resources>

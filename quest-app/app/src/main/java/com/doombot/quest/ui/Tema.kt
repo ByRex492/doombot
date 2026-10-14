@@ -32,21 +32,65 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.doombot.quest.Doom
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
-/** Los colores del HUD de escritorio (D-036): cian holografico sobre casi negro translucido. */
+/**
+ * Los colores del HUD de escritorio (D-036). c1 y c2 salen del aspecto elegido (tema o perfil
+ * propio): al leerlos dentro de un composable, Compose repinta solo cuando cambian.
+ */
 object Hud {
-  val c1 = Color(0xFF29D3FF)
-  val c2 = Color(0xFF8FF3FF)
+  val c1: Color
+    get() = colorDe(Doom.aspecto.c1)
+  val c2: Color
+    get() = colorDe(Doom.aspecto.c2)
+  /** El tono de c1 en grados: el orbe gira su color alrededor de el, como en escritorio. */
+  val tono: Float
+    get() = tonoDe(c1)
+  val luz: Float
+    get() = Doom.aspecto.luz
   val texto = Color(0xFFD6ECF4)
   val tenue = Color(0xFF8AA3B2)
   val muyTenue = Color(0xFF4F6576)
   val ok = Color(0xFF3DFFA0)
   val mal = Color(0xFFFF4D5E)
   val aviso = Color(0xFFFFAB2E)
-  val borde = Color(0x6629D3FF)
+  val borde: Color
+    get() = c1.copy(alpha = 0.4f)
   val panel = Brush.verticalGradient(listOf(Color(0xD9041420), Color(0xCC020A12)))
   val mono = FontFamily.Monospace
+
+  /** c1 con transparencia: los fondos de botones y casillas. */
+  fun c1a(alfa: Float) = c1.copy(alpha = alfa)
 }
+
+/** ``#rrggbb`` a Color; si llega algo raro, el cian de Jarvis. */
+fun colorDe(hex: String): Color =
+    hex.removePrefix("#").toLongOrNull(16)?.takeIf { hex.length == 7 }?.let { Color(0xFF000000 or it) } ?: Color(0xFF29D3FF)
+
+fun hexDe(c: Color): String =
+    "#%02x%02x%02x".format((c.red * 255).roundToInt(), (c.green * 255).roundToInt(), (c.blue * 255).roundToInt())
+
+/** (tono 0..360, saturacion 0..1, luminosidad 0..1) de un color. */
+fun hslDe(c: Color): Triple<Float, Float, Float> {
+  val mx = max(c.red, max(c.green, c.blue))
+  val mn = min(c.red, min(c.green, c.blue))
+  val l = (mx + mn) / 2f
+  if (mx == mn) return Triple(0f, 0f, l)
+  val d = mx - mn
+  val s = if (l > 0.5f) d / (2f - mx - mn) else d / (mx + mn)
+  val h =
+      when (mx) {
+        c.red -> ((c.green - c.blue) / d + (if (c.green < c.blue) 6f else 0f))
+        c.green -> ((c.blue - c.red) / d + 2f)
+        else -> ((c.red - c.green) / d + 4f)
+      } * 60f
+  return Triple(h, s, l)
+}
+
+fun tonoDe(c: Color): Float = hslDe(c).first
 
 /** El marco de cada panel: cabecera con etiqueta y codigo, como en la ventana de escritorio. */
 @Composable
@@ -80,7 +124,7 @@ fun Boton(texto: String, modifier: Modifier = Modifier, activo: Boolean = false,
       modifier =
           modifier
               .clip(RoundedCornerShape(8.dp))
-              .background(if (activo) Color(0x3329D3FF) else Color(0x1429D3FF))
+              .background(if (activo) Hud.c1a(0.2f) else Hud.c1a(0.08f))
               .border(1.dp, if (activo) Hud.c1 else Hud.borde, RoundedCornerShape(8.dp))
               .clickable(onClick = alPulsar)
               .padding(horizontal = 12.dp, vertical = 9.dp),

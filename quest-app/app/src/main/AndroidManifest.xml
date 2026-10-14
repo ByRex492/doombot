@@ -26,6 +26,11 @@
   <uses-permission android:name="android.permission.RECORD_AUDIO" />
   <!-- Subir y bajar el volumen de las gafas. -->
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  <!-- Fase 3, ver lo que ve el usuario (Passthrough Camera API, Horizon OS v74+). Se piden al usarla,
+       no al arrancar; sin ellas, D.O.O.M sigue igual pero no puede mirar. -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-permission android:name="horizonos.permission.HEADSET_CAMERA" />
+  <uses-feature android:name="android.hardware.camera2.any" android:required="false" />
 
   <!-- Para listar y abrir las aplicaciones instaladas y abrir enlaces en el navegador. -->
   <queries>

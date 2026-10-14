@@ -8,8 +8,11 @@ import android.net.Uri
 import android.os.BatteryManager
 import com.doombot.quest.Doom
 import com.doombot.quest.TipoLinea
+import com.doombot.quest.util.Calculadora
 import com.doombot.quest.util.Texto
 import java.net.URLEncoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -24,6 +27,22 @@ data class App(val nombre: String, val paquete: String)
  * prompt del agente lo dice como limitacion.
  */
 class Acciones(private val contexto: Context) {
+
+  /**
+   * Lo que necesita a la escena o a la voz, y que pone el Controlador: confirmar de palabra,
+   * mirar por la camara, colocar un panel en la habitacion y leer la configuracion.
+   */
+  interface Extras {
+    suspend fun confirmar(pregunta: String): Boolean
+
+    suspend fun mirar(pregunta: String): String
+
+    fun mostrarPanel(titulo: String, texto: String): String
+
+    suspend fun config(): com.doombot.quest.datos.Almacen.Config
+  }
+
+  var extras: Extras? = null
 
   fun apps(): List<App> {
     val pm = contexto.packageManager
@@ -88,8 +107,11 @@ class Acciones(private val contexto: Context) {
     return bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
   }
 
-  /** Lo que pide el modelo. Devuelve lo que se le devuelve: un resultado o un "Error: ...". */
-  fun ejecutar(nombre: String, args: JSONObject): String {
+  /**
+   * Lo que pide el modelo. Devuelve lo que se le devuelve: un resultado o un "Error: ...".
+   * Buscar y leer van por la red, asi que se hacen fuera del hilo principal.
+   */
+  suspend fun ejecutar(nombre: String, args: JSONObject, claveLector: String = ""): String {
     Doom.anotar(TipoLinea.ACCION, contar(nombre, args))
     return runCatching {
           when (nombre) {
@@ -98,11 +120,29 @@ class Acciones(private val contexto: Context) {
             "listar_apps" -> "Apps instaladas: " + apps().joinToString { it.nombre }
             "volumen" -> volumen(args.optString("direccion", "subir"))
             "bateria" -> "Bateria al ${bateria()} %."
+            "buscar_web" -> withContext(Dispatchers.IO) { Web.buscar(args.optString("consulta")) }
+            "leer_url" -> withContext(Dispatchers.IO) { Web.leer(args.optString("url"), args.optString("buscar"), claveLector) }
+            "calcular" -> {
+              val f = args.optString("expresion")
+              "$f = " + Calculadora.formatear(Calculadora.evaluar(f))
+            }
+            "mirar" -> extras?.mirar(args.optString("pregunta").ifBlank { "¿Que se ve?" }) ?: "Error: la camara no esta lista."
+            "mostrar_panel" -> extras?.mostrarPanel(args.optString("titulo"), args.optString("contenido")) ?: "Error: no hay escena."
+            "activar_flujo" -> activarFlujo(args.optString("nombre"))
             else -> "Error: no existe la herramienta $nombre."
           }
         }
         .getOrElse { "Error: ${it.message}" }
         .also { if (it.startsWith("Error")) Doom.anotar(TipoLinea.ERROR, it) }
+  }
+
+  /** n8n (D-030/D-031): lista blanca y confirmacion hablada antes de disparar nada. */
+  private suspend fun activarFlujo(nombre: String): String {
+    val ex = extras ?: return "Error: no puedo confirmar con el usuario."
+    val cfg = ex.config()
+    val ruta = N8n.ruta(nombre, cfg.flujos) ?: return "Error: «$nombre» no esta en la lista de flujos permitidos. Disponibles: ${N8n.disponibles(cfg.flujos)}."
+    if (!ex.confirmar("¿Disparo el flujo «$nombre»?")) return "El usuario no lo ha confirmado: el flujo no se ha disparado."
+    return withContext(Dispatchers.IO) { N8n.disparar(cfg.n8nUrl, ruta) }
   }
 
   private fun contar(nombre: String, args: JSONObject) =
@@ -112,6 +152,12 @@ class Acciones(private val contexto: Context) {
         "listar_apps" -> "Miro las apps instaladas"
         "volumen" -> "Volumen: ${args.optString("direccion")}"
         "bateria" -> "Miro la bateria"
+        "buscar_web" -> "Busco «${args.optString("consulta")}»"
+        "leer_url" -> "Leo ${args.optString("url")}" + args.optString("buscar").let { if (it.isBlank()) "" else " (busco «$it»)" }
+        "calcular" -> "Calculo ${args.optString("expresion")}"
+        "mirar" -> "Miro por la camara: ${args.optString("pregunta")}"
+        "mostrar_panel" -> "Coloco un panel: ${args.optString("titulo")}"
+        "activar_flujo" -> "Flujo de n8n: ${args.optString("nombre")}"
         else -> nombre
       }
 
@@ -138,6 +184,21 @@ class Acciones(private val contexto: Context) {
             .put(funcion("volumen", "Sube o baja el volumen de las gafas.",
                 JSONObject().put("direccion", texto("'subir' o 'bajar'.")), listOf("direccion")))
             .put(funcion("bateria", "Dice el nivel de bateria de las gafas."))
+            .put(funcion("buscar_web", "Busca en internet y devuelve los resultados (titulo, direccion y resumen). Para datos y actualidad.",
+                JSONObject().put("consulta", texto("Lo que hay que buscar.")), listOf("consulta")))
+            .put(funcion("leer_url", "Lee una pagina web como texto, sin abrirla en el navegador. Para sacar datos de una fuente.",
+                JSONObject().put("url", texto("Direccion de la pagina.")).put("buscar", texto("Opcional: una palabra para ir a esa parte de una pagina larga.")),
+                listOf("url")))
+            .put(funcion("calcular", "Calcula una expresion con exactitud: + - * / ^ %, parentesis, pi, e, sqrt, sin, cos, tan, ln, log, exp.",
+                JSONObject().put("expresion", texto("La expresion, ej. '0.5*3*12^2' o 'sqrt(2)*pi'.")), listOf("expresion")))
+            .put(funcion("mirar", "Toma una foto con la camara de las gafas (lo que ve el usuario) y responde la pregunta sobre ella. " +
+                "Para '¿que estoy viendo?', 'lee esto', '¿que es esto?'.",
+                JSONObject().put("pregunta", texto("Lo que hay que mirar o leer en la imagen.")), listOf("pregunta")))
+            .put(funcion("mostrar_panel", "Coloca en la habitacion un panel con informacion (una lista, una receta, unos datos) que el usuario puede mover.",
+                JSONObject().put("titulo", texto("Titulo corto.")).put("contenido", texto("El texto del panel; puede tener varias lineas.")),
+                listOf("titulo", "contenido")))
+            .put(funcion("activar_flujo", "Dispara un flujo (webhook) de n8n de la lista blanca del usuario. Se le pide confirmacion de palabra.",
+                JSONObject().put("nombre", texto("Nombre del flujo, como lo dijo el usuario.")), listOf("nombre")))
 
     /** Minusculas y sin tildes, para comparar nombres de apps dichos de viva voz. */
     fun llano(texto: String): String = Texto.llano(texto)

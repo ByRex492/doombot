@@ -12,6 +12,7 @@ import com.doombot.quest.ui.Hud
 import com.doombot.quest.ui.PanelAjustes
 import com.doombot.quest.ui.PanelApps
 import com.doombot.quest.ui.PanelChat
+import com.doombot.quest.ui.PanelInfo
 import com.doombot.quest.ui.PanelOrbe
 import com.doombot.quest.ui.PanelSistema
 import com.meta.spatial.compose.ComposeFeature
@@ -22,7 +23,6 @@ import com.meta.spatial.core.Quaternion
 import com.meta.spatial.core.SpatialFeature
 import com.meta.spatial.core.SystemBase
 import com.meta.spatial.core.Vector3
-import com.meta.spatial.isdk.IsdkFeature
 import com.meta.spatial.toolkit.AppSystemActivity
 import com.meta.spatial.toolkit.DpPerMeterDisplayOptions
 import com.meta.spatial.toolkit.Grabbable
@@ -53,7 +53,8 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
   private val ambito = CoroutineScope(Dispatchers.Main)
   private val ctl by lazy { Controlador(this, this) }
   private val entidades = HashMap<Int, Entity>()
-  private var alConcederMicro: (() -> Unit)? = null
+  private var alConceder: ((Boolean) -> Unit)? = null
+  private val huecosInfo = listOf(R.id.panel_info_0, R.id.panel_info_1, R.id.panel_info_2)
 
   /** Donde va cada panel respecto a la cabeza: angulo (grados), distancia (m), altura relativa (m). */
   private data class Sitio(val angulo: Float, val distancia: Float, val altura: Float)
@@ -65,10 +66,15 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
           R.id.panel_chat to Sitio(-36f, 1.05f, -0.10f),
           R.id.panel_apps to Sitio(0f, 0.95f, -0.66f),
           R.id.panel_ajustes to Sitio(0f, 0.78f, -0.06f),
+          // Los de informacion aparecen delante, un poco escalonados, y se mueven con la mano.
+          R.id.panel_info_0 to Sitio(18f, 0.85f, 0.18f),
+          R.id.panel_info_1 to Sitio(-18f, 0.85f, 0.18f),
+          R.id.panel_info_2 to Sitio(0f, 0.85f, 0.32f),
       )
 
-  override fun registerFeatures(): List<SpatialFeature> =
-      listOf(VRFeature(this), ComposeFeature(), IsdkFeature(this, spatial, systemManager))
+  // Las manos (ISDK: pellizcar, coger, pulsar) las registra ya VRFeature desde el SDK 0.14: añadir
+  // IsdkFeature a mano esta obsoleto y lo duplicaria.
+  override fun registerFeatures(): List<SpatialFeature> = listOf(VRFeature(this), ComposeFeature())
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -95,7 +101,7 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
           panel(R.id.panel_chat, 0.48f, 0.56f) { PanelChat(ctl) },
           panel(R.id.panel_apps, 0.62f, 0.38f) { PanelApps(ctl) },
           panel(R.id.panel_ajustes, 0.60f, 0.74f) { PanelAjustes(ctl) },
-      )
+      ) + huecosInfo.mapIndexed { n, id -> panel(id, 0.40f, 0.34f) { PanelInfo(ctl, n) } }
 
   private fun panel(id: Int, ancho: Float, alto: Float, contenido: @Composable () -> Unit) =
       ComposeViewPanelRegistration(
@@ -149,26 +155,36 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
     if (visible) crear(R.id.panel_apps) else quitar(R.id.panel_apps)
   }
 
+  override fun mostrarInfo(n: Int, visible: Boolean) {
+    val id = huecosInfo.getOrNull(n) ?: return
+    if (visible) {
+      quitar(id) // si ya estaba, vuelve a aparecer delante con lo nuevo
+      crear(id)
+    } else {
+      quitar(id)
+    }
+  }
+
   // -- permisos -----------------------------------------------------------------------------
-  override fun pedirMicrofono(alConceder: () -> Unit) {
-    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-      alConceder()
+  /** Micro y camara se piden al usarlos, no al arrancar. Se responde con todos concedidos o no. */
+  override fun pedirPermisos(permisos: Array<String>, alTerminar: (Boolean) -> Unit) {
+    val faltan = permisos.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+    if (faltan.isEmpty()) {
+      alTerminar(true)
       return
     }
-    alConcederMicro = alConceder
-    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), PERMISO_MICRO)
+    alConceder?.invoke(false) // una peticion anterior sin responder se da por denegada
+    alConceder = alTerminar
+    requestPermissions(faltan.toTypedArray(), PERMISOS)
   }
 
   @Deprecated("Deprecated in Java")
   override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    if (requestCode != PERMISO_MICRO) return
-    if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-      alConcederMicro?.invoke()
-    } else {
-      Doom.anotar(TipoLinea.AVISO, "Sin permiso de microfono: puede escribirme en el registro.")
-    }
-    alConcederMicro = null
+    if (requestCode != PERMISOS) return
+    val todos = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+    alConceder?.invoke(todos)
+    alConceder = null
   }
 
   override fun onDestroy() {
@@ -194,7 +210,7 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
   }
 
   companion object {
-    private const val PERMISO_MICRO = 7
+    private const val PERMISOS = 7
     private const val TAG = "DOOM"
 
     private fun horizontal(v: Vector3): Vector3 {

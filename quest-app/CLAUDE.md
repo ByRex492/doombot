@@ -16,7 +16,11 @@ está en `docs/prompt-original.md`; la decisión de arquitectura, en `../docs/de
 - Meta Spatial SDK **0.14.0**: `meta-spatial-sdk`, `-toolkit`, `-vr`, `-isdk` (manos), `-compose`.
 - `minSdk`/`compileSdk`/`targetSdk` 34 (Horizon OS = Android 14); Horizon OS v69+.
 - Compose (Material 3) para los paneles; DataStore + Android Keystore para la configuración;
-  NanoHTTPD para los ajustes desde el móvil; ZXing para el QR.
+  NanoHTTPD para los ajustes desde el móvil; ZXing para el QR; **onnxruntime-android 1.31** para
+  «hey jarvis» (solo `arm64-v8a`; los modelos de openWakeWord se bajan en las gafas, no van aquí).
+- Passthrough Camera API (fase 3): Camera2 con `com.meta.extra_metadata.camera_source`/`position`
+  como `CameraCharacteristics.Key<Int>`, según la doc de Meta del 15/10/2026. Horizon OS v74+.
+- `IsdkFeature` no se registra a mano: desde 0.14 lo hace `VRFeature` (registrarlo está obsoleto).
 - **Sin Spatial Editor**: la escena se construye en código (`DoomActivity`). Así compila igual en
   Linux. No añadas `scenes { exportItems {...} }` al bloque `spatial`: obliga a tener el CLI de
   Spatial Editor instalado.
@@ -24,11 +28,12 @@ está en `docs/prompt-original.md`; la decisión de arquitectura, en `../docs/de
 ## Compilar e instalar
 ```
 scripts/deploy.sh         # Linux: compila, instala, abre la app y muestra su log
-scripts\deploy.ps1        # Windows (sobremesa), lo mismo
-./gradlew assembleDebug   # solo compilar
+scripts\deploy.ps1        # Windows: lo mismo, en release (-Debug para depuracion)
+./gradlew assembleRelease # solo compilar
 ./gradlew testDebugUnitTest
 ```
-`local.properties` (no se versiona) lleva `sdk.dir`; los scripts lo crean.
+`local.properties` (no se versiona) lleva `sdk.dir`; los scripts lo crean. En Windows, desde una
+consola sin la carpeta actual en la ruta de busqueda, llama a `.\gradlew.bat`, no a `gradlew.bat`.
 
 ## Estructura
 | Fichero | Qué |
@@ -38,12 +43,17 @@ scripts\deploy.ps1        # Windows (sobremesa), lo mismo
 | `Estado.kt` | Estado compartido de Compose (`Doom`): orbe, subtítulos, registro, tiempo... |
 | `ui/Orbe.kt` | El orbe, port de `ui/prototipo/hud.html` (mismos 5 estados y parámetros) |
 | `ui/Paneles.kt` | Sistema, Registro, Aplicaciones, Ajustes |
-| `ia/ClienteIA.kt` | Proveedores compatibles con OpenAI (catálogo de `backends/proveedores.py`) |
-| `ia/Agente.kt` | Bucle de herramientas con cadena de modelos (D-033/D-034) |
-| `sistema/Acciones.kt` | Abrir apps y enlaces, volumen, batería |
-| `voz/` | Grabación con VAD por energía, Whisper por API, TTS de Android, capa refleja |
+| `ia/Interfaces.kt` | Contratos `LlmProvider`, `SttProvider`, `VisionProvider`, `TtsProvider` |
+| `ia/ClienteIA.kt` | Proveedores compatibles con OpenAI: chat (con streaming), STT, visión, TTS |
+| `ia/Agente.kt` | Bucle de herramientas con cadena de modelos (D-033/D-034), en streaming |
+| `ia/Modos.kt` | Global y las skills de `skills/` (D-038) |
+| `sistema/Acciones.kt` | Las herramientas: apps, enlaces, buscar/leer web, calcular, mirar, paneles, n8n, volumen, batería |
+| `sistema/Web.kt`, `N8n.kt` | `buscar_web`/`leer_url` (port de `agent/web.py`); flujos de n8n con lista blanca |
+| `vision/Camara.kt` | Un fotograma de la Passthrough Camera API |
+| `voz/` | Grabación con VAD, «hey jarvis» (`PalabraActivacion`), voz por frases (`Frases`, `Voz`), capa refleja |
+| `ui/Personalizar.kt` | Temas, perfiles de color propios, modos, memoria, voz/visión/n8n, paneles de información |
 | `ajustes/ServidorAjustes.kt` + `assets/ajustes.html` | Ajustes desde el móvil (QR + PIN) |
-| `datos/Almacen.kt` | Configuración y claves cifradas |
+| `datos/Almacen.kt`, `Aspecto.kt` | Configuración y claves cifradas; el aspecto (mismas reglas que `preferencias.py`) |
 
 ## Reglas
 - **Ninguna clave en el código, en BuildConfig ni en logs.** La tarea `comprobarClaves` (antes de

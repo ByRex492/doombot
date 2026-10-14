@@ -92,6 +92,7 @@ fun PanelChat(ctl: Controlador) {
   val lista = rememberLazyListState()
   LaunchedEffect(Doom.registro.size) { if (Doom.registro.isNotEmpty()) lista.animateScrollToItem(Doom.registro.size - 1) }
   Marco("Registro", "LOG") {
+    SelectorModo(ctl)
     LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = lista, verticalArrangement = Arrangement.spacedBy(6.dp)) {
       items(Doom.registro) { l ->
         val (marca, color) =
@@ -142,7 +143,7 @@ fun PanelApps(ctl: Controlador) {
           }
         }
         Column(
-            Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x1429D3FF)).border(1.dp, Hud.borde, RoundedCornerShape(10.dp))
+            Modifier.clip(RoundedCornerShape(10.dp)).background(Hud.c1a(0.08f)).border(1.dp, Hud.borde, RoundedCornerShape(10.dp))
                 .clickable { ctl.abrirApp(app) }.padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
           iconos[app.paquete]?.let { Image(it, null, Modifier.size(34.dp)) } ?: Box(Modifier.size(34.dp))
@@ -177,9 +178,14 @@ fun PanelAjustes(ctl: Controlador) {
         }
       }
 
+      // Aspecto, como Personalizar en la ventana de escritorio
+      SeccionAspecto(ctl)
+
       // Claves
       Etiqueta("Proveedores y claves")
       Catalogo.todos(cfg).forEach { p -> FilaProveedor(ctl, p.id, p.titulo, p.id in Doom.conClave) }
+      // El lector de paginas: funciona sin clave (20 lecturas/min); con la gratuita, 200.
+      FilaProveedor(ctl, "jina", "Jina Reader (opcional: lector de paginas)", "jina" in Doom.conClave, conProbar = false)
 
       // Cadena de modelos
       Etiqueta("Cadena de modelos (responde el primero; si no tiene cuota, el siguiente)")
@@ -211,6 +217,9 @@ fun PanelAjustes(ctl: Controlador) {
         Boton("Cambiar") { ctl.cambiarCiudad(ciudad) }
       }
 
+      SeccionMemoria(ctl)
+      SeccionVozVision(ctl)
+
       // Controles de la app
       Etiqueta("Controles")
       Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -229,7 +238,7 @@ fun PanelAjustes(ctl: Controlador) {
 }
 
 @Composable
-private fun FilaProveedor(ctl: Controlador, id: String, titulo: String, configurada: Boolean) {
+private fun FilaProveedor(ctl: Controlador, id: String, titulo: String, configurada: Boolean, conProbar: Boolean = true) {
   var clave by remember { mutableStateOf("") }
   var resultado by remember { mutableStateOf("") }
   Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0x22000000)).border(1.dp, Hud.borde, RoundedCornerShape(10.dp)).padding(8.dp),
@@ -241,7 +250,7 @@ private fun FilaProveedor(ctl: Controlador, id: String, titulo: String, configur
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
       Campo(clave, { clave = it }, "Clave", Modifier.weight(1f), secreto = true)
       Boton("Guardar") { if (clave.isNotBlank()) { ctl.guardarClave(id, clave); clave = "" } }
-      Boton("Probar") { resultado = "Probando…"; ctl.probar(id) { resultado = it } }
+      if (conProbar) Boton("Probar") { resultado = "Probando…"; ctl.probar(id) { resultado = it } }
       if (configurada) Boton("Quitar", peligro = true) { ctl.guardarClave(id, "") }
     }
     if (resultado.isNotEmpty()) Text(resultado, color = Hud.tenue, fontSize = 12.sp)

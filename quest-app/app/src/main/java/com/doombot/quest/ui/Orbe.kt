@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.doombot.quest.Controlador
 import com.doombot.quest.Doom
 import com.doombot.quest.EstadoOrbe
+import com.doombot.quest.ia.Modos
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
@@ -114,21 +115,23 @@ fun OrbeAnimado(modifier: Modifier = Modifier) {
       withFrameNanos { ahora ->
         val dt = if (antes == 0L) 0.016f else ((ahora - antes) / 1e9f).coerceAtMost(0.05f)
         antes = ahora
-        motor.paso(dt, Doom.orbe, Doom.amplitud)
+        // La velocidad de Personalizar acelera o frena la animacion entera, no solo el giro.
+        motor.paso(dt * Doom.aspecto.velocidad, Doom.orbe, Doom.amplitud)
         tick = ahora
       }
     }
   }
   Canvas(modifier) {
     tick // leerlo hace que se redibuje en cada fotograma
-    dibujar(motor)
+    dibujar(motor, Hud.tono, Hud.luz)
   }
 }
 
-private fun DrawScope.dibujar(mo: Motor) {
-  val m = mo.m
+/** ``tono``: el del color principal del tema (193 en Jarvis). ``luz``: el brillo de Personalizar. */
+private fun DrawScope.dibujar(mo: Motor, tono: Float, luz: Float) {
+  val m = mo.m.let { it.copy(glow = it.glow * luz) }
   val w = size.minDimension
-  val h = 193f + m.dh
+  val h = tono + m.dh
   fun color(l: Float, a: Float) =
       Color.hsl(((h % 360f) + 360f) % 360f, (m.sat / 100f).coerceIn(0f, 1f), (l / 100f).coerceIn(0f, 1f), a.coerceIn(0f, 1f))
   val respira = 1 + sin(mo.t * 2 * PI.toFloat() * m.bpm) * m.breath
@@ -208,10 +211,26 @@ fun PanelOrbe(ctl: Controlador) {
           textAlign = TextAlign.Center,
           maxLines = 4)
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      Boton(if (Doom.orbe == EstadoOrbe.ESCUCHANDO) "Listo" else "Hablar", activo = Doom.orbe == EstadoOrbe.ESCUCHANDO) { ctl.microfono() }
-      Boton("Para") { ctl.callar() }
-      Boton("Recolocar") { ctl.recolocar() }
+    // Fase 3: siempre visible mientras la camara captura. Y si "hey jarvis" escucha, y el modo.
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+      if (Doom.camara) Text("● CÁMARA", color = Hud.mal, fontFamily = Hud.mono, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+      if (Doom.palabraActiva) Text("«HEY JARVIS»", color = Hud.tenue, fontFamily = Hud.mono, fontSize = 10.sp)
+      val modo = Modos.de(Doom.modo)
+      if (modo.id != "global") Text(modo.titulo.uppercase(), color = colorDe(modo.color), fontFamily = Hud.mono, fontSize = 10.sp)
+    }
+    val pregunta = Doom.pregunta
+    if (pregunta != null) {
+      // Confirmacion hablada (D-031): tambien con un pellizco.
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Boton("Sí, adelante", activo = true) { ctl.responderPregunta(true) }
+        Boton("No", peligro = true) { ctl.responderPregunta(false) }
+      }
+    } else {
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Boton(if (Doom.orbe == EstadoOrbe.ESCUCHANDO) "Listo" else "Hablar", activo = Doom.orbe == EstadoOrbe.ESCUCHANDO) { ctl.microfono() }
+        Boton("Para") { ctl.callar() }
+        Boton("Recolocar") { ctl.recolocar() }
+      }
     }
   }
 }

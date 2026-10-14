@@ -41,6 +41,24 @@ class Almacen(private val contexto: Context) {
       val lon: Double = -3.7038,
       /** Proveedores compatibles con OpenAI que el usuario ha anadido: id -> base_url. */
       val propios: Map<String, String> = emptyMap(),
+      /** Temas, perfiles de color propios, brillo y velocidad (Personalizar, D-036). */
+      val aspecto: Aspecto = Aspecto(),
+      /** El modo de la conversacion: global o una skill (D-038). */
+      val modo: String = "global",
+      /** Hechos sobre el usuario, siempre en el prompt ("recuerda que..."). */
+      val hechos: List<String> = emptyList(),
+      /** Modelo con vision para "¿que estoy viendo?", ``proveedor:modelo``. Vacio = el sugerido de Groq. */
+      val vision: String = "",
+      /** TTS por API, ``proveedor:modelo``. Vacio = el TextToSpeech de Android (gratis, sin conexion). */
+      val tts: String = "",
+      val ttsVoz: String = "",
+      /** "Hey jarvis": escuchar siempre la palabra de activacion. */
+      val activacion: Boolean = true,
+      /** Modo vigilante: un fotograma cada N segundos. 0 = apagado (por defecto: gasta cuota). */
+      val vigilante: Int = 0,
+      /** n8n (D-030): la URL base y la lista blanca de flujos, nombre hablado -> ruta del webhook. */
+      val n8nUrl: String = "",
+      val flujos: Map<String, String> = emptyMap(),
   )
 
   suspend fun config(): Config {
@@ -57,6 +75,18 @@ class Almacen(private val contexto: Context) {
           propios =
               j.optJSONObject("propios")?.let { p -> p.keys().asSequence().associateWith { p.getString(it) } }
                   ?: emptyMap(),
+          aspecto = aspectoDe(j.optJSONObject("aspecto")),
+          modo = j.optString("modo", "global").ifBlank { "global" },
+          hechos = j.optJSONArray("hechos").cadenas().take(MAX_HECHOS),
+          vision = j.optString("vision"),
+          tts = j.optString("tts"),
+          ttsVoz = j.optString("ttsVoz"),
+          activacion = j.optBoolean("activacion", true),
+          vigilante = j.optInt("vigilante", 0).coerceIn(0, 3600),
+          n8nUrl = j.optString("n8nUrl"),
+          flujos =
+              j.optJSONObject("flujos")?.let { f -> f.keys().asSequence().associateWith { f.getString(it) } }
+                  ?: emptyMap(),
       )
     }.getOrDefault(Config())
   }
@@ -71,6 +101,16 @@ class Almacen(private val contexto: Context) {
             .put("lat", c.lat)
             .put("lon", c.lon)
             .put("propios", JSONObject(c.propios))
+            .put("aspecto", aspectoJson(Aspecto.limpiar(c.aspecto)))
+            .put("modo", c.modo)
+            .put("hechos", JSONArray(c.hechos.take(MAX_HECHOS)))
+            .put("vision", c.vision)
+            .put("tts", c.tts)
+            .put("ttsVoz", c.ttsVoz)
+            .put("activacion", c.activacion)
+            .put("vigilante", c.vigilante.coerceIn(0, 3600))
+            .put("n8nUrl", c.n8nUrl.trim().trimEnd('/'))
+            .put("flujos", JSONObject(c.flujos))
     contexto.ds.edit { it[CONFIG] = j.toString() }
   }
 
@@ -121,6 +161,42 @@ class Almacen(private val contexto: Context) {
   companion object {
     private const val ALIAS = "doom_claves"
     private val CONFIG = stringPreferencesKey("config")
+    const val MAX_HECHOS = 50
+
+    /** El aspecto desde JSON (DataStore o la pagina del movil), ya limpio. */
+    fun aspectoDe(j: JSONObject?): Aspecto {
+      if (j == null) return Aspecto()
+      val perfiles = j.optJSONArray("perfiles")
+      val lista =
+          if (perfiles == null) emptyList()
+          else
+              (0 until perfiles.length()).mapNotNull { i ->
+                perfiles.optJSONObject(i)?.let { p ->
+                  Perfil(p.optString("id"), p.optString("nombre"), p.optString("c1"), p.optString("c2"))
+                }
+              }
+      return Aspecto.limpiar(
+          Aspecto(
+              tema = j.optString("tema", "jarvis"),
+              c1 = j.optString("c1", "#29d3ff"),
+              c2 = j.optString("c2", "#8ff3ff"),
+              luz = j.optDouble("luz", 1.0).toFloat(),
+              velocidad = j.optDouble("velocidad", 1.0).toFloat(),
+              perfiles = lista,
+          ))
+    }
+
+    fun aspectoJson(a: Aspecto): JSONObject {
+      val perfiles = JSONArray()
+      a.perfiles.forEach { p -> perfiles.put(JSONObject().put("id", p.id).put("nombre", p.nombre).put("c1", p.c1).put("c2", p.c2)) }
+      return JSONObject()
+          .put("tema", a.tema)
+          .put("c1", a.c1)
+          .put("c2", a.c2)
+          .put("luz", a.luz.toDouble())
+          .put("velocidad", a.velocidad.toDouble())
+          .put("perfiles", perfiles)
+    }
 
     const val PERSONALIDAD =
         "Eres D.O.O.M., el asistente del usuario, al estilo de JARVIS: elegante, preciso y con un " +

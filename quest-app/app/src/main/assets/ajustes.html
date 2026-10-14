@@ -15,6 +15,9 @@
   .fila { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
   input, select, textarea { flex:1 1 180px; min-width:0; background:#000; color:var(--texto); border:1px solid var(--borde);
           border-radius:6px; padding:10px; font:14px var(--mono); }
+  input[type=color] { flex:0 0 64px; height:40px; padding:2px; }
+  input[type=range], input[type=checkbox] { flex:1 1 160px; accent-color:var(--c1); }
+  input[type=checkbox] { flex:0 0 20px; height:20px; }
   textarea { width:100%; min-height:110px; }
   button { background:transparent; color:var(--c2); border:1px solid var(--borde); border-radius:6px; padding:10px 12px;
            font:600 12px var(--mono); letter-spacing:.08em; cursor:pointer; }
@@ -23,6 +26,11 @@
   .cadena li { display:flex; gap:6px; align-items:center; margin:6px 0; font:13px var(--mono); }
   .cadena li span { flex:1; overflow-wrap:anywhere; }
   .cadena button { padding:6px 9px; }
+  .temas { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; }
+  .tema { height:56px; display:flex; align-items:flex-end; padding:0; overflow:hidden; }
+  .tema span { width:100%; background:rgba(0,0,0,.6); color:#e8f6fb; font-size:10px; padding:4px; }
+  .tema.activo { border:2px solid #fff; }
+  .tema.nuevo { align-items:center; justify-content:center; border-style:dashed; }
   a { color:var(--c1); }
   [hidden] { display:none !important; }
 </style>
@@ -37,6 +45,18 @@
 </section>
 
 <main id="todo" hidden>
+  <h2>Aspecto</h2>
+  <div class="caja">
+    <div class="tenue">Tema</div><div class="temas" id="temas"></div>
+    <div class="tenue" style="margin-top:12px">Mis perfiles</div><div class="temas" id="perfiles"></div>
+    <div class="fila"><label>Principal <input type="color" id="c1"></label><label>Secundario <input type="color" id="c2"></label></div>
+    <p class="tenue" id="ayuda-color"></p>
+    <div class="fila"><input id="p-nombre" maxlength="32" placeholder="Nombre del perfil"><button id="b-perfil" class="prim">Guardar como perfil</button><button id="b-duplicar">Duplicar</button><button id="b-borrar">Borrar perfil</button></div>
+    <div class="fila"><span class="tenue">Brillo</span><input type="range" id="luz" min="0" max="1.6" step="0.05"></div>
+    <div class="fila"><span class="tenue">Velocidad</span><input type="range" id="velocidad" min="0.2" max="2" step="0.05"></div>
+    <div class="fila"><button id="b-restablecer">Restablecer aspecto</button></div>
+  </div>
+
   <h2>Proveedores y claves</h2>
   <p class="tenue">Las claves se guardan cifradas en las gafas. Esta página nunca las vuelve a mostrar.</p>
   <div id="provs"></div>
@@ -52,9 +72,23 @@
     <ul class="cadena" id="cadena"></ul>
   </div>
 
-  <h2>Voz a texto</h2>
-  <div class="caja"><div class="fila"><input id="stt" placeholder="groq:whisper-large-v3-turbo"></div>
-    <p class="tenue">proveedor:modelo. Vacío = Whisper de Groq si hay clave.</p></div>
+  <h2>Modelo para cada uso</h2>
+  <div class="caja">
+    <div class="tenue">Voz a texto (vacío = Whisper de Groq)</div><div class="fila"><input id="stt" placeholder="groq:whisper-large-v3-turbo"></div>
+    <div class="tenue">Visión, para «¿qué estoy viendo?» (vacío = Llama 4 Scout de Groq)</div><div class="fila"><input id="vision" placeholder="groq:meta-llama/llama-4-scout-17b-16e-instruct"></div>
+    <div class="tenue">Voz por API (vacío = la voz de las gafas, gratis y sin conexión)</div><div class="fila"><input id="tts" placeholder="proveedor:modelo"><input id="ttsVoz" placeholder="nombre de la voz"></div>
+    <p class="tenue">Siempre proveedor:modelo.</p>
+  </div>
+
+  <h2>Escucha y cámara</h2>
+  <div class="caja">
+    <div class="fila"><input type="checkbox" id="activacion"><label for="activacion">Escuchar «hey jarvis» (sin pulsar nada)</label></div>
+    <div class="fila"><span class="tenue">Modo vigilante: un fotograma cada</span><select id="vigilante"><option value="0">apagado</option><option value="30">30 s</option><option value="60">60 s</option><option value="300">5 min</option></select></div>
+    <p class="tenue">El vigilante gasta una petición por fotograma: cuidado con la cuota gratuita.</p>
+  </div>
+
+  <h2>Lo que sabe de ti</h2>
+  <div class="caja"><textarea id="hechos" placeholder="Una cosa por línea"></textarea><p class="tenue">También se añade diciéndole «recuerda que…».</p></div>
 
   <h2>Personalidad</h2>
   <div class="caja"><textarea id="perso"></textarea></div>
@@ -62,12 +96,22 @@
   <h2>Ciudad del tiempo</h2>
   <div class="caja"><div class="fila"><input id="ciudad"></div></div>
 
+  <h2>n8n</h2>
+  <div class="caja">
+    <div class="fila"><input id="n8nUrl" placeholder="http://192.168.1.10:5678"></div>
+    <textarea id="flujos" placeholder="riego del jardín = webhook/riego-jardin"></textarea>
+    <p class="tenue">Un flujo por línea, «nombre hablado = ruta del webhook». Solo se disparan estos, y siempre tras confirmar de palabra.</p>
+  </div>
+
   <div class="fila"><button class="prim" id="b-guardar">Guardar todo</button><span id="estado-g" class="tenue"></span></div>
 </main>
 
 <script>
+// Todo el texto que viene de fuera (modelos de un proveedor, nombres de perfiles) se pinta con
+// textContent, nunca dentro de innerHTML: un nombre de modelo no puede colar codigo en la pagina.
 const $ = id => document.getElementById(id);
-let est = null, cadena = [];
+const crear = (etiqueta, props = {}, ...hijos) => { const e = Object.assign(document.createElement(etiqueta), props); e.append(...hijos); return e; };
+let est = null, cadena = [], asp = null, armado = false;
 async function api(ruta, datos) {
   const r = await fetch(ruta, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos || {}) });
   if (!r.ok) throw new Error(await r.text());
@@ -82,53 +126,102 @@ $("b-entrar").onclick = async () => {
   } catch (e) { $("e-pin").textContent = e.message; }
 };
 function pintar(e) {
-  est = e; cadena = [...e.cadena];
-  const cont = $("provs"); cont.innerHTML = "";
+  est = e; cadena = [...e.cadena]; asp = e.aspecto;
+  const cont = $("provs"); cont.replaceChildren();
   for (const p of e.proveedores) {
-    const c = document.createElement("div"); c.className = "caja";
-    c.innerHTML = `<b>${p.titulo}</b> <span class="${p.configurada ? "ok" : "tenue"}">${p.configurada ? "· clave puesta" : "· sin clave"}</span>
-      ${p.alta ? `<div class="tenue">La clave se crea en <a href="${p.alta}" target="_blank" rel="noopener">${p.alta}</a></div>` : `<div class="tenue">${p.url}</div>`}
-      <div class="fila"><input type="password" placeholder="Pega aquí la clave" autocomplete="off"><button class="prim">Guardar</button><button>Probar</button>${p.configurada ? "<button>Quitar</button>" : ""}${p.propio ? "<button>Borrar proveedor</button>" : ""}</div>
-      <div class="tenue res"></div>`;
-    const [inp, bG, bP, b3, b4] = c.querySelectorAll("input,button");
-    const res = c.querySelector(".res");
+    const inp = crear("input", { type: "password", placeholder: "Pega aquí la clave", autocomplete: "off" });
+    const res = crear("div", { className: "tenue" });
+    const bG = crear("button", { className: "prim", textContent: "Guardar" });
     bG.onclick = async () => { if (!inp.value.trim()) { res.textContent = "Pega la clave primero."; return; } pintar(await api("/api/clave", { proveedor: p.id, clave: inp.value.trim() })); };
-    bP.onclick = async () => { res.textContent = "Probando…"; res.textContent = (await api("/api/probar", { proveedor: p.id })).resultado; };
-    if (p.configurada && b3) b3.onclick = async () => pintar(await api("/api/clave", { proveedor: p.id, clave: "" }));
-    const bBorrar = p.configurada ? b4 : b3;
-    if (p.propio && bBorrar) bBorrar.onclick = async () => pintar(await api("/api/proveedor", { id: p.id, quitar: true }));
-    cont.appendChild(c);
+    const fila = crear("div", { className: "fila" }, inp, bG);
+    if (!p.lector) { const bP = crear("button", { textContent: "Probar" }); bP.onclick = async () => { res.textContent = "Probando…"; res.textContent = (await api("/api/probar", { proveedor: p.id })).resultado; }; fila.append(bP); }
+    if (p.configurada) { const bQ = crear("button", { textContent: "Quitar" }); bQ.onclick = async () => pintar(await api("/api/clave", { proveedor: p.id, clave: "" })); fila.append(bQ); }
+    if (p.propio) { const bB = crear("button", { textContent: "Borrar proveedor" }); bB.onclick = async () => pintar(await api("/api/proveedor", { id: p.id, quitar: true })); fila.append(bB); }
+    const alta = p.alta ? crear("div", { className: "tenue" }, "La clave se crea en ", crear("a", { href: p.alta, target: "_blank", rel: "noopener", textContent: p.alta })) : crear("div", { className: "tenue", textContent: p.url || "" });
+    cont.append(crear("div", { className: "caja" }, crear("b", { textContent: p.titulo }), " ", crear("span", { className: p.configurada ? "ok" : "tenue", textContent: p.configurada ? "· clave puesta" : "· sin clave" }), alta, fila, res));
   }
-  $("m-prov").innerHTML = e.proveedores.filter(p => p.configurada).map(p => `<option value="${p.id}">${p.titulo}</option>`).join("") || "<option value=''>Pon antes una clave</option>";
-  $("stt").value = e.stt; $("perso").value = e.personalidad; $("ciudad").value = e.ciudad;
-  pintarCadena();
+  const conClave = e.proveedores.filter(p => p.configurada && !p.lector);
+  $("m-prov").replaceChildren(...(conClave.length ? conClave.map(p => crear("option", { value: p.id, textContent: p.titulo })) : [crear("option", { value: "", textContent: "Pon antes una clave" })]));
+  $("stt").value = e.stt; $("vision").value = e.vision; $("tts").value = e.tts; $("ttsVoz").value = e.ttsVoz;
+  $("activacion").checked = e.activacion; $("vigilante").value = String(e.vigilante);
+  $("perso").value = e.personalidad; $("ciudad").value = e.ciudad; $("hechos").value = e.hechos.join("\n");
+  $("n8nUrl").value = e.n8nUrl; $("flujos").value = Object.entries(e.flujos).map(([n, r]) => `${n} = ${r}`).join("\n");
+  pintarCadena(); pintarAspecto();
 }
 function pintarCadena() {
-  const ul = $("cadena"); ul.innerHTML = "";
-  if (!cadena.length) ul.innerHTML = "<li class='tenue'>Vacía: añade al menos un modelo.</li>";
+  const ul = $("cadena"); ul.replaceChildren();
+  if (!cadena.length) ul.append(crear("li", { className: "tenue", textContent: "Vacía: añade al menos un modelo." }));
   cadena.forEach((m, i) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<span>${i + 1}. ${m}</span><button>↑</button><button>↓</button><button>✕</button>`;
-    const [s, b, q] = li.querySelectorAll("button");
+    const s = crear("button", { textContent: "↑" }), b = crear("button", { textContent: "↓" }), q = crear("button", { textContent: "✕" });
     s.onclick = () => { if (i) { [cadena[i - 1], cadena[i]] = [cadena[i], cadena[i - 1]]; pintarCadena(); } };
     b.onclick = () => { if (i < cadena.length - 1) { [cadena[i + 1], cadena[i]] = [cadena[i], cadena[i + 1]]; pintarCadena(); } };
     q.onclick = () => { cadena.splice(i, 1); pintarCadena(); };
-    ul.appendChild(li);
+    ul.append(crear("li", {}, crear("span", { textContent: `${i + 1}. ${m}` }), s, b, q));
   });
 }
+// -- aspecto: el mismo modelo que Personalizar en la ventana de escritorio --------------------
+const activo = () => asp.perfiles.find(p => p.id === asp.tema);
+async function guardarAspecto(nuevo) { asp = nuevo; pintar(await api("/api/aspecto", { aspecto: asp })); }
+function muestra(id, nombre, c1, c2) {
+  const b = crear("button", { className: "tema" + (asp.tema === id ? " activo" : "") }, crear("span", { textContent: nombre }));
+  b.style.background = `radial-gradient(circle at 50% 40%, ${c2} 0 9%, ${c1} 16%, transparent 34%), #03060b`;
+  b.onclick = () => guardarAspecto({ ...asp, tema: id, c1, c2 });
+  return b;
+}
+function pintarAspecto() {
+  $("temas").replaceChildren(...est.temas.map(t => muestra(t.id, t.nombre, t.c1, t.c2)));
+  const nuevo = crear("button", { className: "tema nuevo", textContent: "+ Nuevo perfil" });
+  nuevo.onclick = () => crearPerfil("");
+  $("perfiles").replaceChildren(...asp.perfiles.map(p => muestra(p.id, p.nombre, p.c1, p.c2)), ...(asp.perfiles.length < 24 ? [nuevo] : []));
+  $("c1").value = asp.c1; $("c2").value = asp.c2; $("luz").value = asp.luz; $("velocidad").value = asp.velocidad;
+  const a = activo();
+  $("ayuda-color").textContent = a ? `Editando «${a.nombre}»: los cambios de color se guardan en el perfil.` : "Al cambiar un color, el tema pasa a «propio»; guárdalo como perfil para conservarlo.";
+  $("p-nombre").value = a ? a.nombre : "";
+  $("b-perfil").textContent = a ? "Renombrar" : "Guardar como perfil";
+  $("b-duplicar").hidden = $("b-borrar").hidden = !a;
+  armado = false; $("b-borrar").textContent = "Borrar perfil";
+}
+function nombreLibre(base) {
+  const usados = new Set(asp.perfiles.map(p => p.nombre));
+  if (base && !usados.has(base)) return base;
+  for (let n = 1; ; n++) { const c = base ? `${base} ${n + 1}` : `Perfil ${n}`; if (!usados.has(c)) return c.slice(0, 32); }
+}
+function crearPerfil(nombre) {
+  const id = "perfil-" + (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).slice(0, 16);
+  const p = { id, nombre: nombreLibre(nombre.trim().slice(0, 32)), c1: asp.c1, c2: asp.c2 };
+  guardarAspecto({ ...asp, perfiles: [...asp.perfiles, p], tema: id });
+}
+for (const k of ["c1", "c2"]) $(k).onchange = ev => {
+  const a = activo(), color = ev.target.value;
+  guardarAspecto(a ? { ...asp, [k]: color, perfiles: asp.perfiles.map(p => p.id === a.id ? { ...p, [k]: color } : p) } : { ...asp, tema: "propio", [k]: color });
+};
+for (const k of ["luz", "velocidad"]) $(k).onchange = ev => guardarAspecto({ ...asp, [k]: parseFloat(ev.target.value) });
+$("b-perfil").onclick = () => {
+  const a = activo(), nombre = $("p-nombre").value.trim().slice(0, 32);
+  if (!a) crearPerfil(nombre);
+  else if (nombre) guardarAspecto({ ...asp, perfiles: asp.perfiles.map(p => p.id === a.id ? { ...p, nombre } : p) });
+};
+$("b-duplicar").onclick = () => { const a = activo(); if (a) crearPerfil(`${a.nombre} (copia)`); };
+$("b-borrar").onclick = () => {
+  const a = activo(); if (!a) return;
+  if (!armado) { armado = true; $("b-borrar").textContent = `¿Borrar «${a.nombre}»? Pulsa otra vez`; return; }
+  guardarAspecto({ ...asp, tema: "propio", perfiles: asp.perfiles.filter(p => p.id !== a.id) });
+};
+$("b-restablecer").onclick = () => guardarAspecto({ tema: "jarvis", c1: "#29d3ff", c2: "#8ff3ff", luz: 1, velocidad: 1, perfiles: asp.perfiles });
+// -- modelos y el resto -----------------------------------------------------------------------
 $("b-listar").onclick = async () => {
   const prov = $("m-prov").value; if (!prov) return;
-  $("m-mod").innerHTML = "<option>Cargando…</option>";
+  $("m-mod").replaceChildren(crear("option", { textContent: "Cargando…" }));
   try {
     const r = await api("/api/modelos", { proveedor: prov });
     if (r.error) throw new Error(r.error);
     const sug = (est.proveedores.find(p => p.id === prov) || {}).sugeridos || [];
-    $("m-mod").innerHTML = r.modelos.map(m => `<option ${sug.includes(m) ? "selected" : ""}>${m}</option>`).join("");
-  } catch (e) { $("m-mod").innerHTML = `<option>${e.message}</option>`; }
+    $("m-mod").replaceChildren(...r.modelos.map(m => crear("option", { value: m, textContent: m, selected: sug.includes(m) })));
+  } catch (e) { $("m-mod").replaceChildren(crear("option", { value: "", textContent: e.message })); }
 };
 $("b-anadir").onclick = () => {
   const p = $("m-prov").value, m = $("m-mod").value;
-  if (!p || !m || m.startsWith("Cargando")) return;
+  if (!p || !m) return;
   const e = `${p}:${m}`; if (!cadena.includes(e)) cadena.push(e); pintarCadena();
 };
 $("b-nuevo").onclick = async () => {
@@ -138,7 +231,13 @@ $("b-nuevo").onclick = async () => {
 };
 $("b-guardar").onclick = async () => {
   $("estado-g").textContent = "Guardando…";
-  pintar(await api("/api/config", { cadena, stt: $("stt").value.trim(), personalidad: $("perso").value, ciudad: $("ciudad").value.trim() }));
+  const flujos = {};
+  for (const l of $("flujos").value.split("\n")) { const i = l.indexOf("="); if (i > 0 && l.slice(i + 1).trim()) flujos[l.slice(0, i).trim()] = l.slice(i + 1).trim(); }
+  pintar(await api("/api/config", {
+    cadena, stt: $("stt").value.trim(), vision: $("vision").value.trim(), tts: $("tts").value.trim(), ttsVoz: $("ttsVoz").value.trim(),
+    activacion: $("activacion").checked, vigilante: parseInt($("vigilante").value, 10),
+    personalidad: $("perso").value, ciudad: $("ciudad").value.trim(),
+    hechos: $("hechos").value.split("\n").map(s => s.trim()).filter(Boolean), n8nUrl: $("n8nUrl").value.trim(), flujos }));
   $("estado-g").textContent = "Guardado. Las gafas ya lo usan.";
 };
 </script>

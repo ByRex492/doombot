@@ -14,8 +14,10 @@ android {
     // Horizon OS es Android 14 (API 34): lo exige la documentacion de Meta.
     minSdk = 34
     targetSdk = 34
-    versionCode = 1
-    versionName = "0.1"
+    versionCode = 2
+    versionName = "0.2"
+    // Las Quest 3/3S son arm64: sin las demas arquitecturas, onnxruntime pesa una cuarta parte.
+    ndk { abiFilters += "arm64-v8a" }
   }
 
   packaging { resources.excludes.add("META-INF/LICENSE") }
@@ -25,7 +27,11 @@ android {
   }
   buildTypes {
     release {
+      // Release para instalar en las propias gafas: no depurable, asi Compose y el orbe van fluidos
+      // (en debug, ART no optimiza y se nota a 72-90 Hz). Firmada con la clave de depuracion local:
+      // no es para la tienda. Sin R8: el Spatial SDK usa reflexion y no hay reglas probadas.
       isMinifyEnabled = false
+      signingConfig = signingConfigs.getByName("debug")
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }
@@ -37,8 +43,9 @@ android {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
   }
-  kotlinOptions { jvmTarget = "17" }
 }
+
+kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
   // Meta Spatial SDK, bajo la Meta Platforms Technologies SDK License Agreement:
@@ -61,6 +68,7 @@ dependencies {
   // Servidor de ajustes en la red local (unos 100 KB) y el QR para abrirlo desde el movil.
   implementation(libs.nanohttpd)
   implementation(libs.zxing.core)
+  implementation(libs.onnxruntime.android)
 
   testImplementation(libs.junit)
 }

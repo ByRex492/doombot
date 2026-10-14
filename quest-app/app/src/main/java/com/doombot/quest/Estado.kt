@@ -26,6 +26,9 @@ data class TiempoActual(val ciudad: String, val grados: Int, val descripcion: St
 
 data class InfoServidor(val url: String, val pin: String, val caduca: Long)
 
+/** Un panel de informacion que el agente coloca en la habitacion (fase 4). */
+data class Info(val titulo: String, val texto: String)
+
 /**
  * El estado que comparten todos los paneles.
  *
@@ -54,6 +57,20 @@ object Doom {
   var config by mutableStateOf(com.doombot.quest.datos.Almacen.Config())
   /** Proveedores con clave puesta: para decir "configurada" sin tener la clave en la interfaz. */
   var conClave by mutableStateOf<Set<String>>(emptySet())
+  /**
+   * Lo que se pinta ahora: aparte de ``config`` porque al arrastrar un deslizador de color se ve
+   * al instante, y solo se guarda al soltarlo.
+   */
+  var aspecto by mutableStateOf(com.doombot.quest.datos.Aspecto())
+  var modo by mutableStateOf("global")
+  /** Pregunta de confirmacion pendiente (n8n): el orbe la enseña con botones Si/No. */
+  var pregunta by mutableStateOf<String?>(null)
+  /** La camara esta capturando: el HUD lo enseña siempre (fase 3). */
+  var camara by mutableStateOf(false)
+  /** "Hey jarvis" escuchando. */
+  var palabraActiva by mutableStateOf(false)
+  /** Los tres huecos de paneles de informacion; null = libre. */
+  val infos = mutableStateListOf<Info?>(null, null, null)
 
   private val principal = Handler(Looper.getMainLooper())
 

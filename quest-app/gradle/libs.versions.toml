@@ -13,6 +13,8 @@ datastore = "1.1.1"
 nanohttpd = "2.3.1"
 zxing = "3.5.3"
 junit = "4.13.2"
+# Palabra de activacion ("hey jarvis", openWakeWord en ONNX). La misma version que el escritorio.
+onnxruntime = "1.31.0"
 
 [libraries]
 meta-spatial-sdk-base = { group = "com.meta.spatial", name = "meta-spatial-sdk", version.ref = "spatialsdk" }
@@ -32,6 +34,7 @@ androidx-datastore = { group = "androidx.datastore", name = "datastore-preferenc
 nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version.ref = "nanohttpd" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

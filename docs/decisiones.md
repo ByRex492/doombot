@@ -1755,3 +1755,45 @@ gafas no estaban conectadas: **nada de esto se ha ejecutado aún en unas gafas**
 
 **Sin verificar**: todo lo que ocurre en las gafas. Se prueba en el sobremesa con
 `quest-app/scripts/deploy.ps1`.
+
+### Ampliación del 15/10/2026: el resto del encargo y lo de la ventana de escritorio
+
+Pedido: completar todas las fases del encargo y que la versión de las gafas sea igual que la de
+escritorio, antes de instalarla. Desde un Windows nuevo, con el usuario al lado.
+
+- **Fase 2.** Respuestas en streaming (SSE, las tool_calls se recomponen por `index`) y voz por
+  frases (`Frases`, como D-021): empieza a hablar con la primera. «Hey jarvis» con openWakeWord en
+  ONNX (onnxruntime-android 1.31, la misma versión que el escritorio), con el permiso del usuario
+  para esa dependencia; los modelos se bajan en las gafas de la release oficial, no se versionan.
+  Mientras D.O.O.M habla no escucha la palabra (se oiría a sí mismo).
+- **Fase 3.** Passthrough Camera API, comprobada en la doc de Meta antes de escribirla: Camera2,
+  `camera_source` = 0 y `position` = 0 (izquierda) como `Key<Int>`, YUV420 a 1280×960 pasado a
+  JPEG de 1024 px. Bajo demanda (herramienta `mirar`), con indicador «● CÁMARA» en el orbe y
+  permisos al usarla. Modo vigilante opcional, apagado por defecto.
+- **Fase 4.** Memoria de hechos («recuerda que…», en el prompt siempre, como `identify`), paneles de
+  información colocables (tres huecos registrados al arrancar: los paneles del SDK se registran
+  con id fijo) y n8n con lista blanca y **confirmación hablada** (D-030/D-031, mismas palabras
+  afirmativas que `es_afirmacion`).
+- **Interfaces** `LlmProvider`, `SttProvider`, `VisionProvider` y `TtsProvider`, ya con segunda
+  implementación (visión, TTS por API opcional por `/audio/speech`).
+- **Igual que escritorio.** Los seis temas y los **perfiles de color propios** de Personalizar con
+  las mismas reglas de `preferencias.py` (D-036); brillo y velocidad mueven el orbe; los modos
+  (D-038) con las instrucciones de `skills/`; `buscar_web` y `leer_url` (Jina) y `calcular`.
+- **Corregido.**
+  - El agente reenviaba los mensajes del modelo con campos propios (`reasoning`...) que otro
+    proveedor de la cadena puede rechazar.
+  - `content: null` se convertía en el texto «null».
+  - La página del móvil metía en `innerHTML` nombres de modelos llegados de la red.
+  - El modelo de OpenRouter retirado.
+  - Los scripts de Windows, que nunca se habían ejecutado: PowerShell 5.1 con stderr,
+    `sdkmanager` obsoleto, JDK que pedía administrador y Java sin los certificados de Windows
+    (Norton).
+- **Optimizado.** `deploy.ps1` instala la *release* (no depurable, firmada con la clave local): en
+  depuración ART no optimiza Compose y el orbe se nota a 72–90 Hz. Sin R8: el Spatial SDK usa
+  reflexión y no hay reglas probadas. Solo `arm64-v8a`.
+
+**Se mantiene, a sabiendas**: no se leen claves de `local.properties` (acabarían en el APK); el
+orbe sigue siendo un panel.
+
+**Verificado**: compila en Windows (release, 109 MB) y 17 tests JVM en verde. **Sin verificar**:
+todo en las gafas (cámara, voz, «hey jarvis», streaming con cada proveedor).

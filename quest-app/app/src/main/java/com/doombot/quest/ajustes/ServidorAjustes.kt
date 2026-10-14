@@ -5,6 +5,7 @@ import com.doombot.quest.Doom
 import com.doombot.quest.InfoServidor
 import com.doombot.quest.TipoLinea
 import com.doombot.quest.datos.Almacen
+import com.doombot.quest.datos.Aspecto
 import com.doombot.quest.ia.Catalogo
 import com.doombot.quest.ia.ClienteIA
 import com.doombot.quest.sistema.Tiempo
@@ -69,7 +70,7 @@ class ServidorAjustes(
     val cookie = s.cookies.read("doom") ?: ""
     // 1. La pagina: solo con el token del QR, que se gasta al usarlo.
     if (s.uri == "/" && s.method == Method.GET) {
-      if (token.isEmpty() || s.parms["t"] != token) return texto(Response.Status.FORBIDDEN, "Enlace no valido.")
+      if (token.isEmpty() || s.parameters["t"]?.firstOrNull() != token) return texto(Response.Status.FORBIDDEN, "Enlace no valido.")
       token = ""
       sesion = hex(16)
       val r = newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", pagina())
@@ -110,6 +111,13 @@ class ServidorAjustes(
                 alCambiar()
                 json(estado())
               }
+              // Personalizar desde el movil: con selector de color de verdad, mas comodo que en las gafas.
+              "/api/aspecto" -> {
+                val a = Almacen.aspectoDe(cuerpo.optJSONObject("aspecto"))
+                almacen.guardar(almacen.config().copy(aspecto = a))
+                alCambiar()
+                json(estado())
+              }
               "/api/proveedor" -> {
                 val c = almacen.config()
                 val id = cuerpo.getString("id").lowercase().filter { it.isLetterOrDigit() }
@@ -141,18 +149,44 @@ class ServidorAjustes(
               .put("sugeridos", JSONArray(p.sugeridos))
               .put("stt", p.sttSugerido))
     }
+    // El lector de paginas: no da modelos, solo lleva clave (opcional).
+    provs.put(
+        JSONObject().put("id", "jina").put("titulo", "Jina Reader (opcional: lector de paginas)").put("alta", "https://jina.ai")
+            .put("configurada", "jina" in con).put("lector", true))
+    val temas = JSONArray()
+    Aspecto.TEMAS.forEach { t -> temas.put(JSONObject().put("id", t.id).put("nombre", t.nombre).put("c1", t.c1).put("c2", t.c2)) }
     return JSONObject()
         .put("proveedores", provs)
         .put("cadena", JSONArray(c.cadena))
         .put("stt", c.stt)
+        .put("vision", c.vision)
+        .put("tts", c.tts)
+        .put("ttsVoz", c.ttsVoz)
+        .put("activacion", c.activacion)
+        .put("vigilante", c.vigilante)
         .put("personalidad", c.personalidad)
         .put("ciudad", c.ciudad)
+        .put("hechos", JSONArray(c.hechos))
+        .put("n8nUrl", c.n8nUrl)
+        .put("flujos", JSONObject(c.flujos))
+        .put("aspecto", Almacen.aspectoJson(c.aspecto))
+        .put("temas", temas)
   }
 
   private suspend fun guardarConfig(j: JSONObject) {
     var c = almacen.config()
     j.optJSONArray("cadena")?.let { a -> c = c.copy(cadena = (0 until a.length()).map { a.getString(it) }.filter { it.contains(':') }) }
     if (j.has("stt")) c = c.copy(stt = j.getString("stt"))
+    if (j.has("vision")) c = c.copy(vision = j.getString("vision").trim())
+    if (j.has("tts")) c = c.copy(tts = j.getString("tts").trim())
+    if (j.has("ttsVoz")) c = c.copy(ttsVoz = j.getString("ttsVoz").trim())
+    if (j.has("activacion")) c = c.copy(activacion = j.optBoolean("activacion", true))
+    if (j.has("vigilante")) c = c.copy(vigilante = j.optInt("vigilante", 0).coerceIn(0, 3600))
+    if (j.has("n8nUrl")) c = c.copy(n8nUrl = j.getString("n8nUrl").trim())
+    j.optJSONObject("flujos")?.let { f -> c = c.copy(flujos = f.keys().asSequence().associateWith { f.getString(it) }.filter { it.key.isNotBlank() && it.value.isNotBlank() }) }
+    j.optJSONArray("hechos")?.let { h ->
+      c = c.copy(hechos = (0 until h.length()).map { h.getString(it).trim().take(300) }.filter { it.isNotEmpty() }.distinct().take(Almacen.MAX_HECHOS))
+    }
     if (j.has("personalidad")) c = c.copy(personalidad = j.getString("personalidad").take(2000))
     val ciudad = j.optString("ciudad")
     if (ciudad.isNotBlank() && ciudad != c.ciudad) {

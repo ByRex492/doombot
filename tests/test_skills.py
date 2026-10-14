@@ -107,7 +107,7 @@ def test_un_modo_cambia_instrucciones_y_herramientas_y_volver_a_global_lo_restau
     m.modos.aplicar("ciencias")
     assert m.modos.actual == "ciencias"
     assert set(m.agente.herramientas) == {
-        "calcular", "mostrar_grafica", "buscar_web", "navegar", "leer_pagina",
+        "calcular", "mostrar_grafica", "buscar_web", "leer_url", "navegar", "leer_pagina",
         "abrir_en_navegador", "leer_fichero", "aprender",
     }  # fmt: skip
     assert "Estas en el modo Ciencias" in m.agente.system

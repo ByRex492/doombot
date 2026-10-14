@@ -1550,3 +1550,75 @@ cadena por defecto pasa a cinco modelos, los saturados detrás. Y un modelo que 
 aparta cada vez más tiempo (1, 2, 4… hasta 15 min), volviendo a cero al primer acierto: con un
 minuto fijo, un Gemini saturado durante horas costaba una espera en cada orden.
 
+
+---
+
+## D-039 — Refinar las respuestas: repaso final por otro modelo, y leer páginas sin navegador
+
+**Contexto.** 14/10/2026. Pedido del usuario: modelos gratuitos útiles para refinar las respuestas.
+Investigado ese día, con sus claves para lo que se podía comprobar:
+
+- **Groq** (`/models` de su cuenta): ya no están `groq/compound` (su sistema con búsqueda web,
+  retirado el 21/09/2026) ni `llama-3.3-70b-versatile`, que la tabla de D-034 todavía cita. Han
+  aparecido `llama-prompt-guard-2-22m`/`86m` (detectan instrucciones colocadas en un texto) y
+  `gpt-oss-safeguard-20b`.
+- **Gemini con búsqueda de Google y citas** no entra en el plan gratuito: con la herramienta de
+  búsqueda, `gemini-3.5-flash-lite` dio 429; sin ella, el mismo modelo respondió.
+  `gemini-2.5-flash`, el que la traía gratis, "ya no está disponible para usuarios nuevos".
+- **Cerebras** ya no tiene plan gratuito desde julio de 2026 (5 $ de prueba con tarjeta).
+  **GitHub Models** limita a 8.000 tokens de entrada por petición. **Cohere**, 1.000 llamadas al
+  mes en total. Ninguno sirve para el agente.
+
+**Decisión.**
+
+1. **Repaso final** (`agent/refinado.py`). Cuando el agente termina, un modelo de la cadena
+   **distinto del que ha respondido** recibe lo pedido, extractos de lo consultado en esa tarea y
+   el borrador. Comprueba datos contra lo consultado, fuentes, claridad, y que la respuesta no
+   empiece con lo que el agente "iba a hacer". Si está bien, dice `OK` y se da el borrador; si
+   no, devuelve la respuesta corregida, que es la que se muestra y la que queda en la
+   conversación. El porqué es el de la segunda opinión (D-034): quien ha escrito un dato mal lo
+   vuelve a dar por bueno al releerse.
+   - **Cuándo** (`DOOMBOT_AGENT_REFINAR`): `auto` (por defecto) repasa lo que se apoya en algo
+     consultado (`buscar_web`, `leer_url`, `navegar`, `leer_pagina`, `leer_fichero`,
+     `consultar_skill`) o pasa de 600 caracteres. "He abierto la calculadora" no gasta petición.
+     `siempre` y `no` hacen lo que dicen.
+   - **Nunca deja sin respuesta**: si el repaso falla, se da el borrador y se dice; si devuelve
+     algo de menos de un cuarto del borrador, se toma por un comentario y también se da el
+     borrador.
+   - **Lo consultado va recortado** (6.000 caracteres en total, las 4 fuentes últimas), por el
+     límite de tokens por minuto de las capas gratuitas. Por eso el prompt le dice que no quite
+     un dato solo porque no aparezca en los extractos, sino lo que lo contradiga.
+2. **`leer_url`, leer páginas sin navegador** (Jina Reader, `r.jina.ai`). Devuelve el texto de la
+   página sin imágenes, con los enlaces como texto y sin `nav`/`header`/`footer`/`aside`: el
+   anexo de discografía de Wikipedia pasa de 20.000 caracteres a 4.700, empezando por el
+   contenido. Lee también páginas que se pintan con JavaScript (la predicción de AEMET). Es lo
+   primero para leer fuentes; `navegar` queda para pulsar o rellenar, o si `leer_url` falla.
+   Con `buscar` va a una sección, sobre lo ya leído (guarda las 8 últimas páginas) sin volver a
+   pedirla. Sin clave, 20 lecturas por minuto; con `DOOMBOT_JINA_API_KEY` (gratuita), 200.
+3. **Arreglo de paso**: la segunda opinión elegía "otro modelo" mirando la cadena del arranque,
+   pero cada modo monta la suya (D-038). En un modo podía revisar el mismo modelo que había
+   propuesto la acción. Revisor y repaso miran ahora la cadena que usa el agente en ese momento.
+
+**Descartado.**
+- **Elegir el contenido con `X-Target-Selector`** en vez de quitar menús: si el selector no está en
+  la página, Jina responde 422 en vez de la página.
+- **Votar entre varios modelos cada respuesta**: triplica las peticiones, y el consejo
+  (`contrasta`) ya existe para cuando el usuario lo pide.
+- **El modelo de recompensa de NVIDIA**, para puntuar respuestas: no se pudo confirmar cómo
+  devuelve la nota por su API gratuita.
+
+**Privacidad.** La dirección de cada página leída sale hacia Jina, que la descarga. Las
+direcciones locales (`localhost`, IP privadas, `.local`, nombres sin dominio) nunca: `leer_url`
+las rechaza y sugiere `navegar`.
+
+**Verificado en real**, con las claves del usuario:
+- **El repaso, con dos borradores.** Uno con errores puestos a propósito ("cinco álbumes y
+  treinta sencillos" frente a 7 y 29 de la fuente) salió corregido por
+  `groq/qwen/qwen3.8-27b`; el correcto, sin cambios.
+- **Una orden completa**, "¿En qué año se fundó Saiko y quién la fundó?": `buscar_web`, tres
+  `leer_url` (con `buscar`) y la respuesta con su fuente. Groq llegó a su límite a mitad y siguió
+  Gemini; repasó `gpt-oss-20b`.
+- **Tests**: los de `leer_url` (cabeceras, menús, sin repetir la petición, direcciones locales,
+  429), los del repaso (otro modelo, OK, cuándo merece, fallo) y el del revisor en un modo.
+
+**Sin verificar**: en Windows, y el modo `siempre` con la cuota de un día entero de uso.

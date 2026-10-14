@@ -138,6 +138,12 @@ class Settings:
     """Clave de cada proveedor, de ``DOOMBOT_<PROVEEDOR>_API_KEY``. Pares, no dict: frozen."""
     agent_revisor: bool = True
     """Antes de una accion irreversible, otro modelo da una segunda opinion (D-034)."""
+    agent_refinar: str = "auto"
+    """Repaso de la respuesta final por otro modelo (D-039): ``auto``, ``siempre`` o ``no``.
+
+    ``auto`` repasa lo que se apoya en algo consultado (paginas, ficheros) o es
+    largo; una respuesta como "he abierto la calculadora" no gasta peticion.
+    """
 
     def clave(self, proveedor: str) -> str:
         return dict(self.claves).get(proveedor.lower(), "")
@@ -182,6 +188,20 @@ def _parse_n8n_workflows(raw: str) -> tuple[tuple[str, str], ...]:
     return tuple(pares)
 
 
+def _modo_refinar(raw: str) -> str:
+    """``DOOMBOT_AGENT_REFINAR`` como ``auto``, ``siempre`` o ``no``.
+
+    Admite las formas de decir que no de ``DOOMBOT_AGENT_REVISOR``; cualquier
+    otra cosa -incluido un error de tecleo- es ``auto``, el valor por defecto.
+    """
+    raw = raw.strip().lower()
+    if raw in ("no", "0", "false", "off"):
+        return "no"
+    if raw in ("siempre", "always"):
+        return "siempre"
+    return "auto"
+
+
 def _claves_de_proveedores() -> tuple[tuple[str, str], ...]:
     """Toda ``DOOMBOT_<X>_API_KEY`` con valor, como ``(x, clave)``.
 
@@ -217,6 +237,7 @@ def settings() -> Settings:
         claves=_claves_de_proveedores(),
         agent_revisor=os.environ.get("DOOMBOT_AGENT_REVISOR", "si").strip().lower()
         not in ("no", "0", "false", "off"),
+        agent_refinar=_modo_refinar(os.environ.get("DOOMBOT_AGENT_REFINAR", "auto")),
         n8n_base_url=os.environ.get("DOOMBOT_N8N_BASE_URL", "").strip().rstrip("/"),
         n8n_workflows=_parse_n8n_workflows(os.environ.get("DOOMBOT_N8N_WORKFLOWS", "").strip()),
     )

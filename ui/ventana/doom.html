@@ -383,6 +383,7 @@
         <div class="dato"><span class="etq">Carga</span><div class="barras" id="sys-carga"></div></div>
         <div class="dato"><span class="etq">Modelos</span><ul class="lista-mini" id="sys-modelos"><li class="apagado">—</li></ul></div>
         <div class="dato"><span class="etq">Segunda opinión</span><div class="valor" id="sys-revisor">—</div></div>
+        <div class="dato"><span class="etq">Repaso de respuestas</span><div class="valor" id="sys-repaso">—</div></div>
         <div class="dato"><span class="etq">Herramientas</span><div class="valor" id="sys-herr">—</div></div>
       </div>
     </aside>
@@ -1245,7 +1246,7 @@ const DOOM = window.DOOM = {
       case "pensando":
         familiaActual = ""; ponerModo("pensando");
         document.getElementById("act-herr").textContent = "pensando…";
-        mostrarPensando(e.paso > 1 ? `procesando el siguiente paso (${e.paso})…` : "procesando…");
+        mostrarPensando(e.texto || (e.paso > 1 ? `procesando el siguiente paso (${e.paso})…` : "procesando…"));
         break;
       case "herramienta":
         familiaActual = e.familia || ""; ponerModo(familiaActual || "pensando"); latido(0.7);
@@ -1777,6 +1778,8 @@ async function arrancar() {
   for (const m of info.modelos) lista.appendChild(el("li", "", m));
   for (const a of info.avisos || []) lista.appendChild(Object.assign(el("li", "apagado", a.split(":")[0].replace(/'/g, "")), { title: a }));
   document.getElementById("sys-revisor").textContent = info.revisor ? "activada" : "desactivada";
+  document.getElementById("sys-repaso").textContent =
+    { auto: "automático", siempre: "siempre" }[info.repaso] || "desactivado";
   document.getElementById("sys-herr").textContent = `${info.herramientas} disponibles`;
   document.getElementById("pie-info").textContent =
     `${info.modelos.length} modelo${info.modelos.length > 1 ? "s" : ""} · ${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión" : "");
@@ -1827,7 +1830,7 @@ if (location.hash === "#demo") {
   window.DEMO = {
     preferencias: () => Promise.resolve(prefsDemo),
     guardar_preferencias: (p) => { prefsDemo = Object.assign({}, p); return Promise.resolve(prefsDemo); },
-    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 19, revisor: true,
+    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 21, revisor: true, repaso: "auto",
       actual: "global", modos: MODOS_DEMO }),
     historial: () => Promise.resolve(HIST_DEMO),
     abrir_conversacion: (id) => { HIST_DEMO.actual = id; const c = HIST_DEMO.conversaciones.find(x => x.id === id);

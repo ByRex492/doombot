@@ -14,20 +14,25 @@ herramienta nueva no pueda saltarselas por olvido:
 - **limite de pasos**: un modelo que se enreda no gira para siempre;
 - **contexto acotado**: cada salida se trunca, y las antiguas se enmascaran
   (capa4-investigacion.md, punto 4).
+
+Y al final, el repaso (D-039): si hay quien lo haga, otro modelo revisa la
+respuesta antes de darla.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import difflib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from doombot.agent.herramientas import Herramienta, recortar, truncar
 from doombot.backends.base import (
     BackendError,
     LlamadaHerramienta,
     MensajeAgente,
+    PasoModelo,
     ResultadoHerramienta,
     ToolCaller,
 )
@@ -38,6 +43,21 @@ from doombot.backends.base import (
 #   resultado   como salio, en una linea
 #   error       la herramienta fallo o no se autorizo
 Narrador = Callable[[str, str], None]
+
+
+class Repasador(Protocol):
+    """Quien repasa la respuesta final (``agent/refinado.py``).
+
+    ``consultado`` son los resultados de herramientas de esta tarea, como
+    ``(nombre, contenido)``: lo que el corrector usa para comprobar datos.
+    """
+
+    def merece(self, respuesta: str, consultado: Sequence[tuple[str, str]]) -> bool: ...
+
+    def __call__(
+        self, tarea: str, respuesta: str, consultado: Sequence[tuple[str, str]]
+    ) -> tuple[str, str]: ...
+
 
 NEGADA = (
     "El usuario NO ha autorizado esta accion y no se ha ejecutado. No la repitas: "
@@ -65,6 +85,7 @@ class Agente:
         confirmar: Callable[[str], bool],
         system: str | None = None,
         revisar: Callable[[str, str], str] | None = None,
+        repasar: Repasador | None = None,
         max_pasos: int = 20,
         # Con las capas gratuitas el limite es de tokens por minuto (Groq: unos
         # 8.000): cada paso reenvia todo, asi que lo leido se recorta mas.
@@ -79,6 +100,7 @@ class Agente:
         # orden y la accion propuesta y dice si encajan. No decide: su
         # opinion acompana a la pregunta, y quien decide sigue siendo el usuario.
         self.revisar = revisar
+        self.repasar = repasar
         self._tarea = ""
         # Para interfaces que quieren mas que texto -la esfera de la ventana
         # cambia de modo segun la herramienta-: ("pensando", {"paso": n}) antes
@@ -112,6 +134,7 @@ class Agente:
         self._tarea = tarea
         self._parar = False
         self.conversacion.append(tarea)
+        inicio = len(self.conversacion)
         informe = Informe(respuesta="")
         especs = [h.espec() for h in self.herramientas.values()]
 
@@ -124,7 +147,7 @@ class Agente:
             informe.pasos += 1
 
             if not paso.llamadas:
-                informe.respuesta = paso.texto
+                informe.respuesta = self._repasar(paso, inicio)
                 return informe
             if paso.texto:
                 self.narrar("comentario", paso.texto)
@@ -170,6 +193,35 @@ class Agente:
         informe.completo = False
         informe.respuesta = "Parado. Dime como sigo."
         return informe
+
+    def _repasar(self, paso: PasoModelo, inicio: int) -> str:
+        """La respuesta final, repasada por otro modelo si lo merece (D-039).
+
+        Si el repaso falla, se da el borrador: un corrector caido no puede
+        dejar al usuario sin la respuesta que ya estaba hecha.
+        """
+        if self.repasar is None:
+            return paso.texto
+        consultado = [
+            (m.nombre, m.contenido)
+            for m in self.conversacion[inicio:]
+            if isinstance(m, ResultadoHerramienta)
+        ]
+        if not self.repasar.merece(paso.texto, consultado):
+            return paso.texto
+        self.narrar("comentario", "Repaso la respuesta con otro modelo")
+        self._avisar("pensando", {"paso": 0, "texto": "repasando la respuesta…"})
+        try:
+            texto, nota = self.repasar(self._tarea, paso.texto, consultado)
+        except BackendError as e:
+            self.narrar("error", f"sin repaso: {recortar(str(e), 140)}")
+            return paso.texto
+        self.narrar("resultado", f"Respuesta repasada: {nota}")
+        if texto != paso.texto:
+            # Lo que queda en la conversacion es lo que leyo el usuario: "y eso
+            # de antes..." se refiere a la respuesta corregida, no al borrador.
+            self.conversacion[-1] = dataclasses.replace(paso, texto=texto)
+        return texto
 
     def _atender(self, llamada: LlamadaHerramienta, informe: Informe) -> str:
         herramienta = self.herramientas.get(llamada.nombre)

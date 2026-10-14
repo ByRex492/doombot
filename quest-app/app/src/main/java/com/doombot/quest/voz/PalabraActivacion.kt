@@ -52,6 +52,9 @@ class PalabraActivacion(private val contexto: Context) {
                 if (!f.exists() || f.length() < 10_000) bajar("$RELEASE/$m", f)
               }
               val e = OrtEnvironment.getEnvironment()
+              // onnxruntime-android 1.31 trae telemetria propia por HTTP (ai.onnxruntime.telemetry,
+              // visto en el log de las gafas): fuera. "Hey jarvis" no saca nada de las gafas.
+              runCatching { e.setTelemetry(false) }
               val op = OrtSession.SessionOptions().apply { setIntraOpNumThreads(1) }
               env = e
               mel = e.createSession(File(carpeta, MODELOS[0]).absolutePath, op)

@@ -212,6 +212,17 @@ class Modos:
         self.skills = skills if skills is not None else cargar_skills()
         self.notas = notas or Aprendizajes()
         self.actual = GLOBAL
+        self.proyecto: Any = None
+        """El proyecto de la conversacion abierta (D-040): da ``contexto()`` y ``herramientas()``.
+
+        Va aparte del modo: un proyecto tiene chats en modos distintos (diseñar en
+        Diseño, programar en Programacion) y todos reciben lo mismo del proyecto.
+        """
+
+    def poner_proyecto(self, proyecto: Any) -> str:
+        """Cambia de proyecto (o a ninguno) sin cambiar de modo."""
+        self.proyecto = proyecto
+        return self.aplicar(self.actual)
 
     # -- aplicar un modo --------------------------------------------------------------------
     def aplicar(self, modo: str) -> str:
@@ -220,6 +231,7 @@ class Modos:
         skill = self.skills.get(modo)
         self.actual = skill.id if skill else GLOBAL
         propias = {h.nombre: h for h in self.herramientas()}
+        del_proyecto = {h.nombre: h for h in self.proyecto.herramientas()} if self.proyecto else {}
         if skill is None:
             catalogo = " ".join(f"{s.id} ({s.descripcion})" for s in self.skills.values())
             extra = [
@@ -228,7 +240,7 @@ class Modos:
                 else "",
                 self.notas.para_prompt([GLOBAL, *self.skills], por_ambito=4),
             ]
-            m.agente.herramientas = {**m.todas, **propias}
+            m.agente.herramientas = {**m.todas, **propias, **del_proyecto}
             m.agente.cerebro = m.cadena
         else:
             extra = [
@@ -239,8 +251,11 @@ class Modos:
             m.agente.herramientas = {
                 **{n: h for n, h in m.todas.items() if n in permitidas},
                 "aprender": propias["aprender"],
+                **del_proyecto,
             }
             m.agente.cerebro = ordenar_cadena(m.cadena, skill.modelos, m.cfg)
+        if self.proyecto is not None:
+            extra.append(self.proyecto.contexto())
         m.agente.system = "\n".join([m.system_base, *(e for e in extra if e)])
         return self.actual
 

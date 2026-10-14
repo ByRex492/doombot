@@ -321,6 +321,15 @@
              padding: 7px 10px; margin: 6px 0; color: var(--c2); user-select: all; overflow-x: auto; }
   .nota-claves { margin-top: 18px; color: var(--tenue); font-size: 12.5px; border-left: 2px solid var(--c1-20); padding: 4px 0 4px 12px; }
   .acciones { display: flex; justify-content: flex-end; margin-top: 16px; }
+  /* proyecto (D-040): mismo marco que primeros pasos */
+  .pasos-dentro textarea.instrucciones { width: 100%; min-height: 120px; max-height: 320px; overflow-y: auto; resize: vertical; }
+  .nota-proy { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--c1-10);
+               font-size: 13px; color: #c3d6df; }
+  .nota-proy span { flex: 1; } .nota-proy button { padding: 0 8px; font-size: 11px; }
+  .chat-proy { padding: 8px 10px; margin: 6px 0; border: 1px solid var(--c1-10); cursor: pointer; background: rgba(0,0,0,.25); }
+  .chat-proy:hover { border-color: var(--c1-60); }
+  .chat-proy b { font: 600 12.5px/1.3 var(--mono); color: var(--c1); }
+  .chat-proy p { margin: 4px 0 0; color: var(--tenue); font-size: 12.5px; white-space: pre-wrap; }
 
   /* -- personalizar ---------------------------------------------------------------------- */
   #ajustes {
@@ -382,7 +391,7 @@
       <div class="cuerpo-panel" id="vista-conv" role="tabpanel" aria-labelledby="tab-conv">
         <div class="barra-conv">
           <button id="conv-nueva" title="Empieza una conversación nueva">+ Conversación</button>
-          <button id="carpeta-nueva" title="Crea una carpeta para ordenar conversaciones">+ Carpeta</button>
+          <button id="carpeta-nueva" title="Crea un proyecto: sus conversaciones comparten instrucciones y lo que se decide en cada una">+ Proyecto</button>
         </div>
         <div id="arbol" aria-label="Historial de conversaciones"></div>
       </div>
@@ -1470,10 +1479,11 @@ function grupo(nombre, lista) {
     abrirMenu(acc, m => {
       opcion(m, "Conversación nueva aquí", () => { cerrarMenu(); nuevaConversacion(nombre); });
       if (!nombre) return;
-      opcion(m, "Renombrar carpeta", () => {
+      opcion(m, "Proyecto: instrucciones y memoria", () => { cerrarMenu(); mostrarProyecto(nombre); });
+      opcion(m, "Renombrar proyecto", () => {
         cerrarMenu(); pedirNombre(titulo, nombre, async v => { await api("renombrar_carpeta", nombre, v); refrescarHistorial(); });
       });
-      opcionPeligrosa(m, "Borrar carpeta (sus conversaciones se quedan)", async () => { await api("borrar_carpeta", nombre); refrescarHistorial(); });
+      opcionPeligrosa(m, "Borrar proyecto (sus conversaciones se quedan)", async () => { await api("borrar_carpeta", nombre); refrescarHistorial(); });
     });
   });
   cab.appendChild(acc); g.appendChild(cab);
@@ -1529,7 +1539,7 @@ async function nuevaConversacion(carpeta) {
   if (r && r.ok === false) { registro.appendChild(el("div", "fallo", r.error)); alFondo(); return; }
   if (enPasos) ocultarPasos();
   const modo = datosModo(modoActual).titulo;
-  limpiarRegistro(carpeta ? `Conversación nueva en «${carpeta}». Modo ${modo}.` : `Conversación nueva. Modo ${modo}.`);
+  limpiarRegistro(carpeta ? `Conversación nueva en el proyecto «${carpeta}»: conoce sus instrucciones y lo decidido en sus otras conversaciones. Modo ${modo}.` : `Conversación nueva. Modo ${modo}.`);
   hist.actual = null; pintarArbol(); orden.focus();
 }
 async function abrirConversacion(id) {
@@ -1650,6 +1660,51 @@ function mostrarPasos(motivo) {
 function ocultarPasos() {
   enPasos = false; pasos.hidden = true; marcoRegistro.hidden = false; entrada.hidden = false;
   botonPasos.textContent = "Primeros pasos"; calcularTrazas(); alFondo(); orden.focus();
+}
+// El editor de un proyecto (D-040), en el mismo hueco que primeros pasos.
+async function mostrarProyecto(nombre) {
+  if (ocupado) return;
+  enPasos = true; pasos.hidden = false; marcoRegistro.hidden = true; entrada.hidden = true;
+  botonPasos.textContent = "Volver al chat"; calcularTrazas();
+  pasos.innerHTML = "";
+  const cab = el("div", "cab-marco");
+  cab.append(el("span", "etq", "Proyecto"), el("span", "barra"), el("span", "codigo", "PROY // MEMORIA"));
+  const d = el("div", "pasos-dentro"); pasos.append(cab, d);
+  d.appendChild(el("h1", "", nombre));
+  d.appendChild(el("p", "intro", "Todo lo de aquí lo reciben todas las conversaciones de este proyecto: así una puede seguir lo que se decidió en otra."));
+  const p = await api("proyecto", nombre);
+  if (!p) { d.appendChild(el("p", "intro", "No puedo leer el proyecto.")); return; }
+
+  d.appendChild(seccion("01", "Instrucciones", "las sigue en cada conversación"));
+  const ins = el("textarea", "instrucciones"); ins.value = p.instrucciones || "";
+  ins.placeholder = "Ej.: App de recetas con temática pirata. Público: niños de 8-12. Colores: azul marino y dorado. Todo en español.";
+  const fila = el("div", "fila"), guardar = el("button", "", "Guardar"), res = el("span", "prov-estado");
+  guardar.addEventListener("click", async () => {
+    const r = await api("guardar_instrucciones", nombre, ins.value);
+    res.className = `prov-estado ${r && r.ok ? "ok" : "mal"}`;
+    res.textContent = r && r.ok ? "✓ Guardado: lo tendrán en cuenta sus conversaciones" : `✗ ${(r && r.error) || "No se ha podido guardar"}`;
+  });
+  fila.append(guardar, res); d.append(ins, fila);
+
+  d.appendChild(seccion("02", "Notas", "decisiones clave"));
+  if (!p.notas.length) d.appendChild(el("p", "intro", "Sin notas. D.O.O.M apunta aquí lo que decidáis (una paleta, un nombre, una estructura) para el resto de conversaciones."));
+  p.notas.forEach((n, i) => {
+    const f = el("div", "nota-proy"), quitar = el("button", "", "✕"); quitar.title = "Olvidar esta nota";
+    quitar.addEventListener("click", async () => { await api("borrar_nota_proyecto", nombre, i); mostrarProyecto(nombre); });
+    f.append(el("span", "", n), quitar); d.appendChild(f);
+  });
+
+  d.appendChild(seccion("03", "Conversaciones", `${p.chats.length}`));
+  if (!p.chats.length) d.appendChild(el("p", "intro", "Todavía ninguna."));
+  for (const c of p.chats) {
+    const t = el("div", "chat-proy"); t.tabIndex = 0;
+    t.append(el("b", "", c.titulo), el("p", "", c.resumen || "Sin resumen todavía: se escribe al terminar cada respuesta."));
+    t.addEventListener("click", () => { ocultarPasos(); abrirConversacion(c.id); });
+    d.appendChild(t);
+  }
+  const acc = el("div", "acciones"), nueva = el("button", "", "Conversación nueva en este proyecto");
+  nueva.addEventListener("click", () => { ocultarPasos(); nuevaConversacion(nombre); });
+  acc.appendChild(nueva); d.appendChild(acc);
 }
 async function irAlChat() { if (await arrancar()) ocultarPasos(); }
 
@@ -1879,6 +1934,10 @@ if (location.hash === "#demo") {
     aprendido: () => Promise.resolve({ notas: ["2026-10-13 Prefiere las respuestas con unidades del SI", "2026-10-13 Quiere los pasos numerados"] }),
     olvidar_aprendido: () => Promise.resolve({ ok: true }),
     crear_carpeta: (n) => { HIST_DEMO.carpetas.push(n); return Promise.resolve({ ok: true }); },
+    proyecto: (n) => Promise.resolve({ nombre: n, instrucciones: "App de recetas con temática pirata. Colores: azul marino y dorado.",
+      notas: ["2026-10-14 Paleta: azul marino #1e3a8a y dorado #d4a017", "2026-10-14 Nombre de la app: Galeón"],
+      chats: HIST_DEMO.conversaciones.filter(c => c.carpeta === n).map(c => ({ ...c, resumen: "Se decidió la estructura: inicio, recetas, mapa del tesoro." })) }),
+    guardar_instrucciones: () => Promise.resolve({ ok: true }), borrar_nota_proyecto: () => Promise.resolve({ ok: true }),
     renombrar_conversacion: () => Promise.resolve({ ok: true }), mover_conversacion: () => Promise.resolve({ ok: true }),
     borrar_conversacion: () => Promise.resolve({ ok: true }), renombrar_carpeta: () => Promise.resolve({ ok: true }), borrar_carpeta: () => Promise.resolve({ ok: true }),
     nuevo: () => Promise.resolve(null), parar: () => Promise.resolve(null), abrir_enlace: () => Promise.resolve(null),

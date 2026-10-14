@@ -237,6 +237,8 @@
   .resultado .marca-l { color: var(--ok); }
   .fallo-l .cuerpo { color: #ffb0b8; }
   .fallo-l .marca-l { color: var(--mal); }
+  .aviso-l .cuerpo { color: var(--tenue); font-size: 12px; }
+  .aviso-l .marca-l { color: var(--c2); }
   .pensando-l .cuerpo { color: var(--tenue); font: 12px/1.5 var(--mono); letter-spacing: .06em; }
   .pensando-l .marca-l::after { content: "◐"; display: inline-block; animation: giro 1s linear infinite; color: var(--c2); }
   @keyframes giro { to { transform: rotate(360deg); } }
@@ -1300,6 +1302,7 @@ const DOOM = window.DOOM = {
       }
       case "resultado": registro.appendChild(linea("resultado", "└", e.texto)); alFondo(); break;
       case "error": quitarPensando(); registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo(); break;
+      case "aviso": registro.appendChild(linea("resultado aviso-l", "↻", e.texto)); alFondo(); break;
       case "abiertas": ponerAbiertas(e.lista || []); break;
       case "visual": {
         const v = { titulo: e.titulo, grafica: e.grafica, estadistica: e.estadistica };
@@ -1555,6 +1558,7 @@ function reproducir(eventos) {
       }
       case "resultado": registro.appendChild(linea("resultado", "└", e.texto)); break;
       case "error": registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); break;
+      case "aviso": registro.appendChild(linea("resultado aviso-l", "↻", e.texto)); break;
       case "permiso": {
         const t = tarjetaPermiso(e.id, e.pregunta, e.opinion), si = decisiones.get(e.id);
         t.querySelectorAll("button").forEach(b => b.disabled = true);

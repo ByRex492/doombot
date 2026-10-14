@@ -42,6 +42,8 @@ from doombot.backends.base import (
 #   accion      lo que va a hacer una herramienta, antes de hacerlo
 #   resultado   como salio, en una linea
 #   error       la herramienta fallo o no se autorizo
+#   aviso       algo que conviene saber y no es un fallo (un modelo sin cuota,
+#               y la cadena sigue con otro)
 Narrador = Callable[[str, str], None]
 
 

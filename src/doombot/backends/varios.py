@@ -93,7 +93,7 @@ class Cadena:
         A mitad de respuesta ya no: el usuario ya ha leido u oido parte de una,
         y empalmar otra distinta detras daria un texto sin sentido.
         """
-        fallos: list[str] = []
+        fallos: list[tuple[str, str]] = []
         for i, g in self._orden():
             trozos = g.stream(prompt, system=system, historial=historial)
             try:
@@ -128,7 +128,8 @@ class Cadena:
         return libres + apartados
 
     def _intentar(self, llamada: Callable[[Any], T]) -> T:
-        fallos: list[str] = []
+        # (detalle para el error si no responde ninguno, resumen para el aviso)
+        fallos: list[tuple[str, str]] = []
         for i, g in self._orden():
             try:
                 resultado = llamada(g)
@@ -139,33 +140,37 @@ class Cadena:
             return resultado
         raise self._ninguno(fallos)
 
-    def _fallo(self, i: int, g: Any, e: BackendError, fallos: list[str]) -> None:
-        if isinstance(e, LimiteAlcanzado):
+    def _fallo(self, i: int, g: Any, e: BackendError, fallos: list[tuple[str, str]]) -> None:
+        sin_cuota = isinstance(e, LimiteAlcanzado)
+        if sin_cuota:
             # Cada fallo seguido dobla el tiempo apartado (1, 2, 4... hasta 15
             # min): un Gemini saturado durante horas no debe costar una espera
             # en cada orden. Al primer acierto vuelve a cero.
             seguidos = getattr(g, "_doombot_fallos_seguidos", 0) + 1
             g._doombot_fallos_seguidos = seguidos
             g._doombot_apartado_hasta = self._reloj() + min(self._espera * 2 ** (seguidos - 1), 900)
-        fallos.append(str(e))
-        if self.avisar is not None and len(self.generadores) > 1:
-            self.avisar(f"{etiqueta(g)} no responde ({str(e).split(': ', 1)[-1]})")
+        detalle = str(e).split(": ", 1)[-1]
+        motivo = "sin cuota por ahora" if sin_cuota else f"no responde ({detalle})"
+        fallos.append((str(e), f"{etiqueta(g)} {motivo}"))
 
-    def _acierto(self, g: Any, fallos: list[str]) -> None:
+    def _acierto(self, g: Any, fallos: list[tuple[str, str]]) -> None:
+        # Un aviso por cambio, y no un error por cada modelo saltado: quedarse
+        # sin cuota gratuita es lo normal y para eso esta la cadena. Si no
+        # responde ninguno, eso si es un error, y lo lanza _ninguno.
         if fallos and self.avisar is not None:
-            self.avisar(f"sigo con {etiqueta(g)}")
+            self.avisar(f"cambio a {etiqueta(g)}: " + "; ".join(r for _, r in fallos))
         g._doombot_fallos_seguidos = 0
         self.ultimo = g
 
-    def _ninguno(self, fallos: list[str]) -> BackendError:
+    def _ninguno(self, fallos: list[tuple[str, str]]) -> BackendError:
         ahora = self._reloj()
         if all(self._apartado_hasta(g) > ahora for g in self.generadores):
             return LimiteAlcanzado(
                 "Todos los modelos gratuitos han llegado a su limite por ahora (suele ser por "
                 "minuto). Espera un poco y vuelve a pedirlo, o añade otro proveedor en "
-                "Primeros pasos.\n  " + "\n  ".join(fallos)
+                "Primeros pasos.\n  " + "\n  ".join(d for d, _ in fallos)
             )
-        return BackendError("Ningun modelo ha respondido:\n  " + "\n  ".join(fallos))
+        return BackendError("Ningun modelo ha respondido:\n  " + "\n  ".join(d for d, _ in fallos))
 
     def __repr__(self) -> str:
         return f"Cadena({self.model_name})"

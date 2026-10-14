@@ -26,6 +26,7 @@ _FORMATO = {
     "accion": "  → {}",
     "resultado": "    ✓ {}",
     "error": "    ✗ {}",
+    "aviso": "    ↻ {}",
 }
 
 

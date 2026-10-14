@@ -62,7 +62,7 @@ def _releer_env() -> None:
 # Lo que se guarda de una conversacion para volver a pintarla al abrirla: lo
 # que se ve en el registro. Los cambios de estado del nucleo no hacen falta.
 _PERSISTIBLES = frozenset({
-    "comentario", "herramienta", "accion", "resultado", "error", "permiso", "permiso_fin",
+    "comentario", "herramienta", "accion", "resultado", "error", "aviso", "permiso", "permiso_fin",
     "respuesta", "fallo", "visual",
 })  # fmt: skip
 

@@ -216,7 +216,16 @@ def test_si_el_primero_falla_responde_el_siguiente_y_se_avisa():
     assert cadena.generate("hola") == "soy b"
     assert cadena.paso(["hola"], []).texto == "soy b"
     assert cadena.ultimo is b
-    assert avisos[:2] == ["a no responde (sin conexion)", "sigo con b"]
+    assert avisos[0] == "cambio a b: a no responde (sin conexion)"
+
+
+def test_quedarse_sin_cuota_es_un_aviso_por_cambio_no_uno_por_modelo():
+    avisos: list[str] = []
+    sin_cuota = [Juguete(n, fallo=LimiteAlcanzado(f"{n}: limite")) for n in "ab"]
+    cadena = Cadena([*sin_cuota, Juguete("c")], avisar=avisos.append)
+
+    assert cadena.generate("hola") == "soy c"
+    assert avisos == ["cambio a c: a sin cuota por ahora; b sin cuota por ahora"]
 
 
 def test_sin_cuota_se_aparta_un_rato_y_luego_vuelve():

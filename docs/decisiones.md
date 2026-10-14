@@ -1679,3 +1679,79 @@ viven en carpetas, y así no hay que migrar nada.
 
 **Sin verificar**: un proyecto real de varios chats con modelos gratuitos, y cuánto aguanta la
 cuota con el resumen por orden.
+
+---
+
+## D-041 — D.O.O.M nativo para Meta Quest: Spatial SDK en Kotlin, escena en código, todo por API
+
+**Contexto.** 14/10/2026. El usuario quiere D.O.O.M en sus Meta Quest 3S, en realidad mixta y sin
+PC. Encargo completo en `quest-app/docs/prompt-original.md`. Primero pidió plan y espera; después,
+hacerlo todo de una vez para instalarlo cuanto antes, con permiso para instalar lo necesario. Las
+gafas no estaban conectadas: **nada de esto se ha ejecutado aún en unas gafas**.
+
+**Decisión.**
+1. **App aparte, en `quest-app/`**, con Meta Spatial SDK 0.14.0 (Kotlin, Compose para los paneles).
+   No comparte código con el Python: comparte ideas.
+   - el catálogo de proveedores;
+   - la cadena de modelos con aviso tranquilo (D-034, D-039);
+   - la capa refleja de órdenes;
+   - el prompt honesto de `identity.py`;
+   - los 5 estados del orbe de `hud.html` con su ataque y caída.
+2. **Escena en código, sin Spatial Editor.** Sus escenas se exportan con un CLI que solo existe para
+   Mac y Windows, y la plantilla oficial no compila en Linux por ese paso (verificado). Sin él, la
+   plantilla compila en el portátil.
+3. **Todo es un panel de Compose en una entidad con `Grabbable(PIVOT_Y)`**: con la mano (pellizcar
+   y arrastrar) se coge y se deja en la habitación, y sus botones se pulsan con el mismo gesto
+   (`IsdkFeature`). Paneles:
+   - el orbe con subtítulos;
+   - Sistema (hora, tiempo de Open-Meteo sin clave, batería, cadena de modelos);
+   - Registro (la conversación);
+   - Aplicaciones (abrir apps instaladas y webs);
+   - Ajustes.
+
+   Se colocan respecto a la cabeza al arrancar y con «Recolocar».
+4. **Claves cifradas en las gafas** (Keystore AES-GCM + DataStore). La tarea Gradle
+   `comprobarClaves` impide compilar si algo del código tiene forma de clave (probado con una falsa).
+5. **Ajustes desde el móvil**: NanoHTTPD en el puerto 8787, solo mientras Ajustes está abierto y como
+   mucho 10 minutos. Lleva token de un solo uso en el QR, PIN de 6 cifras y 3 intentos. **Y todo lo
+   mismo desde las propias gafas** (pedido expreso): claves, probar, cadena de modelos con la lista
+   real de `/models`, voz a texto, personalidad, ciudad, y los controles de la app.
+6. **Voz**:
+   - botón «Hablar»: graba con VAD por energía y se corta tras 1,2 s de silencio;
+   - transcribe con Whisper de Groq (o el que se elija);
+   - el agente con herramientas (abrir app o enlace, volumen, batería, listar apps);
+   - responde con el TTS de Android; si las gafas no tienen voz en español, en subtítulos.
+
+   Barge-in: pulsar «Hablar» mientras responde la corta.
+
+**Desviaciones del encargo, a sabiendas.**
+- **El orbe es un panel con el dibujo del HUD**, no una malla 3D. Es el mismo código de dibujo que
+  ya funciona y se coge como los demás. Una esfera con *shader* propio puede venir después.
+- **Empieza anclado y centrado**, y «Seguirme» activa el seguimiento perezoso. El encargo decía lo
+  contrario, pero lo último que pidió el usuario fue «la burbuja centrada, que se pueda mover».
+- **Sin interfaces separadas `LlmProvider`, `VisionProvider`, `SttProvider` y `TtsProvider`**:
+  `ClienteIA` cubre chat, modelos y transcripción, y `Voz` el TTS. Se separarán cuando llegue la
+  segunda implementación (visión en la fase 3, TTS por API).
+- **Aún sin respuestas en streaming ni TTS por frases**, sin palabra de activación (se pulsa
+  «Hablar») y sin el gesto de pellizco en el aire.
+- **No se leen claves de `local.properties` en debug**: acabarían dentro del APK, y el móvil ya lo
+  hace cómodo.
+- **`supportedDevices="all"`**: lo usa un ejemplo oficial; así no hay que adivinar cómo se llama la
+  3S en ese campo.
+
+**Riesgos conocidos.**
+- Del móvil a las gafas, las claves van por HTTP en la red de casa: sin cifrar en la Wi-Fi.
+  Mitigado con el token, el PIN y los 10 minutos. HTTPS con certificado propio daría avisos en el
+  móvil.
+- El teclado virtual dentro de un panel de Compose no se ha probado.
+- Abrir otra app inmersiva desde D.O.O.M la cierra: Horizon OS solo muestra una a la vez.
+
+**Verificado.**
+- Compila en Linux con JDK 17 completo (Temurin, en `~/.jdks`); APK de depuración de 85 MB.
+- 3 tests JVM: capa refleja y catálogo.
+- `comprobarClaves`: falla con una clave falsa y pasa sin ella.
+- La página del móvil, en un Chromium sin ventana contra una API simulada: PIN, lista de modelos,
+  añadir a la cadena, sin errores.
+
+**Sin verificar**: todo lo que ocurre en las gafas. Se prueba en el sobremesa con
+`quest-app/scripts/deploy.ps1`.

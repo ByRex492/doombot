@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- El orbe de D.O.O.M como icono: nucleo, anillo de marcas y dos arcos orbitales. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <path android:fillColor="#1A29D3FF" android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0"/>
+  <path android:fillColor="#8FF3FF" android:pathData="M54,54m-11,0a11,11 0,1 1,22 0a11,11 0,1 1,-22 0"/>
+  <path android:fillColor="#00000000" android:strokeColor="#29D3FF" android:strokeWidth="2.2"
+      android:strokeLineCap="round" android:pathData="M54,54m-20,0a20,20 0,1 1,40 0a20,20 0,1 1,-40 0"/>
+  <path android:fillColor="#00000000" android:strokeColor="#8FF3FF" android:strokeWidth="2.6"
+      android:strokeLineCap="round" android:pathData="M30,40 A27,27 0 0 1 64,28"/>
+  <path android:fillColor="#00000000" android:strokeColor="#29D3FF" android:strokeWidth="2.6"
+      android:strokeLineCap="round" android:pathData="M78,68 A27,27 0 0 1 46,80"/>
+</vector>

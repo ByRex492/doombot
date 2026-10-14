@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>D.O.O.M · Ajustes</title>
+<style>
+  :root { --fondo:#03060b; --panel:#07131e; --borde:rgba(41,211,255,.35); --c1:#29d3ff; --c2:#8ff3ff;
+          --texto:#d6ecf4; --tenue:#8aa3b2; --ok:#3dffa0; --mal:#ff4d5e; --mono:ui-monospace,Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fondo); color:var(--texto); font:15px/1.5 system-ui,sans-serif; padding:16px; }
+  h1 { font:600 14px var(--mono); letter-spacing:.3em; color:var(--c1); margin:4px 0 14px; }
+  h2 { font:600 12px var(--mono); letter-spacing:.2em; text-transform:uppercase; color:var(--c2); margin:22px 0 8px; }
+  .caja { background:var(--panel); border:1px solid var(--borde); border-radius:10px; padding:12px; margin:8px 0; }
+  .fila { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+  input, select, textarea { flex:1 1 180px; min-width:0; background:#000; color:var(--texto); border:1px solid var(--borde);
+          border-radius:6px; padding:10px; font:14px var(--mono); }
+  textarea { width:100%; min-height:110px; }
+  button { background:transparent; color:var(--c2); border:1px solid var(--borde); border-radius:6px; padding:10px 12px;
+           font:600 12px var(--mono); letter-spacing:.08em; cursor:pointer; }
+  button.prim { border-color:var(--c1); background:rgba(41,211,255,.14); color:#fff; }
+  .ok { color:var(--ok); } .mal { color:var(--mal); } .tenue { color:var(--tenue); font-size:13px; }
+  .cadena li { display:flex; gap:6px; align-items:center; margin:6px 0; font:13px var(--mono); }
+  .cadena li span { flex:1; overflow-wrap:anywhere; }
+  .cadena button { padding:6px 9px; }
+  a { color:var(--c1); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<h1>D.O.O.M · AJUSTES</h1>
+
+<section id="entrada" class="caja">
+  <p>Escribe el PIN de 6 cifras que ves en las gafas.</p>
+  <div class="fila"><input id="pin" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"><button class="prim" id="b-entrar">Entrar</button></div>
+  <p id="e-pin" class="mal"></p>
+</section>
+
+<main id="todo" hidden>
+  <h2>Proveedores y claves</h2>
+  <p class="tenue">Las claves se guardan cifradas en las gafas. Esta página nunca las vuelve a mostrar.</p>
+  <div id="provs"></div>
+  <details class="caja"><summary>Añadir otro proveedor compatible con OpenAI</summary>
+    <div class="fila"><input id="n-id" placeholder="nombre (ej. cerebras)"><input id="n-url" placeholder="https://api.ejemplo.com/v1"><button id="b-nuevo">Añadir</button></div>
+  </details>
+
+  <h2>Cadena de modelos</h2>
+  <p class="tenue">Responde el primero; si se queda sin cuota, el siguiente. Los modelos se piden al proveedor en este momento.</p>
+  <div class="caja">
+    <div class="fila"><select id="m-prov"></select><button id="b-listar">Ver modelos</button></div>
+    <div class="fila"><select id="m-mod"></select><button class="prim" id="b-anadir">Añadir a la cadena</button></div>
+    <ul class="cadena" id="cadena"></ul>
+  </div>
+
+  <h2>Voz a texto</h2>
+  <div class="caja"><div class="fila"><input id="stt" placeholder="groq:whisper-large-v3-turbo"></div>
+    <p class="tenue">proveedor:modelo. Vacío = Whisper de Groq si hay clave.</p></div>
+
+  <h2>Personalidad</h2>
+  <div class="caja"><textarea id="perso"></textarea></div>
+
+  <h2>Ciudad del tiempo</h2>
+  <div class="caja"><div class="fila"><input id="ciudad"></div></div>
+
+  <div class="fila"><button class="prim" id="b-guardar">Guardar todo</button><span id="estado-g" class="tenue"></span></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let est = null, cadena = [];
+async function api(ruta, datos) {
+  const r = await fetch(ruta, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos || {}) });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+$("b-entrar").onclick = async () => {
+  $("e-pin").textContent = "";
+  try {
+    const r = await api("/api/entrar", { pin: $("pin").value.trim() });
+    if (!r.ok) { $("e-pin").textContent = r.error || "PIN incorrecto"; return; }
+    $("entrada").hidden = true; $("todo").hidden = false; pintar(await api("/api/estado"));
+  } catch (e) { $("e-pin").textContent = e.message; }
+};
+function pintar(e) {
+  est = e; cadena = [...e.cadena];
+  const cont = $("provs"); cont.innerHTML = "";
+  for (const p of e.proveedores) {
+    const c = document.createElement("div"); c.className = "caja";
+    c.innerHTML = `<b>${p.titulo}</b> <span class="${p.configurada ? "ok" : "tenue"}">${p.configurada ? "· clave puesta" : "· sin clave"}</span>
+      ${p.alta ? `<div class="tenue">La clave se crea en <a href="${p.alta}" target="_blank" rel="noopener">${p.alta}</a></div>` : `<div class="tenue">${p.url}</div>`}
+      <div class="fila"><input type="password" placeholder="Pega aquí la clave" autocomplete="off"><button class="prim">Guardar</button><button>Probar</button>${p.configurada ? "<button>Quitar</button>" : ""}${p.propio ? "<button>Borrar proveedor</button>" : ""}</div>
+      <div class="tenue res"></div>`;
+    const [inp, bG, bP, b3, b4] = c.querySelectorAll("input,button");
+    const res = c.querySelector(".res");
+    bG.onclick = async () => { if (!inp.value.trim()) { res.textContent = "Pega la clave primero."; return; } pintar(await api("/api/clave", { proveedor: p.id, clave: inp.value.trim() })); };
+    bP.onclick = async () => { res.textContent = "Probando…"; res.textContent = (await api("/api/probar", { proveedor: p.id })).resultado; };
+    if (p.configurada && b3) b3.onclick = async () => pintar(await api("/api/clave", { proveedor: p.id, clave: "" }));
+    const bBorrar = p.configurada ? b4 : b3;
+    if (p.propio && bBorrar) bBorrar.onclick = async () => pintar(await api("/api/proveedor", { id: p.id, quitar: true }));
+    cont.appendChild(c);
+  }
+  $("m-prov").innerHTML = e.proveedores.filter(p => p.configurada).map(p => `<option value="${p.id}">${p.titulo}</option>`).join("") || "<option value=''>Pon antes una clave</option>";
+  $("stt").value = e.stt; $("perso").value = e.personalidad; $("ciudad").value = e.ciudad;
+  pintarCadena();
+}
+function pintarCadena() {
+  const ul = $("cadena"); ul.innerHTML = "";
+  if (!cadena.length) ul.innerHTML = "<li class='tenue'>Vacía: añade al menos un modelo.</li>";
+  cadena.forEach((m, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>${i + 1}. ${m}</span><button>↑</button><button>↓</button><button>✕</button>`;
+    const [s, b, q] = li.querySelectorAll("button");
+    s.onclick = () => { if (i) { [cadena[i - 1], cadena[i]] = [cadena[i], cadena[i - 1]]; pintarCadena(); } };
+    b.onclick = () => { if (i < cadena.length - 1) { [cadena[i + 1], cadena[i]] = [cadena[i], cadena[i + 1]]; pintarCadena(); } };
+    q.onclick = () => { cadena.splice(i, 1); pintarCadena(); };
+    ul.appendChild(li);
+  });
+}
+$("b-listar").onclick = async () => {
+  const prov = $("m-prov").value; if (!prov) return;
+  $("m-mod").innerHTML = "<option>Cargando…</option>";
+  try {
+    const r = await api("/api/modelos", { proveedor: prov });
+    if (r.error) throw new Error(r.error);
+    const sug = (est.proveedores.find(p => p.id === prov) || {}).sugeridos || [];
+    $("m-mod").innerHTML = r.modelos.map(m => `<option ${sug.includes(m) ? "selected" : ""}>${m}</option>`).join("");
+  } catch (e) { $("m-mod").innerHTML = `<option>${e.message}</option>`; }
+};
+$("b-anadir").onclick = () => {
+  const p = $("m-prov").value, m = $("m-mod").value;
+  if (!p || !m || m.startsWith("Cargando")) return;
+  const e = `${p}:${m}`; if (!cadena.includes(e)) cadena.push(e); pintarCadena();
+};
+$("b-nuevo").onclick = async () => {
+  const id = $("n-id").value.trim(), url = $("n-url").value.trim();
+  if (!id || !url.startsWith("http")) return;
+  pintar(await api("/api/proveedor", { id, url }));
+};
+$("b-guardar").onclick = async () => {
+  $("estado-g").textContent = "Guardando…";
+  pintar(await api("/api/config", { cadena, stt: $("stt").value.trim(), personalidad: $("perso").value, ciudad: $("ciudad").value.trim() }));
+  $("estado-g").textContent = "Guardado. Las gafas ya lo usan.";
+};
+</script>
+</body>
+</html>

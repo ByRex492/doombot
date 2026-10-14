@@ -1,7 +1,7 @@
 ---
 name: diseno
 description: Diseño visual e interfaces. Composición, color, tipografía, jerarquía, accesibilidad y experiencia de uso; revisa diseños existentes y propone mejoras concretas.
-allowed-tools: buscar_web navegar leer_pagina clicar volver_atras abrir_en_navegador listar_directorio leer_fichero buscar_ficheros escribir_fichero mostrar_grafica calcular
+allowed-tools: buscar_web leer_url navegar leer_pagina clicar volver_atras abrir_en_navegador listar_directorio leer_fichero buscar_ficheros escribir_fichero mostrar_grafica calcular
 metadata:
   titulo: Diseño
   color: "#b48bff"

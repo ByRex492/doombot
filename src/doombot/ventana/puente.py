@@ -351,6 +351,7 @@ class Puente:
             "avisos": list(getattr(self._montaje, "avisos", [])),
             "herramientas": len(self._montaje.agente.herramientas),
             "revisor": self._montaje.agente.revisar is not None,
+            "repaso": getattr(self._montaje.agente.repasar, "modo", "no"),
             **self.modos(),
         }
 

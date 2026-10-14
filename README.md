@@ -334,6 +334,12 @@ tema (Jarvis, Holograma, Neón, Matriz, Glaciar, Carmesí) o colores propios,
 brillo, rejilla, velocidad y efectos; se guarda en este equipo. Las confirmaciones son botones, con la segunda opinión del otro
 modelo debajo. Mientras trabaja, el botón de enviar pasa a ser **Parar**.
 
+Antes de darte una respuesta que se apoya en páginas o ficheros, otro modelo
+de la lista la repasa: comprueba los datos contra lo consultado y las fuentes
+(D-039, `DOOMBOT_AGENT_REFINAR`). Para leer páginas usa Jina Reader, que no
+necesita clave ni abre el navegador; con `DOOMBOT_JINA_API_KEY`, gratuita,
+puede leer más por minuto.
+
 **Primeros pasos.** Si no hay ningún modelo configurado, la ventana empieza
 por ahí (y después está siempre en la cabecera): cómo conseguir cada clave
 gratuita, un enlace a la página, una caja para pegarla y los botones

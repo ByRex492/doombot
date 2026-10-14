@@ -1,7 +1,7 @@
 ---
 name: ciencias
 description: Ciencias. Matemáticas, física, química y estadística paso a paso, con unidades y cálculos exactos; representa los resultados con gráficas.
-allowed-tools: calcular mostrar_grafica buscar_web navegar leer_pagina abrir_en_navegador leer_fichero
+allowed-tools: calcular mostrar_grafica buscar_web leer_url navegar leer_pagina abrir_en_navegador leer_fichero
 metadata:
   titulo: Ciencias
   color: "#ffc23d"

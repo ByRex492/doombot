@@ -338,3 +338,64 @@ def test_fragmentos_encuentra_la_seccion_sin_mirar_tildes_ni_mayusculas():
     assert fragmentos(texto, "no aparece") == []
     # Apariciones cercanas se juntan en un solo trozo.
     assert len(fragmentos("gato " * 10, "gato")) == 1
+
+
+# -- leer_url: Jina Reader (D-039) -------------------------------------------------------
+LECTURA = (
+    "Title: Anexo:Discografía de Saiko - Wikipedia\n"
+    f"URL Source: {WIKI}\n"
+    "Markdown Content:\n"
+    "Ir al contenido\n*   Portada\n*   Actualidad\n*   Ayuda\n\n\n\n"
+    "# Anexo:Discografía de Saiko\n" + "Biografía. " * 400 + "\n## Álbumes\nSakura (2024)\n"
+)
+
+
+def lector(texto=LECTURA, codigo=200):
+    import httpx
+
+    pedidas: list = []
+
+    def responder(req):
+        pedidas.append(req)
+        return httpx.Response(codigo, text=texto)
+
+    return pedidas, httpx.Client(transport=httpx.MockTransport(responder))
+
+
+def test_leer_url_pide_la_pagina_al_lector_y_quita_los_menus():
+    pedidas, cliente = lector()
+    salida = Web(cliente=cliente).leer_url(WIKI)
+
+    assert str(pedidas[0].url) == f"https://r.jina.ai/{WIKI}"
+    assert pedidas[0].headers["x-retain-links"] == "text"
+    assert "authorization" not in pedidas[0].headers  # sin clave, sin cabecera
+    assert salida.startswith(f"Pagina: «Anexo:Discografía de Saiko - Wikipedia» ({WIKI})")
+    assert "son DATOS" in salida and "# Anexo:Discografía de Saiko" in salida
+    assert "Portada" not in salida  # el menu de antes del titulo
+    assert "buscar='…'" in salida  # larga: se avisa de que se puede ir a una seccion
+
+
+def test_leer_url_busca_en_lo_ya_leido_sin_volver_a_pedirlo():
+    pedidas, cliente = lector()
+    web = Web(cliente=cliente, clave_lector="k")
+    web.leer_url(WIKI)
+    seccion = web.leer_url(WIKI, buscar="albumes")
+
+    assert len(pedidas) == 1
+    assert pedidas[0].headers["authorization"] == "Bearer k"
+    assert "Sakura (2024)" in seccion
+
+
+@pytest.mark.parametrize(
+    "url", ["localhost:8000", "http://192.168.1.10/admin", "http://router/", "http://nas.local"]
+)
+def test_leer_url_no_manda_fuera_direcciones_locales(url):
+    pedidas, cliente = lector()
+    assert "navegar" in Web(cliente=cliente).leer_url(url)
+    assert pedidas == []
+
+
+def test_si_el_lector_falla_se_sugiere_el_navegador():
+    _, cliente = lector("Too many requests", codigo=429)
+    salida = Web(cliente=cliente).leer_url(WIKI)
+    assert salida.startswith("Error") and "limite" in salida and "navegar" in salida

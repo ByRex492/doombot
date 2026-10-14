@@ -48,6 +48,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.doombot.quest.Controlador
 import com.doombot.quest.Doom
 import com.doombot.quest.TipoLinea
+import com.doombot.quest.Ventana
 import com.doombot.quest.ia.Catalogo
 import com.doombot.quest.sistema.App
 import com.google.zxing.BarcodeFormat
@@ -63,9 +64,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun PanelSistema(ctl: Controlador) {
   val ahora by produceState(Date()) { while (true) { value = Date(); delay(1000) } }
-  Marco("Sistema", "SYS-01") {
+  Marco("Sistema", "SYS-01", { ControlesVentana(ctl, Ventana.SISTEMA) }) {
     Etiqueta("Hora")
-    Text(SimpleDateFormat("HH:mm", Locale("es", "ES")).format(ahora), color = Hud.c2, fontFamily = Hud.mono, fontSize = 40.sp, fontWeight = FontWeight.SemiBold)
+    Text(SimpleDateFormat("HH:mm", Locale("es", "ES")).format(ahora), color = Hud.c2, fontFamily = Hud.mono, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
     Text(SimpleDateFormat("EEEE d 'de' MMMM", Locale("es", "ES")).format(ahora), color = Hud.tenue, fontSize = 13.sp)
     Etiqueta(Doom.tiempo?.ciudad ?: "Tiempo")
     Text(Doom.tiempo?.let { "${it.grados} °C · ${it.descripcion}" } ?: "…", color = Hud.texto, fontSize = 15.sp)
@@ -73,14 +74,13 @@ fun PanelSistema(ctl: Controlador) {
     Text("Bateria ${Doom.bateria?.let { "$it %" } ?: "…"}", color = Hud.texto, fontSize = 14.sp)
     Etiqueta("Cadena de modelos")
     if (Doom.cadena.isEmpty()) Text("Ninguno todavia", color = Hud.aviso, fontSize = 13.sp)
-    Doom.cadena.take(5).forEachIndexed { i, m -> Text("${i + 1}. $m", color = Hud.c2, fontFamily = Hud.mono, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Tres como mucho: con la cabecera de mandos de ventana, mas no caben y cortaban los botones.
+    Doom.cadena.take(3).forEachIndexed { i, m -> Text("${i + 1}. $m", color = Hud.c2, fontFamily = Hud.mono, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
       Boton("Ajustes", activo = Doom.ajustesVisibles) { if (Doom.ajustesVisibles) ctl.cerrarAjustes() else ctl.abrirAjustes() }
       Boton("Apps", activo = Doom.appsVisibles) { ctl.alternarApps() }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      Boton("Vol −") { ctl.volumen(false) }
-      Boton("Vol +") { ctl.volumen(true) }
+      Boton("Vol−") { ctl.volumen(false) }
+      Boton("Vol+") { ctl.volumen(true) }
     }
   }
 }
@@ -91,7 +91,7 @@ fun PanelChat(ctl: Controlador) {
   var texto by remember { mutableStateOf("") }
   val lista = rememberLazyListState()
   LaunchedEffect(Doom.registro.size) { if (Doom.registro.isNotEmpty()) lista.animateScrollToItem(Doom.registro.size - 1) }
-  Marco("Registro", "LOG") {
+  Marco("Registro", "LOG", { ControlesVentana(ctl, Ventana.REGISTRO) }) {
     SelectorModo(ctl)
     LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = lista, verticalArrangement = Arrangement.spacedBy(6.dp)) {
       items(Doom.registro) { l ->
@@ -127,7 +127,7 @@ fun PanelApps(ctl: Controlador) {
   val apps by produceState(emptyList<App>()) { value = withContext(Dispatchers.IO) { ctl.apps() } }
   val iconos = remember { mutableStateMapOf<String, ImageBitmap>() }
   var url by remember { mutableStateOf("") }
-  Marco("Aplicaciones", "APP-03") {
+  Marco("Aplicaciones", "APP-03", { ControlesVentana(ctl, Ventana.APPS) }) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
       Campo(url, { url = it }, "Direccion o busqueda", Modifier.weight(1f), alEnviar = { ctl.abrirEnlace(url); url = "" })
       Boton("Abrir") { ctl.abrirEnlace(url); url = "" }
@@ -158,7 +158,7 @@ fun PanelApps(ctl: Controlador) {
 @Composable
 fun PanelAjustes(ctl: Controlador) {
   val cfg = Doom.config
-  Marco("Ajustes", "CFG-04") {
+  Marco("Ajustes", "CFG-04", { ControlesVentana(ctl, Ventana.AJUSTES) }) {
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       // Desde el movil
       Etiqueta("Desde el movil (mas comodo para pegar claves)")

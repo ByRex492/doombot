@@ -94,7 +94,12 @@ fun tonoDe(c: Color): Float = hslDe(c).first
 
 /** El marco de cada panel: cabecera con etiqueta y codigo, como en la ventana de escritorio. */
 @Composable
-fun Marco(etiqueta: String, codigo: String, contenido: @Composable ColumnScope.() -> Unit) {
+fun Marco(
+    etiqueta: String,
+    codigo: String,
+    controles: (@Composable () -> Unit)? = null,
+    contenido: @Composable ColumnScope.() -> Unit,
+) {
   Column(
       Modifier.fillMaxSize()
           .clip(RoundedCornerShape(16.dp))
@@ -103,9 +108,9 @@ fun Marco(etiqueta: String, codigo: String, contenido: @Composable ColumnScope.(
           .padding(horizontal = 16.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
       Text(etiqueta.uppercase(), color = Hud.c1, fontFamily = Hud.mono, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 3.sp)
-      Text(codigo, color = Hud.muyTenue, fontFamily = Hud.mono, fontSize = 11.sp, letterSpacing = 1.sp)
+      if (controles != null) controles() else Text(codigo, color = Hud.muyTenue, fontFamily = Hud.mono, fontSize = 11.sp, letterSpacing = 1.sp)
     }
     contenido()
   }

@@ -45,6 +45,14 @@ es para tus gafas, no para la tienda.
 4. La primera vez, D.O.O.M baja los modelos de «hey jarvis» (3,5 MB) y pide el micrófono.
 
 ## Uso
+- **El brazalete**: levanta la muñeca izquierda y mírala. Aparece un panel pequeño, como un reloj,
+  con todo a mano: abrir o minimizar cada ventana, curvarlas, cambiarles el tamaño, encender o apagar
+  el micrófono y «hey jarvis», recolocar, modo, tema, volumen, vigilante y ajustes. «Fijar» lo deja
+  siempre a la vista.
+- **Cada ventana** tiene en su cabecera ◠ (curvarla o volverla plana), − y + (tamaño) y _
+  (minimizar). Una ventana minimizada se vuelve a abrir desde el brazalete, en el mismo sitio y con su
+  tamaño. Todo eso se recuerda al cerrar la app. «Esquinas», en el brazalete, activa las asas de Meta
+  para redimensionar arrastrando las esquinas (experimental).
 - **«Hey jarvis»** y habla; o el botón «Hablar». Te escucha hasta que te callas y responde en
   voz alta según escribe (por frases), con subtítulos.
 - **Pellizco** (índice y pulgar) sobre un botón: pulsar. **Pellizcar y arrastrar** un panel o la

@@ -29,6 +29,14 @@ ampliación del 15/10 de **D-041** (`docs/decisiones.md`).
 - [ ] Un flujo de n8n en la lista: pide confirmación, «sí» lo dispara, «no» no.
 - [ ] Modo Ciencias: «energía cinética de 3 kg a 12 m/s» usa calcular.
 
+## Después: ventanas y brazalete
+Ventanas curvas, tamaño, minimizar y abrir, y el brazalete de la muñeca izquierda (ampliación 2 de
+D-041). Instalada en las Quest 3S del usuario: arranca y va a unos 90 fps (captura por adb).
+- [ ] Levantar la muñeca izquierda y mirarla: sale el brazalete. «Fijar» lo deja a la vista.
+- [ ] Desde el brazalete: abrir y minimizar cada ventana, «Curvas», «Tamaño −/+», «Micro no».
+- [ ] En la cabecera de una ventana: ◠, −, +, _. Al reabrirla, vuelve al mismo sitio.
+- [ ] «Esquinas» (experimental): las asas de Meta. Si estorban, se apagan igual.
+
 ## Pendiente
 - Lo que falle en las gafas: nada de esto se ha ejecutado aún allí.
 - El orbe en 3D (malla con shader), si se quiere.

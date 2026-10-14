@@ -1797,3 +1797,26 @@ orbe sigue siendo un panel.
 
 **Verificado**: compila en Windows (release, 109 MB) y 17 tests JVM en verde. **Sin verificar**:
 todo en las gafas (cámara, voz, «hey jarvis», streaming con cada proveedor).
+
+### Ampliación del 15/10/2026 (2): ventanas curvas, tamaño, minimizar y el brazalete
+
+Pedido: ventanas curvas, que cambien de tamaño, que se abran y minimicen, y un brazalete con todo.
+Cada pieza, mirada antes con `javap` en el SDK 0.14 (regla del encargo):
+
+- **Curvas**: `CylinderShapeOptions(radius, width, height)`. La forma de un panel se fija al
+  registrarlo, así que cada ventana se registra dos veces (plana y curva) y curvarla es rehacerla
+  con el otro id en el mismo sitio. Radio = la distancia a la que se pone: la curva abraza al usuario.
+- **Tamaño**: `Scale`, con − y + en cada ventana y en el brazalete (0,5×–2×). Las asas nativas
+  (`IsdkPanelGrabHandle`: barra y esquinas para redimensionar) quedan como opción «Esquinas»,
+  apagada: sin probarlas no se sabe si chocan con `Grabbable`.
+- **Minimizar**: se quita la entidad y se recuerda su pose; al abrirla vuelve al mismo sitio. Lo
+  abierto, lo curvo y el tamaño se guardan entre sesiones (Ajustes siempre empieza cerrada).
+- **Brazalete**: un panel de 20×27 cm a 1400 dp/m sobre la mano izquierda del `AvatarBody` del
+  jugador (con mandos, el izquierdo), girado hacia la cara. Aparece al levantar la muñeca y mirarla
+  (umbral más estricto para aparecer que para seguir, y un margen al apartar la vista para poder
+  pulsar) o siempre si está fijado. Escondido, se aparca lejos para que no capte pellizcos.
+- **Micrófono**: un interruptor general; apagado, ni «hey jarvis» ni «Hablar».
+
+**Verificado en las gafas** (Quest 3S, captura por adb): arranca, las cabeceras llevan sus mandos
+y la release va a unos 90 fps. **Sin verificar**: el brazalete con la mano, las curvas y las
+esquinas de Meta.

@@ -5,6 +5,14 @@
   <item type="id" name="panel_chat" />
   <item type="id" name="panel_apps" />
   <item type="id" name="panel_ajustes" />
+  <!-- Las mismas ventanas en curvo: la forma de un panel se fija al registrarlo. -->
+  <item type="id" name="panel_orbe_c" />
+  <item type="id" name="panel_sistema_c" />
+  <item type="id" name="panel_chat_c" />
+  <item type="id" name="panel_apps_c" />
+  <item type="id" name="panel_ajustes_c" />
+  <!-- El brazalete de la muñeca izquierda. -->
+  <item type="id" name="panel_brazalete" />
   <!-- Paneles de informacion que coloca el agente (fase 4): tres huecos. -->
   <item type="id" name="panel_info_0" />
   <item type="id" name="panel_info_1" />

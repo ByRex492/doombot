@@ -38,7 +38,9 @@ consola sin la carpeta actual en la ruta de busqueda, llama a `.\gradlew.bat`, n
 ## Estructura
 | Fichero | Qué |
 |---|---|
-| `DoomActivity.kt` | Escena: passthrough, registro de paneles, colocación respecto a la cabeza, "Seguirme" |
+| `DoomActivity.kt` | Escena: passthrough, registro de paneles (cada ventana plana y curva), colocación, "Seguirme", el brazalete en la muñeca |
+| `Ventanas.kt` | Las ventanas y su estado: abierta, curva, tamaño (se guarda) |
+| `ui/Brazalete.kt` | El brazalete y los mandos de cada ventana (◠ − + _) |
 | `Controlador.kt` | Une las piezas: lo que pulsa un panel llega aquí |
 | `Estado.kt` | Estado compartido de Compose (`Doom`): orbe, subtítulos, registro, tiempo... |
 | `ui/Orbe.kt` | El orbe, port de `ui/prototipo/hud.html` (mismos 5 estados y parámetros) |

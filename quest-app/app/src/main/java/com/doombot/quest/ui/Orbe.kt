@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.doombot.quest.Controlador
 import com.doombot.quest.Doom
 import com.doombot.quest.EstadoOrbe
+import com.doombot.quest.Ventana
 import com.doombot.quest.ia.Modos
 import kotlin.math.PI
 import kotlin.math.cos
@@ -186,7 +187,8 @@ fun PanelOrbe(ctl: Controlador) {
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
-    OrbeAnimado(Modifier.fillMaxWidth().aspectRatio(1f))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { ControlesVentana(ctl, Ventana.ORBE) }
+    OrbeAnimado(Modifier.fillMaxWidth().weight(1f, fill = false).aspectRatio(1f))
     Text(
         Doom.orbe.etiqueta.uppercase(),
         modifier =

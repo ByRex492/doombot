@@ -47,8 +47,10 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
 
   interface Escena {
     fun recolocar()
-    fun mostrarAjustes(visible: Boolean)
-    fun mostrarApps(visible: Boolean)
+    /** Crea, quita o rehace la ventana segun ``Doom.ventana(v)``: abierta, curva y tamaño. */
+    fun mostrarVentana(v: Ventana)
+    /** Rehace todas las ventanas abiertas (al activar o quitar las asas de Meta). */
+    fun rehacerVentanas()
     /** Pide permisos de Android; ``alTerminar(true)`` si se conceden todos. */
     fun pedirPermisos(permisos: Array<String>, alTerminar: (Boolean) -> Unit)
     /** Crea o quita el panel de informacion del hueco ``n`` (0..2). */
@@ -92,7 +94,8 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
     Doom.anotar(TipoLinea.COMENTARIO, "A sus ordenes, Mi Señor. Diga «hey jarvis» o pulse «Hablar».")
     ambito.launch {
       // La palabra de activacion necesita el micro: se pide al arrancar solo si esta activada.
-      if (almacen.config().activacion) escena.pedirPermisos(arrayOf(Manifest.permission.RECORD_AUDIO)) { if (it) escucharPalabra() }
+      val c = almacen.config()
+      if (c.activacion && c.micro) escena.pedirPermisos(arrayOf(Manifest.permission.RECORD_AUDIO)) { if (it) escucharPalabra() }
     }
   }
 
@@ -114,9 +117,107 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
             c.cadena.isEmpty() -> "Hay claves pero ningun modelo en la cadena: elijalos en Ajustes."
             else -> ""
           }
-      if (!c.activacion) palabra.detener()
+      if (!c.activacion || !c.micro) palabra.detener()
       programarVigilante(c.vigilante)
+      Doom.micro = c.micro
+      Doom.brazaleteFijo = c.brazaleteFijo
+      if (Doom.esquinas != c.esquinas) {
+        Doom.esquinas = c.esquinas
+        escena.rehacerVentanas()
+      }
+      // Las ventanas guardadas (curva, tamaño, minimizada). Ajustes siempre empieza cerrada.
+      for (v in Ventana.entries) {
+        if (v == Ventana.AJUSTES) continue
+        val guardada = c.ventanas[v.name] ?: EstadoVentana.porDefecto(v)
+        if (guardada != Doom.ventana(v)) {
+          Doom.ventanas[v] = guardada
+          escena.mostrarVentana(v)
+        }
+      }
+      Doom.appsVisibles = Doom.ventana(Ventana.APPS).abierta
     }
+  }
+
+  // -- ventanas -------------------------------------------------------------------------------
+  private fun guardarVentanas() {
+    val estados = Ventana.entries.associate { v -> v.name to Doom.ventana(v).let { if (v == Ventana.AJUSTES) it.copy(abierta = false) else it } }
+    guardarConfig { it.copy(ventanas = estados) }
+  }
+
+  private fun cambiarVentana(v: Ventana, cambio: (EstadoVentana) -> EstadoVentana) {
+    val nuevo = cambio(Doom.ventana(v)).let { it.copy(escala = it.escala.coerceIn(EstadoVentana.ESCALA_MIN, EstadoVentana.ESCALA_MAX)) }
+    Doom.ventanas[v] = nuevo
+    escena.mostrarVentana(v)
+    Doom.appsVisibles = Doom.ventana(Ventana.APPS).abierta
+    guardarVentanas()
+  }
+
+  /** Abrir o minimizar. Ajustes ademas enciende o apaga el servidor del movil. */
+  fun alternarVentana(v: Ventana) {
+    if (v == Ventana.AJUSTES) {
+      if (Doom.ventana(v).abierta) cerrarAjustes() else abrirAjustes()
+      return
+    }
+    cambiarVentana(v) { it.copy(abierta = !it.abierta) }
+  }
+
+  fun minimizar(v: Ventana) = if (v == Ventana.AJUSTES) cerrarAjustes() else cambiarVentana(v) { it.copy(abierta = false) }
+
+  /** ``v`` null: todas a la vez (si alguna esta plana, todas curvas; si no, todas planas). */
+  fun curvar(v: Ventana? = null) {
+    if (v != null) {
+      cambiarVentana(v) { it.copy(curva = !it.curva) }
+      return
+    }
+    val curvar = Ventana.entries.any { !Doom.ventana(it).curva }
+    Ventana.entries.forEach { w -> cambiarVentana(w) { it.copy(curva = curvar) } }
+  }
+
+  fun escalar(v: Ventana? = null, mas: Boolean) {
+    val paso = if (mas) EstadoVentana.PASO else -EstadoVentana.PASO
+    (if (v != null) listOf(v) else Ventana.entries).forEach { w -> cambiarVentana(w) { it.copy(escala = it.escala + paso) } }
+  }
+
+  fun alternarFijarBrazalete() {
+    Doom.brazaleteFijo = !Doom.brazaleteFijo
+    guardarConfig { it.copy(brazaleteFijo = Doom.brazaleteFijo) }
+  }
+
+  fun alternarEsquinas() {
+    Doom.esquinas = !Doom.esquinas
+    escena.rehacerVentanas()
+    guardarConfig { it.copy(esquinas = Doom.esquinas) }
+  }
+
+  /** El interruptor general del micro: apagado, ni "hey jarvis" ni "Hablar". */
+  fun alternarMicro() {
+    val encender = !Doom.micro
+    Doom.micro = encender
+    guardarConfig { it.copy(micro = encender) }
+    if (!encender) {
+      palabra.detener()
+      escucha?.cancel()
+      grabadora.detener()
+      Doom.anotar(TipoLinea.COMENTARIO, "Microfono apagado: no le escucho hasta que lo encienda en el brazalete.")
+    } else {
+      Doom.anotar(TipoLinea.COMENTARIO, "Microfono encendido.")
+      ambito.launch {
+        if (almacen.config().activacion) escena.pedirPermisos(arrayOf(Manifest.permission.RECORD_AUDIO)) { if (it) escucharPalabra() }
+      }
+    }
+  }
+
+  fun siguienteModo() {
+    val todos = com.doombot.quest.ia.Modos.todos
+    val i = todos.indexOfFirst { it.id == Doom.modo }
+    cambiarModo(todos[(i + 1) % todos.size].id)
+  }
+
+  /** Pasa al siguiente tema: los fijos y luego los perfiles propios. */
+  fun siguienteTema() {
+    val ids = Aspecto.TEMAS.map { it.id } + Doom.aspecto.perfiles.map { it.id }
+    val i = ids.indexOf(Doom.aspecto.tema)
+    aspecto { it.conTema(ids[(i + 1).mod(ids.size)]) }
   }
 
   // -- conversacion -------------------------------------------------------------------------
@@ -178,6 +279,10 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
       return
     }
     if (Doom.orbe == EstadoOrbe.HABLANDO) voz.callar() // barge-in: hablarle le hace callar
+    if (!Doom.micro) {
+      Doom.anotar(TipoLinea.AVISO, "El microfono esta apagado: enciendalo en el brazalete.")
+      return
+    }
     escena.pedirPermisos(arrayOf(Manifest.permission.RECORD_AUDIO)) { concedido ->
       if (!concedido) {
         Doom.anotar(TipoLinea.AVISO, "Sin permiso de microfono: puede escribirme en el registro.")
@@ -236,7 +341,7 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
           }
           Doom.palabraActiva = true
           try {
-            while (isActive && almacen.config().activacion) {
+            while (isActive && almacen.config().let { it.activacion && it.micro }) {
               while (voz.hablando || Doom.ocupado || Doom.orbe == EstadoOrbe.ESCUCHANDO) delay(300)
               if (palabra.esperar()) {
                 voz.callar()
@@ -253,7 +358,7 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
 
   private fun reanudarPalabra() {
     ambito.launch {
-      if (almacen.config().activacion) {
+      if (almacen.config().let { it.activacion && it.micro }) {
         escucha?.cancel()
         escucha = null
         escucharPalabra()
@@ -439,7 +544,8 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
 
   // -- ajustes ------------------------------------------------------------------------------
   fun abrirAjustes() {
-    escena.mostrarAjustes(true)
+    Doom.ventanas[Ventana.AJUSTES] = Doom.ventana(Ventana.AJUSTES).copy(abierta = true)
+    escena.mostrarVentana(Ventana.AJUSTES)
     Doom.ajustesVisibles = true
     val info = servidor.abrir()
     Doom.servidor = info
@@ -457,7 +563,8 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
     caducidad?.cancel()
     Doom.servidor = null
     Doom.ajustesVisibles = false
-    escena.mostrarAjustes(false)
+    Doom.ventanas[Ventana.AJUSTES] = Doom.ventana(Ventana.AJUSTES).copy(abierta = false)
+    escena.mostrarVentana(Ventana.AJUSTES)
     recargar()
   }
 
@@ -537,10 +644,7 @@ class Controlador(contexto: Context, private val escena: Escena) : Acciones.Extr
 
   fun recolocar() = escena.recolocar()
 
-  fun alternarApps() {
-    Doom.appsVisibles = !Doom.appsVisibles
-    escena.mostrarApps(Doom.appsVisibles)
-  }
+  fun alternarApps() = alternarVentana(Ventana.APPS)
 
   fun cerrar() {
     servidor.cerrar()

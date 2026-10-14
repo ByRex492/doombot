@@ -1,6 +1,5 @@
 package com.doombot.quest
 
-import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -11,6 +10,7 @@ import androidx.compose.ui.platform.ComposeView
 import com.doombot.quest.ui.Hud
 import com.doombot.quest.ui.PanelAjustes
 import com.doombot.quest.ui.PanelApps
+import com.doombot.quest.ui.PanelBrazalete
 import com.doombot.quest.ui.PanelChat
 import com.doombot.quest.ui.PanelInfo
 import com.doombot.quest.ui.PanelOrbe
@@ -20,18 +20,25 @@ import com.meta.spatial.compose.ComposeViewPanelRegistration
 import com.meta.spatial.core.Entity
 import com.meta.spatial.core.Pose
 import com.meta.spatial.core.Quaternion
+import com.meta.spatial.core.Query
 import com.meta.spatial.core.SpatialFeature
 import com.meta.spatial.core.SystemBase
 import com.meta.spatial.core.Vector3
+import com.meta.spatial.isdk.IsdkPanelGrabHandle
 import com.meta.spatial.toolkit.AppSystemActivity
+import com.meta.spatial.toolkit.AvatarBody
+import com.meta.spatial.toolkit.CylinderShapeOptions
 import com.meta.spatial.toolkit.DpPerMeterDisplayOptions
 import com.meta.spatial.toolkit.Grabbable
 import com.meta.spatial.toolkit.GrabbableType
 import com.meta.spatial.toolkit.PanelRegistration
 import com.meta.spatial.toolkit.PanelStyleOptions
 import com.meta.spatial.toolkit.QuadShapeOptions
+import com.meta.spatial.toolkit.Scale
 import com.meta.spatial.toolkit.Transform
 import com.meta.spatial.toolkit.UIPanelSettings
+import com.meta.spatial.toolkit.UIPanelShapeOptions
+import com.meta.spatial.toolkit.Visible
 import com.meta.spatial.toolkit.createPanelEntity
 import com.meta.spatial.vr.LocomotionSystem
 import com.meta.spatial.vr.VRFeature
@@ -44,15 +51,20 @@ import kotlinx.coroutines.launch
  * D.O.O.M en realidad mixta: el orbe en el centro y los paneles alrededor, en tu habitacion.
  *
  * Todo lo que se ve es un panel de Compose en una entidad con ``Grabbable``: con la mano (pellizco
- * y arrastrar) o el mando se coge y se deja donde se quiera, y los botones se pulsan igual. La
- * escena se construye en codigo, sin Spatial Editor: las entidades dependen de lo que se abre y se
- * cierra, y asi se compila tambien desde Linux (ver D-041).
+ * y arrastrar) o el mando se coge y se deja donde se quiera, y los botones se pulsan igual. Cada
+ * ventana se puede minimizar, curvar y cambiar de tamaño, y el brazalete de la muñeca izquierda
+ * las maneja todas. La escena se construye en codigo, sin Spatial Editor (ver D-041).
  */
 class DoomActivity : AppSystemActivity(), Controlador.Escena {
 
   private val ambito = CoroutineScope(Dispatchers.Main)
   private val ctl by lazy { Controlador(this, this) }
-  private val entidades = HashMap<Int, Entity>()
+  private val ventanas = HashMap<Ventana, Entity>()
+  /** Donde estaba cada ventana al minimizarla o curvarla: al volver, aparece en el mismo sitio. */
+  private val poses = HashMap<Ventana, Pose>()
+  private val infos = HashMap<Int, Entity>()
+  private var brazalete: Entity? = null
+  private var lista = false
   private var alConceder: ((Boolean) -> Unit)? = null
   private val huecosInfo = listOf(R.id.panel_info_0, R.id.panel_info_1, R.id.panel_info_2)
 
@@ -61,16 +73,14 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
 
   private val sitios =
       mapOf(
-          R.id.panel_orbe to Sitio(0f, 1.0f, -0.12f),
-          R.id.panel_sistema to Sitio(36f, 1.05f, -0.10f),
-          R.id.panel_chat to Sitio(-36f, 1.05f, -0.10f),
-          R.id.panel_apps to Sitio(0f, 0.95f, -0.66f),
-          R.id.panel_ajustes to Sitio(0f, 0.78f, -0.06f),
-          // Los de informacion aparecen delante, un poco escalonados, y se mueven con la mano.
-          R.id.panel_info_0 to Sitio(18f, 0.85f, 0.18f),
-          R.id.panel_info_1 to Sitio(-18f, 0.85f, 0.18f),
-          R.id.panel_info_2 to Sitio(0f, 0.85f, 0.32f),
+          Ventana.ORBE to Sitio(0f, 1.0f, -0.12f),
+          Ventana.SISTEMA to Sitio(36f, 1.05f, -0.10f),
+          Ventana.REGISTRO to Sitio(-36f, 1.05f, -0.10f),
+          Ventana.APPS to Sitio(0f, 0.95f, -0.66f),
+          Ventana.AJUSTES to Sitio(0f, 0.78f, -0.06f),
       )
+  // Los de informacion aparecen delante, un poco escalonados, y se mueven con la mano.
+  private val sitiosInfo = listOf(Sitio(18f, 0.85f, 0.18f), Sitio(-18f, 0.85f, 0.18f), Sitio(0f, 0.85f, 0.32f))
 
   // Las manos (ISDK: pellizcar, coger, pulsar) las registra ya VRFeature desde el SDK 0.14: añadir
   // IsdkFeature a mano esta obsoleto y lo duplicaria.
@@ -81,6 +91,7 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
     systemManager.findSystem<LocomotionSystem>().enableLocomotion(false)
     scene.enablePassthrough(true)
     systemManager.registerSystem(SeguirSistema())
+    systemManager.registerSystem(BrazaleteSistema())
     ctl.arrancar()
   }
 
@@ -89,21 +100,39 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
     // La pose de la cabeza tarda unos instantes en ser real: se espera antes de colocar nada.
     ambito.launch {
       delay(900)
-      for (id in listOf(R.id.panel_orbe, R.id.panel_sistema, R.id.panel_chat, R.id.panel_apps)) crear(id)
+      lista = true
+      Ventana.entries.forEach { mostrarVentana(it) }
+      brazalete = Entity.createPanelEntity(R.id.panel_brazalete, Transform(Pose(Vector3(0f, -50f, 0f))), Visible(false))
       if (Doom.conClave.isEmpty()) ctl.abrirAjustes() // primera vez: directo a configurar
     }
   }
 
-  override fun registerPanels(): List<PanelRegistration> =
-      listOf(
-          panel(R.id.panel_orbe, 0.42f, 0.58f) { PanelOrbe(ctl) },
-          panel(R.id.panel_sistema, 0.40f, 0.56f) { PanelSistema(ctl) },
-          panel(R.id.panel_chat, 0.48f, 0.56f) { PanelChat(ctl) },
-          panel(R.id.panel_apps, 0.62f, 0.38f) { PanelApps(ctl) },
-          panel(R.id.panel_ajustes, 0.60f, 0.74f) { PanelAjustes(ctl) },
-      ) + huecosInfo.mapIndexed { n, id -> panel(id, 0.40f, 0.34f) { PanelInfo(ctl, n) } }
+  override fun registerPanels(): List<PanelRegistration> {
+    val contenido: Map<Ventana, @Composable () -> Unit> =
+        mapOf(
+            Ventana.ORBE to { PanelOrbe(ctl) },
+            Ventana.SISTEMA to { PanelSistema(ctl) },
+            Ventana.REGISTRO to { PanelChat(ctl) },
+            Ventana.APPS to { PanelApps(ctl) },
+            Ventana.AJUSTES to { PanelAjustes(ctl) },
+        )
+    // Cada ventana, plana y curva. El cilindro tiene el radio de la distancia a la que se pone:
+    // asi la curva "abraza" al usuario y todo el panel queda a la misma distancia de los ojos.
+    val principales =
+        Ventana.entries.flatMap { v ->
+          listOf(
+              panel(v.plana, QuadShapeOptions(width = v.ancho, height = v.alto)) { contenido.getValue(v)() },
+              panel(v.curva, CylinderShapeOptions(radius = sitios.getValue(v).distancia, width = v.ancho, height = v.alto)) {
+                contenido.getValue(v)()
+              },
+          )
+        }
+    // El brazalete: pequeño y con mas densidad, porque se mira de cerca (a unos 35 cm).
+    val brazo = panel(R.id.panel_brazalete, QuadShapeOptions(width = 0.20f, height = 0.27f), dpPorMetro = 1400f) { PanelBrazalete(ctl) }
+    return principales + brazo + huecosInfo.mapIndexed { n, id -> panel(id, QuadShapeOptions(width = 0.40f, height = 0.34f)) { PanelInfo(ctl, n) } }
+  }
 
-  private fun panel(id: Int, ancho: Float, alto: Float, contenido: @Composable () -> Unit) =
+  private fun panel(id: Int, forma: UIPanelShapeOptions, dpPorMetro: Float = 800f, contenido: @Composable () -> Unit) =
       ComposeViewPanelRegistration(
           id,
           composeViewCreator = { _, contexto ->
@@ -113,10 +142,10 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
           },
           settingsCreator = {
             UIPanelSettings(
-                shape = QuadShapeOptions(width = ancho, height = alto),
+                shape = forma,
                 style = PanelStyleOptions(themeResourceId = R.style.PanelTransparente),
                 // 800 dp por metro: texto nitido y de tamaño comodo a un metro.
-                display = DpPerMeterDisplayOptions(dpPerMeter = 800f),
+                display = DpPerMeterDisplayOptions(dpPerMeter = dpPorMetro),
             )
           },
       )
@@ -131,38 +160,63 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
     return Pose(pos, Quaternion.lookRotationAroundY(dir))
   }
 
-  private fun crear(id: Int) {
-    if (entidades.containsKey(id)) return
-    val sitio = sitios.getValue(id)
-    // PIVOT_Y: al moverlo sigue derecho y mirandote, que es lo que se espera de una pantalla.
-    entidades[id] = Entity.createPanelEntity(id, Transform(poseDelante(sitio)), Grabbable(type = GrabbableType.PIVOT_Y))
+  /**
+   * Pone la ventana como dice su estado. Si ya existe con la forma buena, solo cambia el tamaño;
+   * si cambia de forma (plana/curva), se rehace en el mismo sitio; minimizada, se quita y se
+   * recuerda donde estaba.
+   */
+  override fun mostrarVentana(v: Ventana) {
+    if (!lista) return
+    val estado = Doom.ventana(v)
+    val actual = ventanas[v]
+    if (!estado.abierta) {
+      actual?.let { poses[v] = it.getComponent<Transform>().transform; it.destroy() }
+      ventanas.remove(v)
+      return
+    }
+    val id = if (estado.curva) v.curva else v.plana
+    if (actual != null && formas[v] == id) {
+      actual.setComponent(Scale(Vector3(estado.escala, estado.escala, estado.escala)))
+      return
+    }
+    actual?.let { poses[v] = it.getComponent<Transform>().transform; it.destroy() }
+    val pose = poses[v] ?: poseDelante(sitios.getValue(v))
+    ventanas[v] = crearPanel(id, pose, estado.escala)
+    formas[v] = id
   }
 
-  private fun quitar(id: Int) {
-    entidades.remove(id)?.destroy()
+  private val formas = HashMap<Ventana, Int>()
+
+  /**
+   * Una ventana en la habitacion. Con las asas de Meta (experimental), el SDK pone su barra para
+   * moverla y las esquinas para redimensionarla; sin ellas, se coge entera con ``Grabbable``.
+   */
+  private fun crearPanel(id: Int, pose: Pose, escala: Float): Entity {
+    // PIVOT_Y: al moverlo sigue derecho y mirandote, que es lo que se espera de una pantalla.
+    val e = Entity.createPanelEntity(id, Transform(pose), Grabbable(type = GrabbableType.PIVOT_Y), Scale(Vector3(escala, escala, escala)))
+    if (Doom.esquinas) e.setComponent(IsdkPanelGrabHandle())
+    return e
+  }
+
+  override fun rehacerVentanas() {
+    if (!lista) return
+    Ventana.entries.forEach { v ->
+      ventanas.remove(v)?.let { poses[v] = it.getComponent<Transform>().transform; it.destroy() }
+      formas.remove(v)
+      mostrarVentana(v)
+    }
   }
 
   override fun recolocar() {
-    for ((id, e) in entidades) e.setComponent(Transform(poseDelante(sitios.getValue(id))))
+    poses.clear()
+    for ((v, e) in ventanas) e.setComponent(Transform(poseDelante(sitios.getValue(v))))
     Doom.anotar(TipoLinea.COMENTARIO, "Todo delante de usted, Mi Señor.")
-  }
-
-  override fun mostrarAjustes(visible: Boolean) {
-    if (visible) crear(R.id.panel_ajustes) else quitar(R.id.panel_ajustes)
-  }
-
-  override fun mostrarApps(visible: Boolean) {
-    if (visible) crear(R.id.panel_apps) else quitar(R.id.panel_apps)
   }
 
   override fun mostrarInfo(n: Int, visible: Boolean) {
     val id = huecosInfo.getOrNull(n) ?: return
-    if (visible) {
-      quitar(id) // si ya estaba, vuelve a aparecer delante con lo nuevo
-      crear(id)
-    } else {
-      quitar(id)
-    }
+    infos.remove(n)?.destroy() // si ya estaba, vuelve a aparecer delante con lo nuevo
+    if (visible) infos[n] = crearPanel(id, poseDelante(sitiosInfo[n]), 1f)
   }
 
   // -- permisos -----------------------------------------------------------------------------
@@ -199,13 +253,61 @@ class DoomActivity : AppSystemActivity(), Controlador.Escena {
   private inner class SeguirSistema : SystemBase() {
     override fun execute() {
       if (!Doom.orbeSigue) return
-      val orbe = entidades[R.id.panel_orbe] ?: return
-      val objetivo = poseDelante(sitios.getValue(R.id.panel_orbe))
+      val orbe = ventanas[Ventana.ORBE] ?: return
+      val objetivo = poseDelante(sitios.getValue(Ventana.ORBE))
       val actual = orbe.getComponent<Transform>().transform
       val distancia = (objetivo.t - actual.t).length()
       if (distancia < 0.25f) return
       val pos = actual.t + (objetivo.t - actual.t) * 0.06f
       orbe.setComponent(Transform(Pose(pos, objetivo.q)))
+    }
+  }
+
+  /**
+   * El brazalete: sobre la muñeca izquierda, mirandote, como un reloj. Aparece al levantar la
+   * muñeca y mirarla (o siempre, si esta fijado) y se esconde al bajarla, para no estorbar. La
+   * mano sale del ``AvatarBody`` del jugador; con mandos, es la del mando izquierdo.
+   */
+  private inner class BrazaleteSistema : SystemBase() {
+    private var cuerpo: Entity? = null
+    private var visibleHasta = 0L
+    private var mostrado = false
+
+    override fun execute() {
+      val b = brazalete ?: return
+      val mano = manoIzquierda()
+      val cabeza = scene.getViewerPose()
+      val ahora = System.currentTimeMillis()
+      var pose: Pose? = null
+      if (mano != null && mano.t.length() > 0.01f) {
+        val haciaMano = mano.t - cabeza.t
+        val distancia = haciaMano.length()
+        val mirando = distancia in 0.12f..0.75f && cabeza.forward().normalize().dot(haciaMano.normalize()) > (if (mostrado) 0.55f else 0.8f)
+        if (mirando) visibleHasta = ahora + 900 // un margen al apartar la vista, para poder pulsar
+        // Un poco por encima de la muñeca y hacia los ojos, girado hacia la cara.
+        val pos = mano.t + Vector3(0f, 0.11f, 0f) + (cabeza.t - mano.t).normalize() * 0.03f
+        pose = Pose(pos, Quaternion.lookRotationAroundY(horizontal(pos - cabeza.t)))
+      } else if (Doom.brazaleteFijo) {
+        // Sin mano a la vista: fijado, abajo a la izquierda delante de ti.
+        val pos = cabeza.t + horizontal(cabeza.forward()) * 0.45f + Vector3(0f, -0.25f, 0f) +
+            Quaternion.fromAxisAngle(Vector3.Up, 90f).times(horizontal(cabeza.forward())) * 0.18f
+        pose = Pose(pos, Quaternion.lookRotationAroundY(horizontal(pos - cabeza.t)))
+      }
+      val ver = pose != null && (Doom.brazaleteFijo || ahora < visibleHasta)
+      if (ver) {
+        b.setComponent(Transform(pose!!))
+      } else if (mostrado) {
+        b.setComponent(Transform(Pose(Vector3(0f, -50f, 0f)))) // fuera de alcance: no capta pellizcos
+      }
+      if (ver != mostrado) {
+        b.setComponent(Visible(ver))
+        mostrado = ver
+      }
+    }
+
+    private fun manoIzquierda(): Pose? {
+      val c = cuerpo ?: Query.where { has(AvatarBody.id) }.eval().firstOrNull { it.getComponent<AvatarBody>().isPlayerControlled }?.also { cuerpo = it }
+      return runCatching { c?.getComponent<AvatarBody>()?.leftHand?.getComponent<Transform>()?.transform }.getOrNull()
     }
   }
 

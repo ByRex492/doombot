@@ -59,6 +59,11 @@ class Almacen(private val contexto: Context) {
       /** n8n (D-030): la URL base y la lista blanca de flujos, nombre hablado -> ruta del webhook. */
       val n8nUrl: String = "",
       val flujos: Map<String, String> = emptyMap(),
+      /** Las ventanas: abierta, curva y tamaño de cada una (por el nombre del enum). */
+      val ventanas: Map<String, com.doombot.quest.EstadoVentana> = emptyMap(),
+      val brazaleteFijo: Boolean = false,
+      val esquinas: Boolean = false,
+      val micro: Boolean = true,
   )
 
   suspend fun config(): Config {
@@ -87,6 +92,19 @@ class Almacen(private val contexto: Context) {
           flujos =
               j.optJSONObject("flujos")?.let { f -> f.keys().asSequence().associateWith { f.getString(it) } }
                   ?: emptyMap(),
+          ventanas =
+              j.optJSONObject("ventanas")?.let { v ->
+                v.keys().asSequence().associateWith { k ->
+                  val e = v.getJSONObject(k)
+                  com.doombot.quest.EstadoVentana(
+                      abierta = e.optBoolean("abierta", true),
+                      curva = e.optBoolean("curva", false),
+                      escala = e.optDouble("escala", 1.0).toFloat().coerceIn(com.doombot.quest.EstadoVentana.ESCALA_MIN, com.doombot.quest.EstadoVentana.ESCALA_MAX))
+                }
+              } ?: emptyMap(),
+          brazaleteFijo = j.optBoolean("brazaleteFijo", false),
+          esquinas = j.optBoolean("esquinas", false),
+          micro = j.optBoolean("micro", true),
       )
     }.getOrDefault(Config())
   }
@@ -111,6 +129,14 @@ class Almacen(private val contexto: Context) {
             .put("vigilante", c.vigilante.coerceIn(0, 3600))
             .put("n8nUrl", c.n8nUrl.trim().trimEnd('/'))
             .put("flujos", JSONObject(c.flujos))
+            .put(
+                "ventanas",
+                JSONObject().also { o ->
+                  c.ventanas.forEach { (k, e) -> o.put(k, JSONObject().put("abierta", e.abierta).put("curva", e.curva).put("escala", e.escala.toDouble())) }
+                })
+            .put("brazaleteFijo", c.brazaleteFijo)
+            .put("esquinas", c.esquinas)
+            .put("micro", c.micro)
     contexto.ds.edit { it[CONFIG] = j.toString() }
   }
 

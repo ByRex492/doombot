@@ -5,6 +5,7 @@ import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
@@ -71,6 +72,16 @@ object Doom {
   var palabraActiva by mutableStateOf(false)
   /** Los tres huecos de paneles de informacion; null = libre. */
   val infos = mutableStateListOf<Info?>(null, null, null)
+  /** Abierta o minimizada, curva o plana y tamaño de cada ventana (se guarda en Almacen). */
+  val ventanas = mutableStateMapOf<Ventana, EstadoVentana>().apply { Ventana.entries.forEach { put(it, EstadoVentana.porDefecto(it)) } }
+  /** El brazalete: fijo (siempre a la vista, sobre la muñeca) o solo al mirarla. */
+  var brazaleteFijo by mutableStateOf(false)
+  /** Las asas de Meta para redimensionar con las esquinas (experimental). */
+  var esquinas by mutableStateOf(false)
+  /** Interruptor general del microfono: apagado, ni "hey jarvis" ni "Hablar". */
+  var micro by mutableStateOf(true)
+
+  fun ventana(v: Ventana): EstadoVentana = ventanas[v] ?: EstadoVentana.porDefecto(v)
 
   private val principal = Handler(Looper.getMainLooper())
 

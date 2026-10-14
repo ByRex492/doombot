@@ -16,12 +16,23 @@ from collections.abc import Callable
 from typing import Any
 
 from doombot.paths import UI_DIR
-from doombot.ventana.lanzador import CLASE_VENTANA, ICONO
+from doombot.ventana.lanzador import CLASE_VENTANA, ICONO, ICONO_WINDOWS
 from doombot.ventana.puente import Puente
 
 HTML = UI_DIR / "ventana" / "doom.html"
 
 __all__ = ["HTML", "Puente", "abrir"]
+
+
+def _icono() -> str | None:
+    """El icono de la ventana segun el sistema.
+
+    En Windows tiene que ser ``.ico``: con el ``.svg``, ``System.Drawing.Icon``
+    lanza una excepcion de .NET que mata el proceso antes de abrir la ventana,
+    sin pasar por Python ni dejar rastro en el registro.
+    """
+    icono = ICONO_WINDOWS if sys.platform == "win32" else ICONO
+    return str(icono) if icono.is_file() else None
 
 
 def abrir(*, montar: Callable[..., Any] | None = None, depurar: bool = False) -> int:
@@ -62,7 +73,7 @@ def abrir(*, montar: Callable[..., Any] | None = None, depurar: bool = False) ->
     puente._conectar(ventana)
     ventana.events.closed += puente._cerrar
     try:
-        webview.start(debug=depurar, icon=str(ICONO) if ICONO.is_file() else None)
+        webview.start(debug=depurar, icon=_icono())
     except KeyboardInterrupt:
         # Ctrl+C en la terminal desde la que se abrio: es "cierra", no un fallo.
         print("\nD.O.O.M cerrado.", file=sys.stderr)

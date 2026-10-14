@@ -40,7 +40,7 @@ Suite sin hardware en verde.
   `↻ cambio a Y: X sin cuota por ahora`, con un tipo de narración nuevo (`aviso`), tenue en la
   ventana y con ↻ en la consola. Si no responde ninguno, sigue siendo un error.
 
-## Proyectos (D-040), rama `tarea/proyectos`
+## Proyectos (D-040), rama `tarea/proyectos` (fusionada a `main`)
 
 Las carpetas son ahora proyectos:
 - cada chat recibe las instrucciones del proyecto, sus notas y el resumen de los demás chats;

@@ -244,6 +244,14 @@
                background: linear-gradient(90deg, var(--c1-10), transparent 85%);
                box-shadow: -6px 0 calc(16px * var(--luz)) -8px var(--c1);
                white-space: pre-wrap; word-wrap: break-word; font-size: 14.5px; }
+  .respuesta .titulo-md { display: block; margin: 6px 0 2px; font-weight: 600; color: var(--c1);
+               letter-spacing: .03em; }
+  .respuesta .titulo-md.h1 { font-size: 17px; } .respuesta .titulo-md.h2 { font-size: 15.5px; }
+  .respuesta code { font: 13px var(--mono); padding: 1px 5px; border-radius: 3px;
+               background: rgba(255,255,255,.07); }
+  .respuesta pre { margin: 6px 0; padding: 8px 10px; overflow-x: auto; white-space: pre;
+               font: 12.5px/1.45 var(--mono); background: rgba(0,0,0,.35); border: 1px solid var(--c1-10); }
+  .respuesta hr { border: 0; border-top: 1px solid var(--c1-10); margin: 8px 0; }
   .respuesta::before { content: "D.O.O.M ›  "; font: 600 10px/1 var(--mono); letter-spacing: .2em; color: var(--c1); }
   .respuesta a, .resultado a { color: var(--c2); }
   .abierto { margin: 6px 0 0 16px; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -861,6 +869,12 @@ function el(etiqueta, clase, texto) {
 // Texto con enlaces pulsables. Un enlace nunca navega dentro de la ventana:
 // se abre en el navegador del usuario a traves de Python.
 function conEnlaces(nodo, texto) {
+  // `codigo` en linea: tal cual, sin buscar negritas ni enlaces dentro.
+  const codigos = String(texto).split(/`([^`\n]+)`/g);
+  if (codigos.length > 1) {
+    codigos.forEach((t, i) => { if (i % 2) nodo.appendChild(el("code", "", t)); else if (t) conEnlaces(nodo, t); });
+    return nodo;
+  }
   // **negrita** y *cursiva* de markdown: los modelos las usan aunque no se les
   // pida. La cursiva exige texto pegado a los asteriscos, para no tomar por
   // cursiva una multiplicacion como "2 * 3 * 4".
@@ -885,6 +899,25 @@ function conEnlaces(nodo, texto) {
   }
   return nodo;
 }
+// La respuesta final en markdown: titulos (#), bloques de codigo (```),
+// separadores (---) y, en cada linea, lo de conEnlaces. Lo demas, texto.
+function conMarkdown(nodo, texto) {
+  const lineas = String(texto).split("\n");
+  for (let i = 0; i < lineas.length; i++) {
+    const l = lineas[i], fin = i < lineas.length - 1 ? "\n" : "";
+    if (/^\s*```/.test(l)) {
+      const codigo = [];
+      while (++i < lineas.length && !/^\s*```/.test(lineas[i])) codigo.push(lineas[i]);
+      nodo.appendChild(el("pre", "", codigo.join("\n")));
+      continue;
+    }
+    const h = l.match(/^\s*(#{1,6})\s+(.*)$/);
+    if (h) { conEnlaces(nodo.appendChild(el("span", `titulo-md h${h[1].length}`)), h[2].replace(/\s*#+\s*$/, "")); continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { nodo.appendChild(el("hr")); continue; }
+    conEnlaces(nodo, l.replace(/^(\s*)[-*]\s+/, "$1• ") + fin);
+  }
+  return nodo;
+}
 function linea(clase, marca, texto, color) {
   const l = el("div", `linea ${clase}`), c = el("span", "cuerpo");
   if (color) l.style.setProperty("--c", color);
@@ -902,7 +935,7 @@ function escribir(nodo, texto, alTerminar) {
   const palabras = String(texto).split(/(\s+)/);
   let i = 0, hecho = "";
   const paso = () => {
-    if (i >= palabras.length) { nodo.textContent = ""; conEnlaces(nodo, texto); alFondo(); alTerminar && alTerminar(); return; }
+    if (i >= palabras.length) { nodo.textContent = ""; conMarkdown(nodo, texto); alFondo(); alTerminar && alTerminar(); return; }
     hecho += palabras[i++]; nodo.textContent = hecho;
     if (palabras[i - 1].trim()) latido(0.16);
     alFondo();
@@ -1528,7 +1561,7 @@ function reproducir(eventos) {
         t.appendChild(el("div", "hecho", si ? "✓ AUTORIZADO" : "✗ NO AUTORIZADO"));
         registro.appendChild(t); break;
       }
-      case "respuesta": registro.appendChild(conEnlaces(el("div", "respuesta"), e.texto)); break;
+      case "respuesta": registro.appendChild(conMarkdown(el("div", "respuesta"), e.texto)); break;
       case "fallo": registro.appendChild(el("div", "fallo", e.texto)); break;
       case "visual": {
         const v = { titulo: e.titulo, grafica: e.grafica, estadistica: e.estadistica };

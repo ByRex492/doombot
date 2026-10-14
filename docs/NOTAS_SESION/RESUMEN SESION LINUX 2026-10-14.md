@@ -1,8 +1,9 @@
 # Resumen sesión Linux — 2026-10-14
 
 Desde el portátil Linux (perfil `cpu_only`), con Claude Code. Rama **`tarea/refinar-respuestas`**,
-sacada de `main` (ad432fe, que ya tiene todo `tarea/agente-local`). Sin fusionar: fusionar desde el
-sobremesa.
+sacada de `main` (ad432fe, que ya tiene todo `tarea/agente-local`). **Ya fusionada a `main`** desde
+el portátil, a petición del usuario: el repaso y `leer_url` por el PR #1, y los dos cambios de
+después con un merge directo.
 
 ## Refinar las respuestas (D-039)
 
@@ -30,6 +31,15 @@ Integración tocada (revisar al fusionar): `config.py` (`agent_refinar`), `.env.
 
 Suite sin hardware en verde.
 
+## Después, en la ventana
+
+- **Markdown en las respuestas**: los títulos (`###`), el código en línea y en bloque, las viñetas y
+  los separadores salían tal cual; ahora se pintan (`conMarkdown` en `doom.html`), también al
+  reabrir una conversación.
+- **Quedarse sin cuota es un aviso, no un error**: la cadena da una sola línea por cambio,
+  `↻ cambio a Y: X sin cuota por ahora`, con un tipo de narración nuevo (`aviso`), tenue en la
+  ventana y con ↻ en la consola. Si no responde ninguno, sigue siendo un error.
+
 ## Otro equipo (amarinosa)
 
 `python -m doombot ventana` daba "No hay respuesta de Ollama": ese equipo tenía el código antiguo,
@@ -38,7 +48,7 @@ instalar los extras (`hud`, `agent-web`), el GTK del sistema y los enlaces de `g
 
 ## Qué hacer en el sobremesa
 
-1. Fusionar `tarea/refinar-respuestas` y pasar `pytest -m "not hardware"`.
+1. `git pull` de `main` y `pytest -m "not hardware"`.
 2. Probar una investigación con `ollama:gemma4:12b` en la cadena: ver si el repaso lo hace un
    modelo en la nube o el local, y cuánto tarda.
 3. Si se quiere, la clave gratuita de NVIDIA: un modelo de otra familia (Nemotron) hace que el

@@ -172,7 +172,7 @@ def montar(
     if isinstance(cerebro_, Cadena):
         # Por el atributo del agente y no por ``narrar`` directamente: la orden
         # del chat reasigna el narrador en cada turno.
-        cerebro_.avisar = lambda texto: agente.narrar("error", texto)
+        cerebro_.avisar = lambda texto: agente.narrar("aviso", texto)
 
         def en_uso() -> Any:
             # La del modo actual (D-038): "otro modelo" es otro que el que

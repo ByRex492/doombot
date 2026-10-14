@@ -45,7 +45,10 @@ pytest -m "not hardware"
    otro) con modelos reales.
 6. **El modo `siempre` del repaso** a lo largo de un día: cuánta cuota gratuita se gasta.
 
-## 3. D.O.O.M para Meta Quest 3S (sin empezar)
+## 3. D.O.O.M para Meta Quest 3S
+
+**Actualización (tarde del 14/10):** la app ya está hecha y compila. Rama `tarea/quest-nativa`, carpeta `quest-app/`, D-041. Cómo instalarla y probarla: `RESUMEN SESION LINUX 2026-10-14 (quest).md`. Lo de abajo es el plan previo, que sigue valiendo para los datos de Meta y la instalación del SDK en Windows.
+
 
 **Estado: solo el plan.** No hay código ni rama todavía.
 - El plan de la fase 0 y los datos de la documentación de Meta están en la conversación del

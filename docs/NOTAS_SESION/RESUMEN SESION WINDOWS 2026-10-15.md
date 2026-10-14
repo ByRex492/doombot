@@ -45,6 +45,23 @@ Acceso directo "D.O.O.M" en el Escritorio y el menú Inicio: `.venv\Scripts\pyth
 ventana`, con el icono del núcleo. Es el pendiente 2 del traspaso, pero hecho a mano y no con
 `python -m doombot lanzador`, que sigue siendo solo de Linux.
 
+## Perfiles de color propios (D-036)
+
+Pedido: además de los temas fijos, crear perfiles de color propios, guardarlos, cambiar entre
+ellos y editarlos. En Personalizar hay ahora una sección **Mis perfiles**:
+
+- **+ Nuevo perfil** crea uno con los colores de ese momento y lo deja activo para nombrarlo.
+- Con un perfil propio activo, cambiar un color lo cambia en el perfil; el nombre se cambia al
+  salir del campo o con Intro. **Duplicar** y **Borrar perfil** (doble clic, como en los menús;
+  un clic fuera lo cancela).
+- Con un tema fijo, tocar un color pasa a «propio» como antes, y **Guardar como perfil** lo
+  conserva con el nombre escrito.
+- **Restablecer** vuelve al aspecto de fábrica sin borrar los perfiles.
+
+`preferencias.py` valida la lista `perfiles` (id `perfil-…`, nombre de una línea y hasta 32
+caracteres, dos colores `#rrggbb`, máximo 24) y, con un perfil activo, pinta sus colores. Probado
+en `doom.html#demo` con clics y teclado reales, y con tests en `test_preferencias.py`.
+
 ## Pendiente
 
 - Commit y push de lo de arriba (falta la identidad de git en este equipo).

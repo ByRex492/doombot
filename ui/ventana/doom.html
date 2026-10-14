@@ -346,6 +346,16 @@
   .tema span:not(.muestra) { position: relative; font: 600 9px/1 var(--mono); letter-spacing: .14em; padding: 5px 4px;
                              background: rgba(0,0,0,.6); color: #e8f6fb; }
   .tema.activo { border-color: #fff; box-shadow: 0 0 calc(10px * var(--luz)) var(--c1); }
+  .tema.nuevo { justify-content: center; align-items: center; border-style: dashed; font: 600 9.5px/1.3 var(--mono);
+                letter-spacing: .14em; color: var(--c1); }
+  .perfil-edicion { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .perfil-edicion input {
+    background: rgba(0,0,0,.5); color: var(--texto); border: 1px solid var(--c1-20); padding: 8px 10px;
+    font: 12.5px/1.2 var(--mono); min-width: 0;
+  }
+  .acciones-perfil { display: flex; gap: 8px; flex-wrap: wrap; }
+  .acciones-perfil [hidden] { display: none !important; }
+  #perfil-borrar.seguro { color: var(--mal); border-color: var(--mal); }
   .ajuste { margin-top: 16px; }
   .ajuste label { display: flex; justify-content: space-between; gap: 8px; font: 11px/1.3 var(--mono); color: var(--texto); letter-spacing: .08em; }
   .ajuste label output { color: var(--c1); }
@@ -453,12 +463,24 @@
       <span class="etq">Tema</span>
       <div class="temas" id="temas"></div>
       <div class="ajuste">
+        <span class="etq">Mis perfiles</span>
+        <div class="temas" id="perfiles"></div>
+      </div>
+      <div class="ajuste">
         <span class="etq">Colores</span>
         <div class="colores">
           <label>Principal<input type="color" id="aj-c1"></label>
           <label>Secundario<input type="color" id="aj-c2"></label>
         </div>
-        <div class="ayuda-ajuste">Al cambiar un color, el tema pasa a «propio».</div>
+        <div class="ayuda-ajuste" id="ayuda-colores"></div>
+        <div class="perfil-edicion">
+          <input type="text" id="perfil-nombre" maxlength="32" placeholder="Nombre del perfil" aria-label="Nombre del perfil">
+          <div class="acciones-perfil">
+            <button id="perfil-guardar">Guardar como perfil</button>
+            <button id="perfil-duplicar">Duplicar</button>
+            <button id="perfil-borrar">Borrar perfil</button>
+          </div>
+        </div>
       </div>
       <div class="ajuste"><label for="aj-luz">Brillo y resplandor <output id="o-luz"></output></label><input type="range" id="aj-luz" min="0" max="1.6" step="0.05"></div>
       <div class="ajuste"><label for="aj-fondo">Rejilla y circuitos <output id="o-fondo"></output></label><input type="range" id="aj-fondo" min="0" max="1" step="0.05"></div>
@@ -486,7 +508,8 @@ const TEMAS = {
   carmesi:   { nombre: "Carmesí",   c1: "#ff3b4e", c2: "#ffb3ba" },
 };
 const DEFECTO = { tema: "jarvis", c1: "#29d3ff", c2: "#8ff3ff", luz: 1, fondo: 0.6, velocidad: 1,
-                  por_herramienta: true, circuitos: true, crt: true };
+                  por_herramienta: true, circuitos: true, crt: true, perfiles: [] };
+const MAX_PERFILES = 24;  // el mismo tope que preferencias.py
 let prefs = Object.assign({}, DEFECTO);
 
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
@@ -1810,17 +1833,70 @@ botonPasos.addEventListener("click", () => { if (enPasos) irAlChat(); else if (!
    8. PERSONALIZAR
    ========================================================================== */
 const ajustes = document.getElementById("ajustes"), temas = document.getElementById("temas");
-for (const [id, t] of Object.entries(TEMAS)) {
-  const b = el("button", "tema"); b.dataset.tema = id; b.title = t.nombre;
+const perfilesEl = document.getElementById("perfiles"), nombrePerfil = document.getElementById("perfil-nombre");
+const botonGuardarPerfil = document.getElementById("perfil-guardar");
+const botonDuplicar = document.getElementById("perfil-duplicar"), botonBorrar = document.getElementById("perfil-borrar");
+
+function muestraTema(id, nombre, c1, c2) {
+  const b = el("button", "tema"); b.dataset.tema = id; b.title = nombre;
   const m = el("span", "muestra");
-  m.style.background = `radial-gradient(circle at 50% 40%, ${t.c2} 0 7%, ${t.c1} 13%, transparent 30%), ` +
-    `radial-gradient(circle at 50% 40%, transparent 36%, ${t.c1}88 38%, transparent 42%), #03060b`;
-  b.append(m, el("span", "", t.nombre));
-  b.addEventListener("click", () => cambiar({ tema: id, c1: t.c1, c2: t.c2 }));
-  temas.appendChild(b);
+  m.style.background = `radial-gradient(circle at 50% 40%, ${c2} 0 7%, ${c1} 13%, transparent 30%), ` +
+    `radial-gradient(circle at 50% 40%, transparent 36%, ${c1}88 38%, transparent 42%), #03060b`;
+  b.append(m, el("span", "", nombre));
+  b.addEventListener("click", () => cambiar({ tema: id, c1, c2 }));
+  return b;
+}
+for (const [id, t] of Object.entries(TEMAS)) temas.appendChild(muestraTema(id, t.nombre, t.c1, t.c2));
+
+// Perfiles propios (preferencias.py): {id, nombre, c1, c2}. Siempre se sustituye
+// la lista entera en vez de tocarla: DEFECTO.perfiles es compartida.
+const perfilActivo = () => prefs.perfiles.find(p => p.id === prefs.tema);
+const idNuevo = () => "perfil-" + (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).slice(0, 16);
+function nombreLibre(base) {
+  const usados = new Set(prefs.perfiles.map(p => p.nombre));
+  if (base && !usados.has(base)) return base;
+  for (let n = 1; ; n++) { const c = base ? `${base} ${n + 1}` : `Perfil ${n}`; if (!usados.has(c)) return c.slice(0, 32); }
+}
+function crearPerfil(nombre) {
+  if (prefs.perfiles.length >= MAX_PERFILES) return;
+  const p = { id: idNuevo(), nombre: nombreLibre((nombre || "").trim().slice(0, 32)), c1: prefs.c1, c2: prefs.c2 };
+  cambiar({ perfiles: [...prefs.perfiles, p], tema: p.id });
+  nombrePerfil.focus(); nombrePerfil.select();
+}
+function editarPerfil(id, cambios) {
+  return prefs.perfiles.map(p => (p.id === id ? Object.assign({}, p, cambios) : p));
+}
+function pintarPerfiles() {
+  perfilesEl.replaceChildren(...prefs.perfiles.map(p => muestraTema(p.id, p.nombre, p.c1, p.c2)));
+  if (prefs.perfiles.length < MAX_PERFILES) {
+    const nuevo = el("button", "tema nuevo", "+ Nuevo perfil");
+    nuevo.title = "Crea un perfil con los colores de ahora";
+    nuevo.addEventListener("click", () => crearPerfil());
+    perfilesEl.appendChild(nuevo);
+  }
+}
+let perfilEnCampo;  // id del perfil cuyo nombre esta en el campo (null: ninguno)
+function reflejarPerfil() {
+  const activo = perfilActivo(), id = activo ? activo.id : null;
+  // El campo solo se rellena al cambiar de perfil, o con uno activo si no se esta
+  // escribiendo en el: lo tecleado para un perfil nuevo no se pierde por tocar un color.
+  if (id !== perfilEnCampo || (activo && document.activeElement !== nombrePerfil)) {
+    if (id !== perfilEnCampo) desarmarBorrar();
+    nombrePerfil.value = activo ? activo.nombre : "";
+    perfilEnCampo = id;
+  }
+  botonGuardarPerfil.hidden = !!activo;
+  botonDuplicar.hidden = botonBorrar.hidden = !activo;
+  document.getElementById("ayuda-colores").textContent = activo
+    ? `Editando «${activo.nombre}»: los cambios de color se guardan en el perfil.`
+    : prefs.tema === "propio"
+      ? "Colores sin guardar: ponles nombre y guárdalos como perfil para no perderlos."
+      : "Al cambiar un color, el tema pasa a «propio»; guárdalo como perfil para conservarlo.";
 }
 function reflejarAjustes() {
-  temas.querySelectorAll(".tema").forEach(b => b.classList.toggle("activo", b.dataset.tema === prefs.tema));
+  pintarPerfiles();
+  ajustes.querySelectorAll(".tema[data-tema]").forEach(b => b.classList.toggle("activo", b.dataset.tema === prefs.tema));
+  reflejarPerfil();
   document.getElementById("aj-c1").value = prefs.c1;
   document.getElementById("aj-c2").value = prefs.c2;
   for (const k of ["luz", "fondo", "velocidad"]) {
@@ -1839,12 +1915,48 @@ function cambiar(cambios) {
     if (r) { prefs = Object.assign({}, DEFECTO, r); reflejarAjustes(); }
   }, 400);
 }
-document.getElementById("aj-c1").addEventListener("input", ev => cambiar({ tema: "propio", c1: ev.target.value }));
-document.getElementById("aj-c2").addEventListener("input", ev => cambiar({ tema: "propio", c2: ev.target.value }));
+// Con un perfil propio activo, el color se cambia en el perfil; si no, pasa a «propio».
+for (const k of ["c1", "c2"]) document.getElementById(`aj-${k}`).addEventListener("input", ev => {
+  const activo = perfilActivo(), color = ev.target.value;
+  cambiar(activo ? { [k]: color, perfiles: editarPerfil(activo.id, { [k]: color }) } : { tema: "propio", [k]: color });
+});
+// Con un perfil activo, el nombre se cambia al salir del campo o con Intro. Sin
+// ninguno, lo escrito espera a «Guardar como perfil».
+nombrePerfil.addEventListener("change", () => {
+  const activo = perfilActivo();
+  if (!activo) return;
+  const nombre = nombrePerfil.value.trim().slice(0, 32);
+  if (nombre && nombre !== activo.nombre) cambiar({ perfiles: editarPerfil(activo.id, { nombre }) });
+  else nombrePerfil.value = activo.nombre;
+});
+nombrePerfil.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  ev.preventDefault();
+  if (perfilActivo()) nombrePerfil.blur(); else crearPerfil(nombrePerfil.value);
+});
+botonGuardarPerfil.addEventListener("click", () => crearPerfil(nombrePerfil.value));
+botonDuplicar.addEventListener("click", () => { const a = perfilActivo(); if (a) crearPerfil(`${a.nombre} (copia)`); });
+// Borrar se confirma con un segundo clic, como en los menus de la ventana: el
+// aviso se queda hasta que se pulsa otra vez o se hace clic en otro sitio.
+function desarmarBorrar() { botonBorrar.classList.remove("seguro"); botonBorrar.textContent = "Borrar perfil"; }
+document.addEventListener("mousedown", ev => { if (ev.target !== botonBorrar) desarmarBorrar(); }, true);
+botonBorrar.addEventListener("click", () => {
+  const activo = perfilActivo();
+  if (!activo) return;
+  if (!botonBorrar.classList.contains("seguro")) {
+    botonBorrar.classList.add("seguro"); botonBorrar.textContent = `¿Borrar «${activo.nombre}»? Pulsa otra vez`;
+    return;
+  }
+  desarmarBorrar();
+  // Los colores se quedan como «propio»: borrar el perfil no cambia lo que se ve.
+  cambiar({ tema: "propio", perfiles: prefs.perfiles.filter(p => p.id !== activo.id) });
+});
 for (const k of ["luz", "fondo", "velocidad"]) document.getElementById(`aj-${k}`).addEventListener("input", ev => cambiar({ [k]: parseFloat(ev.target.value) }));
 for (const k of ["por_herramienta", "circuitos", "crt"]) document.getElementById(`aj-${k}`).addEventListener("change", ev => cambiar({ [k]: ev.target.checked }));
-document.getElementById("aj-restablecer").addEventListener("click", () => cambiar(Object.assign({}, DEFECTO)));
+// Restablecer vuelve al aspecto de fabrica, pero los perfiles guardados se quedan.
+document.getElementById("aj-restablecer").addEventListener("click", () => cambiar(Object.assign({}, DEFECTO, { perfiles: prefs.perfiles })));
 function abrirAjustes(si) {
+  if (!si) desarmarBorrar();
   ajustes.classList.toggle("visible", si); ajustes.setAttribute("aria-hidden", String(!si));
   if (si) document.getElementById("cerrar-ajustes").focus();
 }

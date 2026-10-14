@@ -87,7 +87,9 @@ PROVEEDORES: dict[str, Proveedor] = {
             "https://openrouter.ai/api/v1",
             "https://openrouter.ai/keys",
             titulo="OpenRouter",
-            sugerido="openai/gpt-oss-120b:free",
+            # gpt-oss-120b:free dejo de existir en octubre de 2026 (solo queda el
+            # de pago). Este si, con herramientas: comprobado el 15/10/2026.
+            sugerido="nvidia/nemotron-3-super-120b-a12b:free",
             pasos=(
                 "Abre la página e inicia sesión.",
                 "Pulsa «Create Key».",

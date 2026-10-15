@@ -72,13 +72,21 @@ _RESUMIR = (
 # que se ve en el registro. Los cambios de estado del nucleo no hacen falta.
 _PERSISTIBLES = frozenset({
     "comentario", "herramienta", "accion", "resultado", "error", "aviso", "permiso", "permiso_fin",
-    "respuesta", "fallo", "visual",
+    "respuesta", "fallo", "visual", "memoria",
 })  # fmt: skip
 
 
 class Puente:
-    def __init__(self, montar: Callable[..., Any] | None = None, historial: Any = None) -> None:
+    def __init__(
+        self,
+        montar: Callable[..., Any] | None = None,
+        historial: Any = None,
+        memoria: Any = None,
+    ) -> None:
         self._montar = montar
+        # El perfil y los recuerdos (D-043): los usa el agente en cada orden y
+        # los edita la ventana, tambien antes de que haya agente (sin claves).
+        self._memoria_inyectada = memoria
         # La conversacion abierta (None = una nueva, que se crea al primer
         # mensaje) y la carpeta donde ira esa nueva. Ver ventana/historial.py.
         self._historial_inyectado = historial
@@ -238,6 +246,43 @@ class Puente:
             self._conv["carpeta"] = ""
             self._reactivar_proyecto()
         return resultado
+
+    # -- perfil y memoria (D-043) --------------------------------------------------
+    # Cada operacion de la memoria abre su propia conexion: estas llamadas llegan
+    # en los hilos de pywebview y no tienen que esperar a que acabe una orden.
+    @property
+    def _memoria(self) -> Any:
+        if self._memoria_inyectada is None:
+            from doombot.agent.memoria import crear_memoria
+
+            self._memoria_inyectada = crear_memoria()
+        return self._memoria_inyectada
+
+    def perfil(self) -> dict[str, Any]:
+        return {**self._memoria.perfil(), "memoria": self._memoria.estado()}
+
+    def guardar_perfil(self, campos: dict[str, Any]) -> dict[str, Any]:
+        return self._historial_op(lambda: self._memoria.guardar_datos(dict(campos or {})))
+
+    def anotar_perfil(self, hecho: str) -> dict[str, Any]:
+        return self._historial_op(lambda: self._memoria.anotar_perfil(str(hecho)))
+
+    def quitar_del_perfil(self, indice: int) -> dict[str, Any]:
+        return self._historial_op(lambda: self._memoria.quitar_del_perfil(int(indice)))
+
+    def recuerdos(self, consulta: str = "") -> dict[str, Any]:
+        """``lista``: los recuerdos que encajan; ``recuerdos``: cuantos hay en total."""
+        try:
+            lista = self._memoria.lista(str(consulta or ""))
+        except Exception as e:  # noqa: BLE001 - la base no abre o el modelo no carga
+            return {"lista": [], **self._memoria.estado(), "error": str(e)}
+        return {"lista": lista, **self._memoria.estado()}
+
+    def olvidar_recuerdo(self, id_: int) -> dict[str, Any]:
+        try:
+            return {"ok": self._memoria.borrar(int(id_))}
+        except Exception as e:  # noqa: BLE001 - igual que arriba
+            return {"ok": False, "error": str(e)}
 
     # -- proyectos (D-040) --------------------------------------------------------
     def proyecto(self, nombre: str) -> dict[str, Any]:
@@ -424,6 +469,7 @@ class Puente:
                     narrar=self._narrar,
                     confirmar=self._confirmar,
                     pantalla=lambda datos: self._emitir("visual", **datos),
+                    memoria=self._memoria,
                 )
             except ValueError as e:
                 return {"ok": False, "error": str(e)}
@@ -443,6 +489,7 @@ class Puente:
             "herramientas": len(self._montaje.agente.herramientas),
             "revisor": self._montaje.agente.revisar is not None,
             "repaso": getattr(self._montaje.agente.repasar, "modo", "no"),
+            "memoria": self._memoria.estado(),
             **self.modos(),
         }
 

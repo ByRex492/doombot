@@ -111,6 +111,12 @@ class Agente:
         self.observar: Callable[[str, dict[str, Any]], None] | None = None
         self._parar = False
         self.system = system
+        # Lo que se anade al prompt en cada orden, segun la orden (D-043): el
+        # perfil del usuario y los recuerdos que vengan a cuento. Va aparte de
+        # ``system`` porque los modos lo reescriben entero (D-038), y porque
+        # depende de lo que se pide: no se guarda en la conversacion.
+        self.contexto: Callable[[str], str] | None = None
+        self._inicio = 0
         self._max_pasos = max_pasos
         self._max_resultado = max_resultado
         self._ventana = ventana
@@ -136,15 +142,16 @@ class Agente:
         self._tarea = tarea
         self._parar = False
         self.conversacion.append(tarea)
-        inicio = len(self.conversacion)
+        inicio = self._inicio = len(self.conversacion)
         informe = Informe(respuesta="")
         especs = [h.espec() for h in self.herramientas.values()]
+        system = self._prompt(tarea)
 
         for n in range(self._max_pasos):
             if self._parar:
                 return self._parado(informe)
             self._avisar("pensando", {"paso": n + 1})
-            paso = self.cerebro.paso(self._vista(), especs, system=self.system)
+            paso = self.cerebro.paso(self._vista(), especs, system=system)
             self.conversacion.append(paso)
             informe.pasos += 1
 
@@ -185,7 +192,31 @@ class Agente:
         )
         return informe
 
+    def usadas(self) -> list[str]:
+        """Las herramientas que ya han dado resultado en la orden en curso, en orden."""
+        return [
+            m.nombre
+            for m in self.conversacion[self._inicio :]
+            if isinstance(m, ResultadoHerramienta)
+        ]
+
     # -- interno ----------------------------------------------------------------
+    def _prompt(self, tarea: str) -> str | None:
+        """El prompt de esta orden: el de siempre, mas lo que aporte ``contexto``.
+
+        Si el contexto falla -la memoria no abre, el modelo de embeddings no
+        carga-, la orden sigue sin el: no saber de que se acuerda no es motivo
+        para no hacer lo que se pide.
+        """
+        if self.contexto is None:
+            return self.system
+        try:
+            extra = self.contexto(tarea)
+        except Exception as e:  # noqa: BLE001 - ver arriba
+            self.narrar("aviso", f"sin memoria en esta orden: {recortar(str(e), 140)}")
+            extra = ""
+        return "\n\n".join(p for p in (self.system, extra) if p) or None
+
     def _avisar(self, evento: str, datos: dict[str, Any]) -> None:
         if self.observar is not None:
             self.observar(evento, datos)

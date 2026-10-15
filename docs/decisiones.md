@@ -1679,3 +1679,89 @@ viven en carpetas, y así no hay que migrar nada.
 
 **Sin verificar**: un proyecto real de varios chats con modelos gratuitos, y cuánto aguanta la
 cuota con el resumen por orden.
+
+## D-043 — Memoria del agente: el perfil del usuario siempre, los recuerdos cuando vienen a cuento
+
+**Contexto.** 15/10/2026. Pedido del usuario: empezar por la memoria, y un perfil que la IA lea
+para saber quién es. Las piezas existían, pero solo para la voz (`chat.py`): `memory/` guarda y
+busca por significado con embeddings, y `obsidian/usuario.md` refleja los hechos de "recuerda que
+yo...". El agente de la ventana, que es donde se usa D.O.O.M a diario, no veía ninguna de las dos.
+Empezaba cada conversación sin saber ni el nombre del usuario.
+
+**Decisión.** Dos memorias distintas, porque se usan de forma distinta (`agent/memoria.py`).
+
+1. **El perfil, en todas las órdenes.**
+   - Va en `obsidian/usuario.md`: el mismo de la voz, que viaja con el repositorio entre equipos y
+     se edita en Obsidian.
+   - Tiene datos (nombre, cómo llamarle, a qué se dedica, dónde vive, idiomas, intereses y cómo
+     quiere las respuestas) como propiedades de Obsidian, el bloque `---` de arriba. Debajo, los
+     hechos sueltos, uno por línea con guion.
+   - Se añade al final del prompt de cada orden, en cualquier modo, recortado a 2.500 caracteres.
+   - Se edita en el panel **Perfil** de la ventana. El agente apunta hechos con
+     `anotar_sobre_usuario`, **siempre con permiso**: va en todos los prompts y sube a GitHub.
+2. **Los recuerdos, solo cuando vienen a cuento.**
+   - Van en `memory.db` (`kind='fact'`), son de cada equipo y no se versionan.
+   - Antes de cada orden se buscan los parecidos (`recall`, umbral 0,35, como la voz). Los que
+     pasan entran en el prompt **de esa orden** y no se quedan en la conversación. El registro los
+     enseña con ◈.
+   - Tres herramientas: `recordar`, `buscar_en_memoria` (sin consulta, lista lo último) y
+     `olvidar_recuerdo` (con permiso, enseñando cuál).
+   - Necesitan fastembed (extra nuevo `memoria`, que ya venía en `voice`). Sin él, el perfil
+     funciona igual y estas herramientas no se ofrecen.
+3. **`recordar` pide permiso solo si en la misma orden se ha leído algo de fuera** (familias `web`,
+   `ficheros`, `terminal`). Es lo que impide que una página se cuele como "algo que me dijo el
+   usuario" y envenene todas las conversaciones siguientes. Sin nada leído, va solo: si no, cada
+   "recuerda que..." sería un diálogo.
+4. **Contraseñas, claves y datos bancarios no se guardan nunca, ni con permiso.** Se detectan
+   claves con prefijo conocido, tarjetas, IBAN y frases como "la contraseña es...". El modelo
+   recibe un error que le dice que lo guarde el usuario en un gestor de contraseñas.
+5. **`usuario.md` manda.** Con dos sitios que editan el perfil, el fichero es la fuente de verdad:
+   - `escribir_perfil` (voz) ya no lo sobrescribe desde la memoria: le **añade** lo nuevo y
+     respeta los datos, el orden y lo borrado;
+   - `sincronizar_perfil` olvida de la memoria lo que ya no está en el fichero, salvo si el fichero
+     no existe;
+   - "olvida eso" tras "recuerda que yo..." lo quita también del fichero;
+   - la voz lee el perfil del fichero, así que también conoce los datos de la ventana.
+6. **Varios hilos sin compartir conexión.** Cada operación abre su conexión a `memory.db`, porque la
+   ventana consulta la memoria mientras el agente trabaja en su hilo. El modelo de embeddings se
+   carga una vez, con cerrojo. Si hay recuerdos, se precarga en segundo plano; mientras carga, una
+   orden va sin recuerdos en vez de esperar.
+
+**Descartado.**
+- **Un solo almacén para todo**:
+  - el perfil en `memory.db` no se podría editar a mano ni viajaría entre equipos;
+  - los recuerdos en el repositorio subirían a GitHub cada dato suelto;
+  - y buscar el nombre del usuario por parecido falla justo cuando la orden no lo menciona.
+- **El perfil en `data_dir()`**, como los proyectos: habría que rellenarlo en cada equipo. A cambio,
+  el panel avisa de que viaja con el repositorio (privado) y no guarda secretos.
+- **Extraer hechos automáticamente tras cada respuesta**, como el resumen de D-040: una petición
+  más por orden con las cuotas gratuitas, y guardaría cosas sin que el usuario lo vea. Mejor que lo
+  proponga el modelo, visible en el registro.
+- **Confirmar siempre `recordar`**: más seguro, pero insoportable. El riesgo real está en lo leído
+  de fuera, y ahí sí se pregunta.
+
+**Verificado.**
+- Tests (`test_memoria_agente.py`, `test_obsidian_vault.py`, `test_ventana.py`):
+  - el perfil y los recuerdos en el prompt de cada orden, y no en la conversación;
+  - la memoria en un modo que no la lista, y la orden que sigue si la memoria falla;
+  - el permiso tras leer una página, y el rechazo de secretos con sus falsos positivos;
+  - las propiedades de Obsidian que no son nuestras, la ida y vuelta, y el puente de la ventana;
+  - la voz: "olvida eso" saca el hecho del fichero, y lee los datos del perfil.
+
+  `conftest.py` aparta también el vault: ningún test toca el `usuario.md` real.
+- Con el modelo real (paraphrase-multilingual-MiniLM-L12-v2):
+  - 4 de 5 preguntas relacionadas recuperan su recuerdo en unos 30 ms;
+  - las que no vienen a cuento no traen nada;
+  - falló "¿puedo entrenar un modelo en el portátil?" frente a "el portátil HP no tiene GPU
+    dedicada", por debajo del umbral. Para eso está `buscar_en_memoria`.
+- De punta a punta con la cadena del usuario:
+  - "me llamo Alejandro, llámame Alex" → pidió permiso y lo apuntó en el perfil;
+  - "recuerda que el examen es el 12" → lo recordó sin preguntar;
+  - en una conversación nueva respondió las dos cosas.
+
+  Aun teniendo el recuerdo delante, el modelo hizo una búsqueda de más: es inofensivo.
+- El panel Perfil, en la demostración.
+
+**Sin verificar**:
+- la ventana real con pywebview;
+- la voz con un `usuario.md` editado desde la ventana en otro equipo y traído con `git pull`.

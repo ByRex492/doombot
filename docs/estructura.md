@@ -191,6 +191,13 @@ truncadas y resultados viejos enmascarados. Cada herramienta solo declara
 su `narrar` (lo que ve el usuario) y su `confirmar` (cuándo pide permiso), y
 añadida a la lista de `montaje.montar()`.
 
+**La memoria del agente** (`agent/memoria.py`, D-043) no es otra capa: usa las
+que ya había. El perfil del usuario es `obsidian/usuario.md` y entra en todas
+las órdenes. Los recuerdos son `memory/` y entran solo cuando se parecen a la
+orden. Llegan al prompt por `Agente.contexto`, que se calcula en cada orden y
+no se guarda en la conversación. Quien monta el agente decide si lleva
+memoria: la ventana, la consola y la orden `agente` de la voz la llevan.
+
 ## La aplicación
 
 `python -m doombot ventana` abre D.O.O.M como un programa: su propia ventana

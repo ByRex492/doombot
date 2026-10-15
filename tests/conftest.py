@@ -15,3 +15,17 @@ def _datos_aparte(tmp_path_factory, monkeypatch):
     con conversaciones de prueba.
     """
     monkeypatch.setenv("DOOMBOT_DATA_DIR", str(tmp_path_factory.mktemp("datos")))
+
+
+@pytest.fixture(autouse=True)
+def _vault_aparte(tmp_path_factory, monkeypatch):
+    """El perfil del usuario (``obsidian/usuario.md``) tampoco se toca en los tests.
+
+    Vive en el repositorio, no en ``data_dir()``, asi que la carpeta de datos
+    temporal de arriba no lo protege: sin esto, un test que anota algo en el
+    perfil lo escribiria en el de verdad, y se subiria con el siguiente commit
+    (D-043). Tambien evita lo contrario: que un test lea el perfil real.
+    """
+    from doombot.obsidian import vault
+
+    monkeypatch.setattr(vault, "VAULT_DIR", tmp_path_factory.mktemp("vault"))

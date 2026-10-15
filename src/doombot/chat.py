@@ -29,7 +29,12 @@ from doombot.files import listar_buzon
 from doombot.hud_server import ServidorHUD
 from doombot.identity import resumen, system_prompt
 from doombot.memory import Memory
-from doombot.obsidian import escribir_perfil, sincronizar_perfil
+from doombot.obsidian import (
+    escribir_perfil,
+    leer_perfil,
+    perfil_para_prompt,
+    sincronizar_perfil,
+)
 from doombot.orders import Sesion, despachar
 from doombot.paths import VAULT_DIR, inbox_dir, memory_db
 from doombot.phrases import PhraseMatcher, default_matcher
@@ -85,17 +90,18 @@ Cualquier otra cosa va al modelo. Ademas:
 
 
 def _contexto_usuario(mem: Memory) -> str:
-    """Hechos guardados SOBRE el usuario, siempre presentes en el prompt.
+    """El perfil del usuario, siempre presente en el prompt.
 
     A diferencia de ``Memory.as_context()``, no se filtra por parecido con la
     pregunta: quien habla y que hace es relevante para cualquier conversacion,
     no solo para las que lo mencionan de pasada.
+
+    Se lee de ``usuario.md`` y no de los ``kind='perfil'`` de la memoria: ahi
+    estan tambien los datos que se rellenan en la ventana (nombre, a que se
+    dedica, como quiere las respuestas), y es el que manda (D-043). Lo que se
+    aprende por voz llega igual: ``identify`` lo escribe en el fichero.
     """
-    perfil = mem.all(kind="perfil")
-    if not perfil:
-        return ""
-    lineas = [f"- {r.text}" for r in perfil]
-    return "Lo que sabes del usuario, siempre relevante:\n" + "\n".join(lineas)
+    return perfil_para_prompt(leer_perfil())
 
 
 def _con_contexto(mem: Memory, pregunta: str, *extra: str) -> str:

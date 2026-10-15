@@ -21,6 +21,8 @@ from doombot.agent.apps import Aplicaciones
 from doombot.agent.bucle import Agente, Narrador
 from doombot.agent.calculo import herramientas as herramientas_calculo
 from doombot.agent.graficas import Graficas
+from doombot.agent.herramientas import recortar
+from doombot.agent.memoria import FUERA, Memoria
 from doombot.agent.sistema import herramientas as herramientas_sistema
 from doombot.agent.skills import GLOBAL, Modos
 from doombot.agent.web import Web
@@ -76,7 +78,13 @@ def _escritorio() -> str:
     return f"Linux, escritorio {entorno}{f' ({sesion})' if sesion else ''}"
 
 
-def system_prompt(ahora: datetime | None = None, *, con_pantalla: bool = False) -> str:
+def system_prompt(
+    ahora: datetime | None = None,
+    *,
+    con_pantalla: bool = False,
+    con_perfil: bool = False,
+    con_recuerdos: bool = False,
+) -> str:
     """Las reglas del agente, cortas: con un modelo local, cada token cuenta."""
     ahora = ahora or datetime.now()
     pantalla = (
@@ -87,6 +95,20 @@ def system_prompt(ahora: datetime | None = None, *, con_pantalla: bool = False) 
         if con_pantalla
         else []
     )
+    # La memoria (D-043): el perfil llega al final del prompt en cada orden.
+    memoria = []
+    if con_perfil:
+        memoria.append(
+            "- Si el usuario te cuenta algo duradero sobre el (nombre, trabajo, gustos, equipos, "
+            "personas cercanas), apuntalo con anotar_sobre_usuario."
+        )
+    if con_recuerdos:
+        memoria.append(
+            "- Recuerdas entre conversaciones: guarda con recordar lo que te pida recordar o le "
+            "vaya a servir mas adelante. Lo que venga a cuento ya te llega en las notas de "
+            "abajo; si pregunta por algo que pudo contarte antes y no esta ahi, buscalo con "
+            "buscar_en_memoria. Nunca guardes contrasenas, claves ni datos bancarios."
+        )
     return "\n".join([
         f"Eres {NOMBRE}, un agente que actua en el ordenador del usuario.",
         f"Equipo: {_escritorio()}. Carpeta personal: {Path.home()}. "
@@ -107,8 +129,31 @@ def system_prompt(ahora: datetime | None = None, *, con_pantalla: bool = False) 
         "- Si el usuario no autoriza una accion, no la repitas.",
         "- Si falta informacion o la orden es ambigua, pregunta en vez de adivinar.",
         *pantalla,
+        *memoria,
         "- Al terminar, resume en una o dos frases, en espanol, que has hecho.",
     ])  # fmt: skip
+
+
+def _conectar_memoria(agente: Agente, memoria: Memoria) -> None:
+    """El perfil y los recuerdos entran en cada orden, y se cuenta de que se acuerda."""
+
+    def leido_fuera() -> bool:
+        return any(
+            (h := agente.herramientas.get(n)) is not None and h.familia in FUERA
+            for n in agente.usadas()
+        )
+
+    def contexto(tarea: str) -> str:
+        c = memoria.contexto(tarea)
+        if c.aviso:
+            agente.narrar("aviso", f"sin recuerdos en esta orden: {recortar(c.aviso, 140)}")
+        if c.recordados:
+            agente.narrar("memoria", " · ".join(recortar(t, 90) for t in c.recordados))
+        return c.texto
+
+    memoria.leido_fuera = leido_fuera
+    agente.contexto = contexto
+    memoria.precargar()
 
 
 @dataclass
@@ -128,6 +173,8 @@ class Montaje:
     cadena: Any = None
     cfg: Any = None
     modos: Any = None
+    memoria: Any = None
+    """El perfil y los recuerdos (D-043), o None si no se monto con memoria."""
 
     def abiertas(self) -> list[str]:
         """Lo que el agente ha abierto en esta sesion: apps y paginas."""
@@ -145,8 +192,13 @@ def montar(
     perfil: Profile | None = None,
     cerebro_: ToolCaller | None = None,
     pantalla: Callable[[dict], None] | None = None,
+    memoria: Memoria | None = None,
 ) -> Montaje:
-    """Monta el agente. ``ValueError`` si el cerebro elegido no se puede usar."""
+    """Monta el agente. ``ValueError`` si el cerebro elegido no se puede usar.
+
+    Sin ``memoria``, el agente no sabe quien es el usuario ni recuerda nada entre
+    conversaciones: quien lo monta decide (la ventana, con ``crear_memoria()``).
+    """
     cfg = cfg or settings()
     avisos: list[str] = []
     if cerebro_ is None:
@@ -164,8 +216,14 @@ def montar(
         *herramientas_calculo(),
         *graficas,
     ]
-    system_base = system_prompt(con_pantalla=pantalla is not None)
+    system_base = system_prompt(
+        con_pantalla=pantalla is not None,
+        con_perfil=memoria is not None,
+        con_recuerdos=memoria is not None and memoria.activa,
+    )
     agente = Agente(cerebro_, todas, narrar=narrar, confirmar=confirmar, system=system_base)
+    if memoria is not None:
+        _conectar_memoria(agente, memoria)
 
     from doombot.backends.varios import Cadena
 
@@ -196,6 +254,7 @@ def montar(
         todas={h.nombre: h for h in todas},
         cadena=cerebro_,
         cfg=cfg,
+        memoria=memoria,
     )
     # Arranca en el modo global: todas las herramientas y los expertos (D-038).
     montaje.modos = Modos(montaje)

@@ -52,9 +52,21 @@ def consultar(s: Sesion, m: Match) -> None:
 @orden("forget")
 def olvidar(s: Sesion, m: Match) -> None:
     """Solo el último. Borrar por descripción exigiría confirmar cuál, y una
-    orden de voz que borra memoria sin confirmación es mala idea."""
+    orden de voz que borra memoria sin confirmación es mala idea.
+
+    Si era un hecho sobre el usuario, sale también de ``usuario.md``: el
+    fichero manda (D-043), y si se quedara ahí volvería en la siguiente
+    sincronización."""
+    previo = s.mem.get(s.ultimo_guardado) if s.ultimo_guardado is not None else None
     if s.ultimo_guardado is not None and s.mem.forget(s.ultimo_guardado):
         s.ultimo_guardado = None
+        if previo is not None and previo.kind == "perfil":
+            import contextlib
+
+            from doombot.obsidian import quitar_hecho
+
+            with contextlib.suppress(ValueError):
+                quitar_hecho(previo.text)
         s.decir("Olvidado.")
     else:
         s.decir("No hay nada reciente que olvidar.")

@@ -49,8 +49,14 @@ def agente(s: Sesion, m: Match) -> None:
         return
     if _montaje is None:
         try:
+            from doombot.agent.memoria import crear_memoria
+
             _montaje = montar(
-                narrar=_narrador(s), confirmar=_confirmador(s), cfg=s.cfg, perfil=s.perfil
+                narrar=_narrador(s),
+                confirmar=_confirmador(s),
+                cfg=s.cfg,
+                perfil=s.perfil,
+                memoria=crear_memoria(),
             )
         except ValueError as e:
             s.aviso(str(e))

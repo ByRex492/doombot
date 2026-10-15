@@ -15,15 +15,19 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from doombot.agent.herramientas import Herramienta, entero, texto
+from doombot.agent.herramientas import Herramienta, booleano, entero, texto
+
+if TYPE_CHECKING:
+    from doombot.agent.taller import Taller
 
 _MAX_ENTRADAS = 200
 _MAX_COINCIDENCIAS = 100
 _MAX_CARPETAS = 20_000
 _LINEAS_POR_LECTURA = 400
 _TIMEOUT_COMANDO = 120.0
+_TIMEOUT_TALLER = 600.0
 
 # Programas que solo miran. Un comando con alguno de estos -y sin nada que
 # redirija o encadene otra cosa- se ejecuta sin preguntar. Todo lo demas,
@@ -161,9 +165,95 @@ def escribir_fichero(ruta: str, contenido: str) -> str:
     return f"Escrito {fichero} ({len(contenido)} caracteres)."
 
 
+def editar_fichero(ruta: str, buscar: str, reemplazar: str, todas: bool = False) -> str:
+    """Cambia un trozo exacto de un fichero (D-045).
+
+    Reescribir el fichero entero para cambiar tres lineas gasta en cada paso
+    la cuota de tokens de los modelos gratuitos, y el modelo tiende a perder
+    por el camino lo que no iba a tocar. Como el Edit de Claude Code: el trozo
+    tiene que aparecer tal cual, y una sola vez salvo que se pidan todas.
+    """
+    fichero = _ruta(ruta)
+    if not fichero.is_file():
+        return f"Error: {fichero} no existe; para crearlo, escribir_fichero."
+    if not buscar:
+        return "Error: buscar no puede estar vacio."
+    # newline="" conserva los saltos tal cual: sin eso, un fichero de Windows
+    # se guardaria con saltos de Linux sin que nadie lo pidiera.
+    with fichero.open(encoding="utf-8", errors="replace", newline="") as f:
+        actual = f.read()
+    n = actual.count(buscar)
+    if n == 0 and "\r\n" in actual and "\r\n" not in buscar:
+        # Fichero con saltos de Windows: el modelo siempre escribe \n.
+        buscar, reemplazar = buscar.replace("\n", "\r\n"), reemplazar.replace("\n", "\r\n")
+        n = actual.count(buscar)
+    if n == 0:
+        return (
+            f"Error: no encuentro ese texto en {fichero.name}. Tiene que coincidir exacto, con "
+            "espacios y sangria: lee el fichero y copialo tal cual."
+        )
+    if n > 1 and not todas:
+        return (
+            f"Error: ese texto aparece {n} veces en {fichero.name}. Anade lineas de alrededor "
+            "para que sea unico, o pasa todas=true."
+        )
+    nuevo = actual.replace(buscar, reemplazar) if todas else actual.replace(buscar, reemplazar, 1)
+    with fichero.open("w", encoding="utf-8", newline="") as f:
+        f.write(nuevo)
+    return f"Editado {fichero}: {n if todas else 1} cambio(s)."
+
+
+_MAX_TEXTO = 80
+
+
+def buscar_texto(buscar: str, carpeta: str = "~", patron: str = "") -> str:
+    """Busca un texto dentro de los ficheros (como grep): donde se usa una funcion, un error."""
+    raiz = _ruta(carpeta)
+    if not raiz.is_dir():
+        return f"Error: {raiz} no es una carpeta."
+    if not buscar:
+        return "Error: falta el texto a buscar."
+    import fnmatch
+
+    bajo = buscar.lower()
+    halladas: list[str] = []
+    for visitadas, (actual, carpetas, ficheros) in enumerate(os.walk(raiz), start=1):
+        carpetas[:] = [c for c in carpetas if not c.startswith(".") and c not in _SIN_INTERES]
+        for nombre in ficheros:
+            if nombre.startswith(".") or (patron and not fnmatch.fnmatch(nombre, patron)):
+                continue
+            fichero = Path(actual) / nombre
+            try:
+                if fichero.stat().st_size > 1_000_000:
+                    continue
+                with fichero.open(encoding="utf-8", errors="strict") as f:
+                    for n, linea in enumerate(f, start=1):
+                        if bajo in linea.lower():
+                            halladas.append(f"{fichero}:{n}: {linea.strip()[:160]}")
+                            if len(halladas) >= _MAX_TEXTO:
+                                break
+            except (OSError, UnicodeDecodeError):
+                continue  # binarios y lo que no se deja leer
+            if len(halladas) >= _MAX_TEXTO:
+                break
+        if len(halladas) >= _MAX_TEXTO or visitadas >= _MAX_CARPETAS:
+            break
+    if not halladas:
+        return f"«{buscar}» no aparece en {raiz}."
+    return "\n".join(halladas)
+
+
+_SIN_INTERES = frozenset({"node_modules", "__pycache__", "venv", "build", "dist", "target"})
+
+
 def ejecutar_comando(
-    comando: str, carpeta: str = "", *, runner: Callable[..., Any] = subprocess.run
+    comando: str,
+    carpeta: str = "",
+    *,
+    runner: Callable[..., Any] = subprocess.run,
+    timeout: float | None = None,
 ) -> str:
+    limite = timeout or _TIMEOUT_COMANDO
     try:
         proceso = runner(
             comando,
@@ -173,10 +263,10 @@ def ejecutar_comando(
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=_TIMEOUT_COMANDO,
+            timeout=limite,
         )
     except subprocess.TimeoutExpired:
-        return f"Error: el comando tardo mas de {_TIMEOUT_COMANDO:.0f}s y se corto."
+        return f"Error: el comando tardo mas de {limite:.0f}s y se corto."
     salida = (proceso.stdout or "") + (proceso.stderr or "")
     estado = "" if proceso.returncode == 0 else f"Error: codigo de salida {proceso.returncode}\n"
     return estado + (salida.strip() or "(sin salida)")
@@ -207,7 +297,52 @@ def _confirmar_comando(args: dict[str, Any]) -> str | None:
     return f"Voy a ejecutar en tu equipo: {comando}"
 
 
-def herramientas() -> list[Herramienta]:
+def herramientas(taller: Taller | None = None) -> list[Herramienta]:
+    """Las herramientas de ficheros y terminal. Con ``taller``, autonomia dentro de el (D-045).
+
+    Dentro del taller no se pregunta lo que fuera si: sobrescribir, editar o
+    ejecutar. A cambio, antes de tocar un proyecto se guarda su punto de
+    control (``Taller.antes_de_tocar``), y deshacer vuelve atras.
+    """
+
+    def libre_ruta(a: dict[str, Any]) -> bool:
+        ruta = str(a.get("ruta", ""))
+        return taller is not None and taller.ruta_libre(ruta) and not es_sensible(ruta)
+
+    def confirmar_escritura(a: dict[str, Any]) -> str | None:
+        return None if libre_ruta(a) else _confirmar_escritura(a)
+
+    def confirmar_edicion(a: dict[str, Any]) -> str | None:
+        if libre_ruta(a):
+            return None
+        return f"Voy a CAMBIAR {_ruta(str(a.get('ruta', '')))}, que ya existe."
+
+    def confirmar_comando(a: dict[str, Any]) -> str | None:
+        if taller is not None and taller.comando_libre(
+            str(a.get("comando", "")), str(a.get("carpeta", ""))
+        ):
+            return None
+        return _confirmar_comando(a)
+
+    def tocar(ruta: str) -> None:
+        if taller is not None:
+            taller.antes_de_tocar(ruta)
+
+    def escribir(ruta: str, contenido: str) -> str:
+        tocar(ruta)
+        return escribir_fichero(ruta, contenido)
+
+    def editar(ruta: str, buscar: str, reemplazar: str, todas: bool = False) -> str:
+        tocar(ruta)
+        return editar_fichero(ruta, buscar, reemplazar, todas)
+
+    def ejecutar(comando: str, carpeta: str = "") -> str:
+        en_taller = taller is not None and bool(carpeta) and taller.dentro(carpeta)
+        if en_taller and not es_solo_lectura(comando):
+            tocar(carpeta)
+        # Compilar o instalar dependencias de un proyecto tarda mas que un comando suelto.
+        return ejecutar_comando(comando, carpeta, timeout=_TIMEOUT_TALLER if en_taller else None)
+
     return [
         Herramienta(
             "listar_directorio",
@@ -243,13 +378,43 @@ def herramientas() -> list[Herramienta]:
             familia="ficheros",
         ),
         Herramienta(
+            "buscar_texto",
+            "Busca un texto dentro de los ficheros de una carpeta (como grep): donde se usa "
+            "algo, de donde sale un error.",
+            buscar_texto,
+            {
+                "buscar": texto("El texto a buscar (sin distinguir mayusculas)."),
+                "carpeta": texto("Donde buscar. Por defecto ~."),
+                "patron": texto("Solo ficheros con este nombre, ej. '*.py' (opcional)."),
+            },
+            requeridos=("buscar",),
+            narrar=lambda a: f"Busco «{a.get('buscar')}» en {a.get('carpeta') or '~'}",
+            familia="ficheros",
+        ),
+        Herramienta(
             "escribir_fichero",
             "Crea o sobrescribe un fichero de texto con el contenido dado.",
-            escribir_fichero,
+            escribir,
             {"ruta": texto("Ruta del fichero."), "contenido": texto("Texto completo.")},
             requeridos=("ruta", "contenido"),
             narrar=lambda a: f"Escribo {a.get('ruta')}",
-            confirmar=_confirmar_escritura,
+            confirmar=confirmar_escritura,
+            familia="ficheros",
+        ),
+        Herramienta(
+            "editar_fichero",
+            "Cambia un trozo de un fichero existente: buscar tiene que aparecer tal cual "
+            "(con su sangria) y una sola vez, salvo todas=true.",
+            editar,
+            {
+                "ruta": texto("Ruta del fichero."),
+                "buscar": texto("El texto exacto que hay ahora."),
+                "reemplazar": texto("Lo que va en su lugar."),
+                "todas": booleano("Cambiar todas las apariciones."),
+            },
+            requeridos=("ruta", "buscar", "reemplazar"),
+            narrar=lambda a: f"Edito {a.get('ruta')}",
+            confirmar=confirmar_edicion,
             familia="ficheros",
         ),
         Herramienta(
@@ -257,14 +422,14 @@ def herramientas() -> list[Herramienta]:
             "Ejecuta un comando en la terminal del sistema y devuelve su salida. "
             f"Se corta a los {_TIMEOUT_COMANDO:.0f}s: no lo uses para abrir programas "
             "con ventana (para eso esta abrir_aplicacion).",
-            ejecutar_comando,
+            ejecutar,
             {
                 "comando": texto("El comando, tal cual se escribiria en la terminal."),
                 "carpeta": texto("Carpeta desde la que ejecutarlo (opcional)."),
             },
             requeridos=("comando",),
             narrar=lambda a: f"Ejecuto: {a.get('comando')}",
-            confirmar=_confirmar_comando,
+            confirmar=confirmar_comando,
             familia="terminal",
         ),
     ]

@@ -29,3 +29,18 @@ def _vault_aparte(tmp_path_factory, monkeypatch):
     from doombot.obsidian import vault
 
     monkeypatch.setattr(vault, "VAULT_DIR", tmp_path_factory.mktemp("vault"))
+
+
+@pytest.fixture(autouse=True)
+def _taller_aparte(tmp_path_factory, monkeypatch):
+    """El taller (D-045) tampoco: sin esto, la ventana de los tests usaria ``~/taller``."""
+    import shutil
+
+    from doombot.agent import taller
+
+    raiz = tmp_path_factory.mktemp("taller")
+    monkeypatch.setattr(taller, "RAIZ_POR_DEFECTO", raiz)
+    # Tambien si .env de quien pasa los tests pone DOOMBOT_TALLER: settings() va en cache.
+    monkeypatch.setattr(
+        taller, "crear_taller", lambda cfg=None: taller.Taller([raiz], git=shutil.which("git"))
+    )

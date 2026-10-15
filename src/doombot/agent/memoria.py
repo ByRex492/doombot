@@ -34,6 +34,7 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from doombot.agent import personalidad
 from doombot.agent.herramientas import Herramienta, entero, texto
 from doombot.memory import Memory
 from doombot.obsidian import (
@@ -170,8 +171,11 @@ class Memoria:
 
     # -- en cada orden ----------------------------------------------------------
     def contexto(self, tarea: str) -> Contexto:
-        """El perfil, y los recuerdos que se parezcan a la orden."""
-        bloques = [perfil_para_prompt(leer_perfil(self._vault))]
+        """Su personalidad (D-044), el perfil, y los recuerdos que se parezcan a la orden."""
+        bloques = [
+            personalidad.para_prompt(self._vault),
+            perfil_para_prompt(leer_perfil(self._vault)),
+        ]
         recordados: list[str] = []
         aviso = ""
         if self.activa:
@@ -326,6 +330,13 @@ class Memoria:
             "hechos": p.hechos,
             "ruta": str(perfil_path(self._vault)),
         }
+
+    def personalidad(self) -> dict[str, Any]:
+        return {**personalidad.leer(self._vault), "estilos": personalidad.catalogo()}
+
+    def guardar_personalidad(self, base: str, texto: str) -> None:
+        """``ValueError`` si queda vacia o es demasiado larga."""
+        personalidad.guardar(str(base or ""), str(texto or ""), self._vault)
 
     def guardar_datos(self, campos: dict[str, Any]) -> None:
         """Los datos del perfil (nombre, a que se dedica...). ``ValueError`` si no se guardan."""

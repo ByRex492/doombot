@@ -145,6 +145,10 @@ class Settings:
     largo; una respuesta como "he abierto la calculadora" no gasta peticion.
     """
 
+    taller: tuple[str, ...] = ()
+    """Carpetas del taller (D-045), de ``DOOMBOT_TALLER``. La primera es donde se crean los
+    proyectos nuevos. Vacio = ``~/taller``."""
+
     def clave(self, proveedor: str) -> str:
         return dict(self.claves).get(proveedor.lower(), "")
 
@@ -238,6 +242,9 @@ def settings() -> Settings:
         agent_revisor=os.environ.get("DOOMBOT_AGENT_REVISOR", "si").strip().lower()
         not in ("no", "0", "false", "off"),
         agent_refinar=_modo_refinar(os.environ.get("DOOMBOT_AGENT_REFINAR", "auto")),
+        taller=tuple(
+            t.strip() for t in os.environ.get("DOOMBOT_TALLER", "").split(",") if t.strip()
+        ),
         n8n_base_url=os.environ.get("DOOMBOT_N8N_BASE_URL", "").strip().rstrip("/"),
         n8n_workflows=_parse_n8n_workflows(os.environ.get("DOOMBOT_N8N_WORKFLOWS", "").strip()),
     )

@@ -82,11 +82,13 @@ class Puente:
         montar: Callable[..., Any] | None = None,
         historial: Any = None,
         memoria: Any = None,
+        taller: Any = None,
     ) -> None:
         self._montar = montar
         # El perfil y los recuerdos (D-043): los usa el agente en cada orden y
         # los edita la ventana, tambien antes de que haya agente (sin claves).
         self._memoria_inyectada = memoria
+        self._taller_inyectado = taller
         # La conversacion abierta (None = una nueva, que se crea al primer
         # mensaje) y la carpeta donde ira esa nueva. Ver ventana/historial.py.
         self._historial_inyectado = historial
@@ -258,8 +260,26 @@ class Puente:
             self._memoria_inyectada = crear_memoria()
         return self._memoria_inyectada
 
+    @property
+    def _taller(self) -> Any:
+        if self._taller_inyectado is None:
+            from doombot.agent.taller import crear_taller
+
+            self._taller_inyectado = crear_taller()
+        return self._taller_inyectado
+
+    def taller(self) -> dict[str, Any]:
+        return self._taller.info()
+
     def perfil(self) -> dict[str, Any]:
-        return {**self._memoria.perfil(), "memoria": self._memoria.estado()}
+        return {
+            **self._memoria.perfil(),
+            "memoria": self._memoria.estado(),
+            "personalidad": self._memoria.personalidad(),
+        }
+
+    def guardar_personalidad(self, base: str, texto: str) -> dict[str, Any]:
+        return self._historial_op(lambda: self._memoria.guardar_personalidad(base, texto))
 
     def guardar_perfil(self, campos: dict[str, Any]) -> dict[str, Any]:
         return self._historial_op(lambda: self._memoria.guardar_datos(dict(campos or {})))
@@ -470,6 +490,7 @@ class Puente:
                     confirmar=self._confirmar,
                     pantalla=lambda datos: self._emitir("visual", **datos),
                     memoria=self._memoria,
+                    taller=self._taller,
                 )
             except ValueError as e:
                 return {"ok": False, "error": str(e)}
@@ -490,6 +511,7 @@ class Puente:
             "revisor": self._montaje.agente.revisar is not None,
             "repaso": getattr(self._montaje.agente.repasar, "modo", "no"),
             "memoria": self._memoria.estado(),
+            "taller": self._taller.info(),
             **self.modos(),
         }
 

@@ -90,8 +90,11 @@ def run() -> int:
     _forzar_utf8()
     try:
         from doombot.agent.memoria import crear_memoria
+        from doombot.agent.taller import crear_taller
 
-        m = montar(narrar=narrar, confirmar=confirmar, memoria=crear_memoria())
+        m = montar(
+            narrar=narrar, confirmar=confirmar, memoria=crear_memoria(), taller=crear_taller()
+        )
     except ValueError as e:
         print(e, file=sys.stderr)
         return 1

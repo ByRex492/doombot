@@ -17,6 +17,8 @@ def test_lo_valido_se_conserva():
         "por_herramienta": False,
         "circuitos": False,
         "crt": False,
+        "voz_siempre": True,
+        "manos_libres": True,
         "perfiles": [],
     }
     assert limpiar(datos) == {**datos, "c1": "#ffae2b"}

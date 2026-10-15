@@ -68,6 +68,13 @@ _RESUMIR = (
 )
 
 
+_NOTA_VOZ = (
+    "Te ha hablado por voz y vas a contestar en voz alta: responde corto y como se habla, sin "
+    "listas, tablas ni enlaces. Si hay codigo o datos largos, dejalos en la respuesta y dile "
+    "que los tiene en pantalla. Lo que oyes viene de un transcriptor: si una palabra no encaja, "
+    "piensa que quiso decir."
+)
+
 # Lo que se guarda de una conversacion para volver a pintarla al abrirla: lo
 # que se ve en el registro. Los cambios de estado del nucleo no hacen falta.
 _PERSISTIBLES = frozenset({
@@ -83,12 +90,21 @@ class Puente:
         historial: Any = None,
         memoria: Any = None,
         taller: Any = None,
+        voz: Any = None,
     ) -> None:
         self._montar = montar
         # El perfil y los recuerdos (D-043): los usa el agente en cada orden y
         # los edita la ventana, tambien antes de que haya agente (sin claves).
         self._memoria_inyectada = memoria
         self._taller_inyectado = taller
+        # La voz (D-046): se monta aparte, en su hilo, porque cargar Kokoro tarda.
+        self._voz: Any = voz
+        self._voz_preparada = threading.Event()
+        if voz is not None:
+            self._voz_preparada.set()
+        self._voz_pedida = False
+        self._por_voz = False
+        """La orden en curso llego hablando: se contesta hablando."""
         # La conversacion abierta (None = una nueva, que se crea al primer
         # mensaje) y la carpeta donde ira esa nueva. Ver ventana/historial.py.
         self._historial_inyectado = historial
@@ -109,6 +125,7 @@ class Puente:
     # -- llamadas desde la ventana --------------------------------------------------
     def iniciar(self) -> dict[str, Any]:
         """Monta el agente (en su hilo) y dice con que cerebro se ha quedado."""
+        self._preparar_voz()
         return self._hilo.submit(self._montar_agente).result()
 
     def enviar(self, texto: str) -> dict[str, Any]:
@@ -248,6 +265,91 @@ class Puente:
             self._conv["carpeta"] = ""
             self._reactivar_proyecto()
         return resultado
+
+    # -- voz (D-046) --------------------------------------------------------------
+    def _preparar_voz(self) -> None:
+        if self._voz_pedida or self._voz_preparada.is_set():
+            return
+        self._voz_pedida = True
+
+        def preparar() -> None:
+            from doombot.ventana.voz import crear_voz
+
+            try:
+                self._voz = crear_voz(self._emitir, self._al_oir)
+            except Exception as e:  # noqa: BLE001 - sin voz, la ventana sigue igual
+                self._emitir("voz", estado="reposo", aviso=f"Sin voz: {e}")
+                return
+            finally:
+                self._voz_preparada.set()
+            from doombot.ventana import preferencias
+
+            if preferencias.leer().get("manos_libres"):
+                self._voz.manos_libres(True)
+
+        threading.Thread(target=preparar, name="voz-preparar", daemon=True).start()
+
+    def voz(self) -> dict[str, Any]:
+        if not self._voz_preparada.is_set():
+            return {"cargando": True}
+        if self._voz is None:
+            return {"entrada": False, "salida": False, "manos_libres": False, "motivos": {}}
+        return self._voz.estado()
+
+    def hablar(self) -> dict[str, Any]:
+        """El boton del microfono: escucha una orden."""
+        if self._voz is None or not self._voz.entrada:
+            return {"ok": False, "error": "No hay entrada de voz en este equipo."}
+        return {"ok": self._voz.escuchar()}
+
+    def manos_libres(self, activar: bool) -> dict[str, Any]:
+        if self._voz is None:
+            return {"entrada": False}
+        return self._voz.manos_libres(bool(activar))
+
+    def callar(self) -> None:
+        if self._voz is not None:
+            self._voz.callar()
+
+    def _al_oir(self, texto: str) -> None:
+        """Lo que se ha dicho: una respuesta a un permiso, "para", o una orden. Hilo de la voz."""
+        from doombot.phrases.matcher import es_afirmacion, normalize
+        from doombot.ventana.voz import NEGACION, PARAR
+
+        dicho = normalize(texto)
+        if self._permisos:
+            id_ = max(self._permisos)
+            if es_afirmacion(texto):
+                self.responder(id_, True)
+            elif dicho in NEGACION or dicho.startswith("no ") or dicho in PARAR:
+                self.responder(id_, False)
+            else:
+                self._emitir("aviso", texto=f"No te he entendido («{texto}»): dime sí o no.")
+                if self._voz is not None:
+                    self._voz.preguntar("No te he entendido.")
+            return
+        if dicho in PARAR:
+            self.callar()
+            self.parar()
+            return
+        if self._ocupado.is_set():
+            self._emitir("aviso", texto="Sigo con lo anterior. Dime «para» si quieres que lo deje.")
+            return
+        self._emitir("oido", texto=texto)
+        self._por_voz = True
+        resultado = self.enviar(texto)
+        if not resultado.get("ok"):
+            self._por_voz = False
+            if resultado.get("error"):
+                self._emitir("fallo", texto=resultado["error"])
+
+    def _responder_en_voz(self, texto: str) -> None:
+        from doombot.ventana import preferencias
+
+        if self._voz is None or not self._voz.salida:
+            return
+        if self._por_voz or preferencias.leer().get("voz_siempre"):
+            self._voz.decir(texto)
 
     # -- perfil y memoria (D-043) --------------------------------------------------
     # Cada operacion de la memoria abre su propia conexion: estas llamadas llegan
@@ -461,6 +563,9 @@ class Puente:
         # evaluate_js ahora, esperaria a un bucle de GTK que ya no atiende.
         self._ventana = None
         self.parar()
+        if self._voz is not None:
+            with contextlib.suppress(Exception):
+                self._voz.cerrar()
         if self._montaje is not None:
             # Unos segundos para cerrar el navegador propio. Si el agente sigue
             # dentro de una peticion a un modelo, no se le espera: el proceso
@@ -495,6 +600,7 @@ class Puente:
             except ValueError as e:
                 return {"ok": False, "error": str(e)}
             self._montaje.agente.observar = lambda evento, datos: self._emitir(evento, **datos)
+            self._con_nota_de_voz()
             self._activar_proyecto()
 
         cerebro = self._montaje.agente.cerebro
@@ -515,6 +621,19 @@ class Puente:
             **self.modos(),
         }
 
+    def _con_nota_de_voz(self) -> None:
+        """Si la orden llega hablando, que conteste como se habla (D-046)."""
+        agente = self._montaje.agente
+        previo = agente.contexto
+
+        def contexto(tarea: str) -> str:
+            partes = [previo(tarea) if previo is not None else ""]
+            if self._por_voz:
+                partes.append(_NOTA_VOZ)
+            return "\n\n".join(p for p in partes if p)
+
+        agente.contexto = contexto
+
     def _ejecutar(self, texto: str) -> None:
         antes = len(self._montaje.abiertas())
         self._emitir("estado", estado="pensando")
@@ -531,9 +650,11 @@ class Puente:
                 completo=informe.completo,
                 abiertas=self._montaje.abiertas()[antes:],
             )
+            self._responder_en_voz(informe.respuesta)
             if informe.completo:
                 self._resumir(texto, informe.respuesta)
         finally:
+            self._por_voz = False
             self._guardar_conversacion()
             self._ocupado.clear()
             self._emitir("estado", estado="reposo")
@@ -567,6 +688,8 @@ class Puente:
         # ventana la pinta aparte, debajo.
         pregunta, _, opinion = pregunta.partition("\n      Segunda opinion: ")
         self._emitir("permiso", id=id_, pregunta=pregunta.strip(), opinion=opinion.strip())
+        if self._por_voz and self._voz is not None:
+            self._voz.preguntar(pregunta.strip())  # se contesta "si" o "no" hablando
         decision = False
         try:
             decision = cola.get(timeout=_ESPERA_PERMISO)

@@ -1765,3 +1765,170 @@ Empezaba cada conversación sin saber ni el nombre del usuario.
 **Sin verificar**:
 - la ventana real con pywebview;
 - la voz con un `usuario.md` editado desde la ventana en otro equipo y traído con `git pull`.
+
+## D-044 — Personalidad elegida por el usuario, y un prompt que habla como una persona
+
+**Contexto.** 15/10/2026. El usuario quiere un asistente con personalidad y memoria, «humanizado
+lo máximo posible», que entienda lo que se le dice sin palabras clave: «abre Steam» o «steam» a
+secas tienen que funcionar. El prompt del agente era un reglamento («Recibes órdenes escritas y las
+cumples. Normas: …»), y el modelo contestaba como un reglamento: decía «Voy a responder.» antes de
+devolver un saludo.
+
+**Decisión.**
+1. **La personalidad es un texto, en `obsidian/personalidad.md`**, junto al perfil (D-043).
+   - Se parte de un estilo (`agent/personalidad.py`): Compañero (por defecto), J.A.R.V.I.S.,
+     Mentor, Colega gamer o Sobrio. Se retoca a gusto en Perfil > Su personalidad, o a mano en
+     Obsidian.
+   - Al modelo le llega el texto, no el nombre del estilo.
+   - Va en el contexto de cada orden, como el perfil: un cambio se nota en la orden siguiente sin
+     volver a montar el agente.
+2. **El prompt empieza por cómo habla, y después cómo trabaja.**
+   - Cómo habla: natural, sin fórmulas ni listas cuando no hacen falta.
+   - Entiende la intención, no las palabras: «steam», «ponme Steam» y «abre Steam» son lo mismo;
+     «mi juego» o «lo de ayer» se resuelven con la memoria, el taller (D-045) y la conversación.
+   - Pregunta solo si de verdad hay varias opciones.
+   - Narrar antes de actuar solo cuando se van a usar herramientas: «si solo hay que contestar,
+     contesta».
+
+**Descartado.**
+- **Personalidad en el prompt fijo**: obligaría a reiniciar el agente al cambiarla.
+- **Elegir solo entre estilos cerrados**: el usuario quiere ajustar cosas concretas, y un texto
+  editable lo permite sin más código.
+
+**Verificado.**
+- Tests (`test_personalidad.py`): estilos, ida y vuelta del fichero, edición a mano, la ventana, y
+  el cambio que llega a la orden siguiente.
+- Con la cadena real:
+  - «hola, ¿qué tal?» → «¡Hey Alex! Todo bien por aquí…», con el nombre sacado del perfil y sin
+    preámbulo;
+  - «steam» a secas → abrió Steam sin preguntar qué quería.
+
+  La herramienta de abrir aplicaciones era de mentira, para no abrir nada en el equipo del
+  usuario.
+
+## D-045 — El taller: autonomía total en los proyectos de código, con deshacer
+
+**Contexto.** 15/10/2026. El usuario quiere que D.O.O.M le ayude a construir proyectos de código
+(juegos, aplicaciones) «con autonomía total en el PC». Programar a base de «¿puedo escribir este
+fichero?» no se aguanta. Pero quitar las confirmaciones en todo el equipo deja sin defensa ante los
+errores de un modelo gratuito y ante una página que intente colarle órdenes (D-033). El usuario
+aceptó la propuesta: autonomía total dentro de una carpeta de proyectos, y poder deshacer.
+
+**Decisión** (`agent/taller.py`, `agent/procesos.py`, `agent/sistema.py`).
+1. **El taller**: `DOOMBOT_TALLER` (por defecto `~/taller`; admite varias carpetas separadas por
+   comas, y los proyectos nuevos van a la primera). Cada carpeta de primer nivel es un proyecto.
+2. **Dentro, sin preguntar**: escribir, sobrescribir, editar, ejecutar e instalar las
+   dependencias del proyecto. Los comandos del taller tienen 10 minutos en vez de 2.
+3. **Lo que sale del taller se sigue preguntando**, aunque se ejecute dentro:
+   - `sudo` y parecidos, y gestores de paquetes del sistema;
+   - `git push` y publicar paquetes;
+   - `ssh` y conexiones a otra máquina;
+   - `curl … | sh`;
+   - `pip install` fuera de un entorno virtual, y `npm -g`;
+   - `$( )`;
+   - cualquier ruta escrita que caiga fuera del taller (salvo la carpeta temporal);
+   - y los ficheros delicados (`.env`, claves), dentro o fuera.
+4. **Punto de control antes de cada orden.** La primera vez que una orden toca un proyecto, su
+   estado se guarda en un git en la sombra (`data_dir()/taller/<proyecto>.git`, con `--git-dir` y
+   `--work-tree`).
+   - No ensucia el historial ni las ramas del git del proyecto, y funciona en carpetas sin git.
+   - Excluye lo que se regenera: `node_modules`, `.venv`, `build`, cachés de Godot y Unity…
+5. **`deshacer_cambios`** vuelve al último punto distinto del estado actual.
+   - Guarda antes el estado de ahora, así que deshacer también se deshace.
+   - Dice qué ficheros quita o recupera: sin ese dato, el modelo contaba lo que no era.
+   - Se confirma, porque descarta lo que haya ahora.
+6. **Sin git no hay deshacer, y sin deshacer no hay autonomía**: el taller pregunta como el resto
+   del equipo.
+7. **Herramientas de programador**:
+   - `editar_fichero`: cambia un trozo exacto, como el Edit de Claude Code, y respeta los saltos
+     de línea de Windows;
+   - `buscar_texto`: busca dentro de los ficheros, como grep;
+   - `proceso`: lanza, lee, para o lista lo que se queda abierto, como un juego o un servidor;
+   - `crear_proyecto`: carpeta con README y git propio;
+   - `ver_cambios`.
+
+   Los procesos se matan con sus hijos al cerrar D.O.O.M. `editar_fichero` y `buscar_texto`
+   están también fuera del taller, con las confirmaciones de siempre.
+8. **Diario por proyecto** (`.doom/diario.md`, excluido de los puntos de control).
+   - Recoge lo pedido, la respuesta del agente y los ficheros cambiados, sin gastar peticiones.
+   - En cada orden el agente recibe los proyectos del taller (12 como mucho) y lo último del
+     diario del proyecto activo. Así sirve «¿en qué nos quedamos con el juego?».
+
+**Límite honesto.** Un programa escrito en el taller y ejecutado ahí puede hacer lo que quiera en el
+equipo, y eso no se detecta mirando el comando. Contra eso queda que lo leído de fuera son datos y
+no órdenes (D-033). Un sandbox de verdad (contenedores) rompería justo lo que se quiere: juegos con
+GPU y ventanas.
+
+**Descartado.**
+- **Commits en el git del propio proyecto**: llenarían su historial de puntos de control, y no
+  servirían en carpetas sin git.
+- **Autonomía total en todo el equipo**: lo descartó el propio usuario.
+- **Confirmar cada fichero en el taller**: es lo que hacía imposible programar.
+
+**Verificado.**
+- Tests (`test_taller.py`, 39):
+  - deshacer dos veces seguidas, sin tocar `node_modules`, y sin un solo commit en el repo del
+    proyecto;
+  - la tabla de qué comandos van solos y cuáles se preguntan;
+  - el `.env` que se sigue preguntando, y los saltos de Windows;
+  - los procesos lanzados, leídos, parados y cerrados;
+  - un agente que programa sin preguntar y deja diario.
+- Con la cadena real, en un taller temporal: «crea en el taller un proyecto contador que cuente del
+  1 al 5 y pruébalo» → creó, escribió, ejecutó `python3 contador.py` y lo apuntó, sin un solo
+  permiso. «Deshaz lo último» → lo preguntó y lo deshizo.
+
+**Sin verificar**: un proyecto grande (Godot, Unity) y lo que tarda su primer punto de control.
+
+## D-046 — La voz en la ventana: se le habla al agente, no a un menú de palabras clave
+
+**Contexto.** 15/10/2026. La voz (D-021 a D-031) vivía solo en `python -m doombot chat`, con
+órdenes por palabras clave: «abre Steam» no era ninguna y acababa en un modelo sin herramientas. La
+ventana, que es donde se usa D.O.O.M, solo se manejaba escribiendo. El usuario lo quiere como
+asistente de voz.
+
+**Decisión** (`ventana/voz.py`, `backends/stt_nube.py`).
+1. **Lo que se oye va al agente, igual que lo escrito.** Se le habla con naturalidad y actúa.
+2. **Tres formas de usarla:**
+   - **Pulsar para hablar**: el botón 🎙 o Ctrl+Espacio. Graba hasta el silencio. El micrófono
+     solo se abre al pulsar.
+   - **Manos libres** (en Sistema): escucha «Hey Jarvis», el modelo preentrenado de D-005, en
+     segundo plano. Decirla mientras habla le corta. Se recuerda entre sesiones.
+   - **Responder hablando**: lo que se pide por voz se contesta por voz, con Kokoro.
+     - Sin código, viñetas ni enlaces leídos en alto: dice que están en pantalla.
+     - Lo largo se corta en una frase.
+     - El agente recibe una nota para contestar como se habla.
+     - «leer también lo escrito» lo hace con todo.
+3. **«Para» o «calla» dicho en voz** corta en vez de mandarse como orden. Si está ocupado con otra
+   orden, lo dice en vez de encolarla.
+4. **Los permisos se contestan hablando**: dice la pregunta, escucha «sí» o «no», y si no lo
+   entiende vuelve a preguntar. Los botones siguen valiendo.
+5. **Quién transcribe** (`DOOMBOT_STT`): `auto` usa Whisper local si está instalado y, si no,
+   Whisper en Groq con la clave del chat. Groq es gratis y tarda menos de un segundo, pero **el
+   audio sale del equipo**; la ventana dice cuál se usa.
+6. **Todo es opcional y se dice qué falta**: sin `sounddevice` no oye, sin Kokoro no habla, y sin
+   `openwakeword` no hay manos libres. Se monta en su propio hilo al abrir la ventana, porque
+   cargar Kokoro tarda.
+7. `Listener` tiene un `parar` para apagar la escucha desde otro hilo. Es el único cambio en
+   `voice/`.
+
+**Descartado.**
+- **Rehacer el modo consola para que pase por el agente**: la ventana ya es el asistente de voz.
+  La consola sigue como estaba, con sus palabras clave.
+- **Transcribir siempre en la nube**: en el sobremesa hay Whisper con GPU, y el audio no tiene por
+  qué salir.
+
+**Verificado.** Tests (`test_voz_ventana.py`, 20) con micrófono, transcriptor y altavoz falsos:
+- pulsar para hablar, el silencio, y manos libres con la palabra y con el botón;
+- el texto para la voz, y el transcriptor de Groq contra un servidor falso;
+- la elección de transcriptor;
+- una orden hablada que se contesta hablando y una escrita que no;
+- «para», el permiso contestado hablando y la orden en curso.
+
+La interfaz se ha comprobado en la demostración: botón, estados del núcleo, Sistema y personalidad.
+
+**Sin verificar — nada de audio real**: el portátil no tiene instalado el stack de voz, y el
+micrófono no se ha abierto con el usuario delante. Falta probar en el sobremesa:
+- el micrófono y Whisper con GPU;
+- Kokoro hablando en la ventana;
+- «Hey Jarvis» con la voz de D.O.O.M sonando: la propia voz podría dispararla;
+- contestar un permiso hablando.

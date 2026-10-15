@@ -254,11 +254,21 @@ class Taller:
         if destino is None:
             return f"No hay nada que deshacer en {p.name}: esta como en su primer punto de control."
         commit, mensaje = destino
+        # Que cambia, dicho al modelo con hechos: si no, lo cuenta a su manera.
+        que = {"A": "se quita", "D": "vuelve", "M": "vuelve a como estaba"}
+        cambios = [
+            f"{que.get(linea[0], 'cambia')} {linea[1:].strip()}"
+            for linea in self._g(p, "diff", "--cached", "--name-status", commit).splitlines()
+            if linea.strip()
+        ]
         # Lo de ahora tambien se guarda: deshacer se puede deshacer.
         self._g(p, "commit", "-q", "--allow-empty", "-m", "deshacer: estado antes de deshacer")
         self._g(p, "read-tree", "-u", "--reset", commit)
         self._tocados.pop(p, None)
-        return f"Devuelto {p.name} al estado {mensaje}."
+        detalle = "; ".join(cambios[:20])
+        if len(cambios) > 20:
+            detalle += f"; y {len(cambios) - 20} mas"
+        return f"Devuelto {p.name} al estado {mensaje}. {detalle}.".rstrip(". ") + "."
 
     def _destino(self, p: Path, actual: str) -> tuple[str, str] | None:
         for linea in self._g(p, "log", "--format=%H%x09%T%x09%s").splitlines():

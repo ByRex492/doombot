@@ -354,6 +354,25 @@ datos que busca por significado y que solo le llegan cuando vienen a cuento
 panel, y necesitan el extra `memoria`. Las contraseñas, claves y datos
 bancarios no los guarda nunca.
 
+**Personalidad.** En el mismo panel, *Su personalidad*: se elige un estilo (Compañero,
+J.A.R.V.I.S., Mentor, Colega gamer, Sobrio) y se retoca a gusto; se guarda en
+`obsidian/personalidad.md` y se nota desde la orden siguiente (D-044). Se le habla con
+naturalidad: «steam», «ponme Steam» o «abre Steam» son lo mismo, y «mi juego» o «lo de ayer» los
+resuelve con su memoria y el taller.
+
+**El taller.** Los proyectos de código van en `~/taller` (`DOOMBOT_TALLER`). Ahí D.O.O.M trabaja
+con autonomía total: crea, edita, borra, ejecuta e instala lo que el proyecto necesite sin pedir
+permiso (D-045). Antes de cada orden guarda un punto de control, y «deshaz lo último» vuelve atrás
+(y también se puede deshacer). Lo que sale del taller —`sudo`, instalar en el sistema, `git push`,
+rutas de fuera— lo sigue preguntando. Puede dejar en marcha el juego o el servidor y leer sus
+errores, y lleva un diario por proyecto (`.doom/diario.md`) para retomar donde lo dejasteis.
+
+**Voz.** El botón 🎙 junto a *Ejecutar* (o Ctrl+Espacio) graba hasta que te callas y le manda la
+orden. En *Sistema*, **Manos libres** escucha «Hey Jarvis» sin tocar nada. Lo que le pides
+hablando te lo contesta hablando (sin leer código ni enlaces); «para» le corta, y los permisos se
+contestan con un «sí» o un «no» (D-046). Necesita los extras `voice` y `voice-tts`; sin Whisper
+local transcribe en Groq con tu clave (`DOOMBOT_STT`), y entonces el audio sale del equipo.
+
 Antes de darte una respuesta que se apoya en páginas o ficheros, otro modelo
 de la lista la repasa: comprueba los datos contra lo consultado y las fuentes
 (D-039, `DOOMBOT_AGENT_REFINAR`). Para leer páginas usa Jina Reader, que no

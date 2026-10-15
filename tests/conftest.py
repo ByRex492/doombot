@@ -44,3 +44,13 @@ def _taller_aparte(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(
         taller, "crear_taller", lambda cfg=None: taller.Taller([raiz], git=shutil.which("git"))
     )
+
+
+@pytest.fixture(autouse=True)
+def _sin_voz(monkeypatch):
+    """La ventana de los tests no abre el microfono ni carga Kokoro (D-046)."""
+    from doombot.ventana import voz
+
+    monkeypatch.setattr(
+        voz, "crear_voz", lambda emitir, al_oir: voz.VozVentana(emitir=emitir, al_oir=al_oir)
+    )

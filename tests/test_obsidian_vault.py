@@ -33,6 +33,12 @@ class MemoriaFalsa:
                 self.guardado.append((t, kind))
         return list(range(len(textos)))
 
+    def forget(self, id):
+        if 0 <= id < len(self.guardado):
+            self.guardado[id] = ("", "olvidado")
+            return True
+        return False
+
 
 # -- escribir_perfil ------------------------------------------------------------
 def test_escribir_perfil_crea_el_fichero_con_los_hechos(tmp_path):
@@ -51,17 +57,19 @@ def test_escribir_perfil_sin_hechos_deja_solo_la_cabecera(tmp_path):
     assert "Usuario" in ruta.read_text(encoding="utf-8")
 
 
-def test_escribir_perfil_sobrescribe_no_acumula(tmp_path):
+def test_escribir_perfil_anade_lo_nuevo_y_respeta_el_fichero(tmp_path):
+    """El fichero manda (D-043): escribir anade lo aprendido por voz, no borra lo que habia."""
+    vault.guardar_perfil(
+        vault.Perfil(campos={"nombre": "Alex"}, hechos=["escrito a mano"]), vault_dir=tmp_path
+    )
     mem = MemoriaFalsa()
-    mem.guardado = [("dato viejo", "perfil")]
+    mem.guardado = [("dicho por voz", "perfil"), ("escrito a mano", "perfil")]
+
     escribir_perfil(mem, vault_dir=tmp_path)
 
-    mem.guardado = [("dato nuevo", "perfil")]
-    ruta = escribir_perfil(mem, vault_dir=tmp_path)
-
-    contenido = ruta.read_text(encoding="utf-8")
-    assert "dato nuevo" in contenido
-    assert "dato viejo" not in contenido
+    p = vault.leer_perfil(tmp_path)
+    assert p.hechos == ["escrito a mano", "dicho por voz"]  # sin duplicar, en orden
+    assert p.campos == {"nombre": "Alex"}  # los datos de la ventana no se pierden
 
 
 # -- sincronizar_perfil -----------------------------------------------------------
@@ -95,6 +103,94 @@ def test_ida_y_vuelta_no_pierde_ni_duplica(tmp_path):
     n = sincronizar_perfil(mem, vault_dir=tmp_path)
     assert n == 1
     assert mem.guardado.count(("un hecho", "perfil")) == 1  # no se duplico
+
+
+def test_sincronizar_olvida_lo_que_se_borro_del_fichero(tmp_path):
+    mem = MemoriaFalsa()
+    mem.guardado = [("sigue", "perfil"), ("borrado en la ventana", "perfil"), ("otro", "fact")]
+    vault.guardar_perfil(vault.Perfil(hechos=["sigue"]), vault_dir=tmp_path)
+
+    assert sincronizar_perfil(mem, vault_dir=tmp_path) == 1
+
+    assert ("sigue", "perfil") in mem.guardado
+    assert ("borrado en la ventana", "perfil") not in mem.guardado
+    assert ("otro", "fact") in mem.guardado  # los recuerdos no son del perfil
+
+
+def test_sin_fichero_no_se_olvida_nada(tmp_path):
+    mem = MemoriaFalsa()
+    mem.guardado = [("dato", "perfil")]
+    sincronizar_perfil(mem, vault_dir=tmp_path)
+    assert mem.guardado == [("dato", "perfil")]
+
+
+# -- el perfil (D-043) -------------------------------------------------------------
+def test_el_perfil_va_y_vuelve_entero(tmp_path):
+    perfil = vault.Perfil(
+        campos={"nombre": 'Alex "el del HUD"', "estilo": "Directo.\nCon ejemplos."},
+        hechos=["tiene unas Meta Quest 3S", "vive con dos gatos"],
+    )
+    vault.guardar_perfil(perfil, vault_dir=tmp_path)
+    assert vault.leer_perfil(tmp_path) == perfil
+
+
+def test_las_propiedades_de_obsidian_no_son_hechos_y_se_conservan(tmp_path):
+    """Una lista en las propiedades (``tags``) lleva guiones: no son hechos, ni se pierden."""
+    ruta = vault.perfil_path(tmp_path)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    ruta.write_text(
+        "---\nnombre: Alex\ntags:\n  - personal\n---\n# Usuario\n\n- un hecho\n",
+        encoding="utf-8",
+    )
+
+    p = vault.leer_perfil(tmp_path)
+    assert p.campos == {"nombre": "Alex"}  # escrito a pelo, como lo deja Obsidian
+    assert p.hechos == ["un hecho"]
+
+    vault.anotar_hecho("otro hecho", vault_dir=tmp_path)
+    contenido = ruta.read_text(encoding="utf-8")
+    assert "tags:\n  - personal" in contenido
+    assert vault.leer_perfil(tmp_path).hechos == ["un hecho", "otro hecho"]
+
+
+def test_anotar_y_quitar_hechos(tmp_path):
+    assert vault.anotar_hecho("  - tiene   un perro ", vault_dir=tmp_path) == "tiene un perro"
+    vault.anotar_hecho("tiene un perro", vault_dir=tmp_path)  # no se duplica
+    vault.anotar_hecho("juega al padel", vault_dir=tmp_path)
+    assert vault.leer_perfil(tmp_path).hechos == ["tiene un perro", "juega al padel"]
+
+    assert vault.quitar_hecho(0, vault_dir=tmp_path) == "tiene un perro"
+    assert vault.quitar_hecho("juega al padel", vault_dir=tmp_path) == "juega al padel"
+    assert vault.leer_perfil(tmp_path).hechos == []
+
+
+def test_quitar_lo_que_no_esta_avisa(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError):
+        vault.quitar_hecho(3, vault_dir=tmp_path)
+    with pytest.raises(ValueError):
+        vault.quitar_hecho("no esta", vault_dir=tmp_path)
+
+
+def test_perfil_para_prompt():
+    assert vault.perfil_para_prompt(vault.Perfil()) == ""
+    texto = vault.perfil_para_prompt(
+        vault.Perfil(
+            campos={"nombre": "Alejandro", "llamame": "Alex", "ubicacion": "Valencia",
+                    "estilo": "Breve y directo"},
+            hechos=["tiene unas Meta Quest 3S"],
+        )
+    )  # fmt: skip
+    assert "Se llama Alejandro; llamale Alex" in texto
+    assert "Vive en: Valencia" in texto
+    assert "- tiene unas Meta Quest 3S" in texto
+    assert texto.endswith("Como quiere que le respondas: Breve y directo")
+
+
+def test_perfil_para_prompt_no_se_come_el_contexto():
+    largo = vault.Perfil(hechos=[f"hecho numero {i} " * 5 for i in range(200)])
+    assert len(vault.perfil_para_prompt(largo)) <= 2500
 
 
 # -- anotar_progreso ---------------------------------------------------------------

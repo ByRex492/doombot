@@ -7,6 +7,7 @@ import threading
 import time
 
 from doombot.agent.herramientas import Herramienta, texto
+from doombot.agent.memoria import Memoria
 from doombot.agent.montaje import montar
 from doombot.backends.base import LlamadaHerramienta, PasoModelo
 from doombot.ventana import HTML
@@ -52,7 +53,9 @@ def puente_con(*pasos: PasoModelo, herramientas=()) -> tuple[Puente, VentanaFals
             m.agente.herramientas[h.nombre] = h
         return m
 
-    puente = Puente(montar_prueba)
+    # Solo el perfil: con fastembed instalado, la memoria por defecto traeria
+    # ademas los recuerdos, y el numero de herramientas dependeria del equipo.
+    puente = Puente(montar_prueba, memoria=Memoria())
     ventana = VentanaFalsa()
     puente._conectar(ventana)
     return puente, ventana
@@ -68,7 +71,9 @@ def test_iniciar_dice_con_que_cerebro_se_queda():
     info = puente.iniciar()
     assert info["ok"] and info["modelos"] == ["guion/guion"]
     # 17 del agente + calcular + mostrar_grafica (hay pantalla) + aprender y consultar_skill
-    assert info["herramientas"] == 21
+    # + anotar_sobre_usuario (el perfil, D-043)
+    assert info["herramientas"] == 22
+    assert info["memoria"] == {"activa": False, "motivo": "", "recuerdos": 0}
     puente._cerrar()
 
 
@@ -284,4 +289,82 @@ def test_borrar_la_conversacion_abierta_empieza_una_nueva(tmp_path):
     assert historial.lista() == []
     assert puente.historial()["actual"] is None
     assert puente.abrir_conversacion("../../x")["ok"] is False
+    puente._cerrar()
+
+
+# -- perfil y memoria (D-043) ----------------------------------------------------------
+def test_el_perfil_se_edita_desde_la_ventana_sin_agente_montado():
+    puente = Puente(memoria=Memoria())
+    assert puente.guardar_perfil({"nombre": "Alex", "estilo": "Breve"}) == {"ok": True}
+    assert puente.anotar_perfil("tiene unas Meta Quest 3S") == {"ok": True}
+    assert puente.anotar_perfil("mi clave es gsk_abcdefghijklmnop")["ok"] is False
+
+    datos = puente.perfil()
+    assert datos["campos"]["nombre"] == "Alex"
+    assert datos["hechos"] == ["tiene unas Meta Quest 3S"]
+    assert datos["memoria"]["activa"] is False
+
+    assert puente.quitar_del_perfil(0) == {"ok": True}
+    assert puente.quitar_del_perfil(0)["ok"] is False
+    assert puente.perfil()["hechos"] == []
+
+
+def test_el_agente_de_la_ventana_lee_el_perfil_que_se_edita_en_ella():
+    vistos: list[str] = []
+
+    class Mira(Guion):
+        def paso(self, conversacion, herramientas, *, system=None):
+            vistos.append(system or "")
+            return super().paso(conversacion, herramientas, system=system)
+
+    puente = Puente(lambda **kw: montar(cerebro_=Mira(PasoModelo("Hola, Alex.")), **kw),
+                    memoria=Memoria())  # fmt: skip
+    ventana = VentanaFalsa()
+    puente._conectar(ventana)
+    puente.iniciar()
+    puente.guardar_perfil({"nombre": "Alex"})  # despues de montar: se lee en cada orden
+
+    puente.enviar("hola")
+    ventana.esperar("respuesta")
+    assert "Se llama Alex" in vistos[0]
+    puente._cerrar()
+
+
+def test_los_recuerdos_se_ven_y_se_borran_desde_la_ventana(tmp_path):
+    from tests.test_memoria_agente import EmbedderPalabras
+
+    memoria = Memoria(EmbedderPalabras(), ruta=tmp_path / "m.db")
+    memoria.recordar("La bici esta en el trastero")
+    puente = Puente(memoria=memoria)
+
+    lista = puente.recuerdos()
+    assert lista["activa"] and lista["recuerdos"] == 1
+    assert [r["texto"] for r in puente.recuerdos("bici")["lista"]] == [
+        "La bici esta en el trastero"
+    ]
+    assert puente.olvidar_recuerdo(lista["lista"][0]["id"]) == {"ok": True}
+    assert puente.recuerdos()["lista"] == []
+    assert puente.olvidar_recuerdo(999) == {"ok": False}
+
+
+def test_lo_que_recuerda_se_cuenta_y_se_guarda_con_la_conversacion(tmp_path):
+    from doombot.ventana.historial import Historial
+    from tests.test_memoria_agente import EmbedderPalabras
+
+    memoria = Memoria(EmbedderPalabras(), ruta=tmp_path / "m.db")
+    memoria.recordar("El examen de redes es el 12 de noviembre")
+    historial = Historial(tmp_path / "hist")
+    puente = Puente(lambda **kw: montar(cerebro_=Guion(PasoModelo("El 12.")), **kw),
+                    historial=historial, memoria=memoria)  # fmt: skip
+    ventana = VentanaFalsa()
+    puente._conectar(ventana)
+    puente.iniciar()
+
+    puente.enviar("cuando es el examen de redes")
+    ventana.esperar("memoria", texto="El examen de redes es el 12 de noviembre")
+    ventana.esperar("historial")
+    conv = historial.leer(historial.lista()[0]["id"])
+    assert {"tipo": "memoria", "texto": "El examen de redes es el 12 de noviembre"} in conv[
+        "registro"
+    ]
     puente._cerrar()

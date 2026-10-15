@@ -73,6 +73,12 @@ voice-aec = [
 agent-web = [
     "playwright>=1.45",
 ]
+# Los recuerdos del agente y de la ventana (D-043): buscar por significado lo
+# que se le conto. Ya viene en "voice"; aparte para quien solo usa la ventana.
+# El modelo (~220 MB) se descarga solo la primera vez que hace falta.
+memoria = [
+    "fastembed>=0.8",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

@@ -27,6 +27,7 @@ _FORMATO = {
     "resultado": "    ✓ {}",
     "error": "    ✗ {}",
     "aviso": "    ↻ {}",
+    "memoria": "  ◈ me acuerdo de: {}",
 }
 
 
@@ -88,7 +89,9 @@ def _contrastar(pregunta: str) -> None:
 def run() -> int:
     _forzar_utf8()
     try:
-        m = montar(narrar=narrar, confirmar=confirmar)
+        from doombot.agent.memoria import crear_memoria
+
+        m = montar(narrar=narrar, confirmar=confirmar, memoria=crear_memoria())
     except ValueError as e:
         print(e, file=sys.stderr)
         return 1

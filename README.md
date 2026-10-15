@@ -81,6 +81,7 @@ extras se combinan según lo que necesites (ver `pyproject.toml`):
 | `voice-aec` | Cancelación de eco + VAD | Barge-in: cortar a D.O.O.M hablándole encima (D-027) |
 | `hud` | `pywebview`, `websockets` | La ventana del HUD (D-016, D-022) |
 | `agent-web` | `playwright` | El navegador propio del agente (D-033); después, `python -m playwright install chromium` |
+| `memoria` | `fastembed` | Los recuerdos del agente: busca por significado lo que le contaste (D-043). Ya viene en `voice` |
 
 Requiere **Python 3.12** exacto. Ni 3.13 ni 3.14: el stack de audio e IA no
 publica wheels para esas versiones.
@@ -340,6 +341,18 @@ decidió en las demás. Por ejemplo, en una se diseña una app y en otra se
 genera su pantalla de inicio con ese diseño. En el menú ⋯ del proyecto,
 "Proyecto: instrucciones y memoria" deja escribir las instrucciones y ver o
 borrar lo apuntado.
+
+**Perfil y memoria.** En **Perfil**, en la cabecera, le dices quién eres: cómo
+te llamas y cómo quieres que te llame, a qué te dedicas, dónde vives, idiomas,
+intereses y cómo quieres que te responda, además de datos sueltos. Lo lee en
+cada orden, en cualquier modo (D-043). Cuando le cuentas algo duradero de ti,
+te pide permiso para apuntarlo ahí. Se guarda en `obsidian/usuario.md`, el
+mismo que usa la voz: viaja con el repositorio entre equipos y se puede editar
+en Obsidian. Aparte están los **recuerdos** ("recuerda que el examen es el 12"):
+datos que busca por significado y que solo le llegan cuando vienen a cuento
+(en el registro, con ◈). Son de cada equipo, se ven y se borran en el mismo
+panel, y necesitan el extra `memoria`. Las contraseñas, claves y datos
+bancarios no los guarda nunca.
 
 Antes de darte una respuesta que se apoya en páginas o ficheros, otro modelo
 de la lista la repasa: comprueba los datos contra lo consultado y las fuentes

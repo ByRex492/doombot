@@ -232,6 +232,10 @@ class Modos:
         self.actual = skill.id if skill else GLOBAL
         propias = {h.nombre: h for h in self.herramientas()}
         del_proyecto = {h.nombre: h for h in self.proyecto.herramientas()} if self.proyecto else {}
+        # La memoria (D-043) va en todos los modos, como aprender: una skill que
+        # no la lista sigue sabiendo quien es el usuario y que se le dijo.
+        memoria = getattr(m, "memoria", None)
+        de_memoria = {h.nombre: h for h in memoria.herramientas()} if memoria else {}
         if skill is None:
             catalogo = " ".join(f"{s.id} ({s.descripcion})" for s in self.skills.values())
             extra = [
@@ -240,7 +244,7 @@ class Modos:
                 else "",
                 self.notas.para_prompt([GLOBAL, *self.skills], por_ambito=4),
             ]
-            m.agente.herramientas = {**m.todas, **propias, **del_proyecto}
+            m.agente.herramientas = {**m.todas, **propias, **del_proyecto, **de_memoria}
             m.agente.cerebro = m.cadena
         else:
             extra = [
@@ -252,6 +256,7 @@ class Modos:
                 **{n: h for n, h in m.todas.items() if n in permitidas},
                 "aprender": propias["aprender"],
                 **del_proyecto,
+                **de_memoria,
             }
             m.agente.cerebro = ordenar_cadena(m.cadena, skill.modelos, m.cfg)
         if self.proyecto is not None:

@@ -21,6 +21,7 @@ esa separacion, rehacer la interfaz obligaria a tocar el audio.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
@@ -83,6 +84,9 @@ class Listener:
         self._max_ms = max_ms
         self._wait_ms = wait_ms
         self._state = State.DORMIDO
+        # Para apagar la escucha desde otro hilo (la ventana, D-046): se mira en
+        # cada bloque mientras se espera la activacion, y listen() termina.
+        self.parar = threading.Event()
 
     @property
     def state(self) -> State:
@@ -106,7 +110,7 @@ class Listener:
         exactamente lo que hace un push-to-talk que nadie pulsa.
         """
         atendidas = 0
-        while veces is None or atendidas < veces:
+        while (veces is None or atendidas < veces) and not self.parar.is_set():
             deteccion = self._esperar_activacion(espera_ms)
             if deteccion is None:
                 return
@@ -127,7 +131,7 @@ class Listener:
         leidos = 0
         try:
             with self._mic.abrir_flujo(bloque) as flujo:
-                while tope is None or leidos < tope:
+                while (tope is None or leidos < tope) and not self.parar.is_set():
                     leidos += 1
                     datos, _ = flujo.read(bloque)
                     muestras = _a_int16(datos)

@@ -10,6 +10,7 @@ estandar y ``Memory``.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -159,6 +160,48 @@ def perfil_para_prompt(perfil: Perfil, *, limite: int = 2500) -> str:
         bloques.append(f"Como quiere que le respondas: {c['estilo']}")
     texto = "\n".join(bloques)
     return texto if len(texto) <= limite else texto[: limite - 1] + "…"
+
+
+# -- la personalidad de D.O.O.M (D-044) --------------------------------------------
+_CABECERA_PERSONALIDAD = (
+    "# Personalidad de D.O.O.M\n\n"
+    "<!-- Como es y como habla D.O.O.M: lo lee en cada conversacion. Se edita en la\n"
+    "     ventana (Perfil > Su personalidad) o aqui a mano: todo lo que haya debajo\n"
+    "     de este comentario es su personalidad. -->\n\n"
+)
+
+
+def personalidad_path(vault_dir: Path | None = None) -> Path:
+    return (vault_dir or VAULT_DIR) / "personalidad.md"
+
+
+def leer_personalidad(vault_dir: Path | None = None) -> tuple[str, str]:
+    """``(base, texto)``: el estilo de partida elegido y la descripcion. Vacios si no hay."""
+    ruta = personalidad_path(vault_dir)
+    if not ruta.is_file():
+        return "", ""
+    lineas = ruta.read_text(encoding="utf-8").splitlines()
+    base, cuerpo = "", lineas
+    if lineas and lineas[0].strip() == "---" and "---" in (x.strip() for x in lineas[1:]):
+        fin = next(i for i, x in enumerate(lineas[1:], 1) if x.strip() == "---")
+        for linea in lineas[1:fin]:
+            clave, _, valor = linea.partition(":")
+            if clave.strip() == "base":
+                base = _valor(valor.strip())
+        cuerpo = lineas[fin + 1 :]
+    texto = "\n".join(cuerpo)
+    # Fuera el titulo y el comentario de la cabecera: lo que queda es suyo.
+    texto = re.sub(r"<!--.*?-->", "", texto, flags=re.DOTALL)
+    texto = "\n".join(x for x in texto.splitlines() if not x.startswith("# ")).strip()
+    return base, texto
+
+
+def guardar_personalidad(base: str, texto: str, vault_dir: Path | None = None) -> Path:
+    ruta = personalidad_path(vault_dir)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    arriba = f"---\nbase: {json.dumps(base.strip(), ensure_ascii=False)}\n---\n"
+    ruta.write_text(arriba + _CABECERA_PERSONALIDAD + texto.strip() + "\n", encoding="utf-8")
+    return ruta
 
 
 # -- D.O.O.M -> vault -----------------------------------------------------------

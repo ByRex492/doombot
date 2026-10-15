@@ -79,8 +79,10 @@ def test_el_perfil_entra_en_cada_orden(memoria):
     assert contexto.recordados == []
 
 
-def test_sin_perfil_ni_recuerdos_no_anade_nada(memoria):
-    assert memoria.contexto("hola").texto == ""
+def test_sin_perfil_ni_recuerdos_solo_va_su_personalidad(memoria):
+    """La personalidad va siempre (D-044): sin elegir, la de compañero."""
+    assert memoria.contexto("hola").texto.startswith("Tu personalidad: Cercano y directo")
+    assert "Quien es el usuario" not in memoria.contexto("hola").texto
 
 
 def test_el_perfil_funciona_sin_fastembed(tmp_path):

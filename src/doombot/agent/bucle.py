@@ -116,6 +116,9 @@ class Agente:
         # ``system`` porque los modos lo reescriben entero (D-038), y porque
         # depende de lo que se pide: no se guarda en la conversacion.
         self.contexto: Callable[[str], str] | None = None
+        # Al acabar cada orden, con lo pedido y como acabo: el diario del taller
+        # (D-045) apunta ahi que se hizo. Si falla, la orden ya esta hecha.
+        self.al_terminar: Callable[[str, Informe], None] | None = None
         self._inicio = 0
         self._max_pasos = max_pasos
         self._max_resultado = max_resultado
@@ -139,6 +142,15 @@ class Agente:
 
     # -- el bucle ---------------------------------------------------------------
     def ejecutar(self, tarea: str) -> Informe:
+        informe = self._ejecutar(tarea)
+        if self.al_terminar is not None:
+            try:
+                self.al_terminar(tarea, informe)
+            except Exception as e:  # noqa: BLE001 - ver al_terminar
+                self.narrar("aviso", f"no he podido apuntarlo: {recortar(str(e), 140)}")
+        return informe
+
+    def _ejecutar(self, tarea: str) -> Informe:
         self._tarea = tarea
         self._parar = False
         self.conversacion.append(tarea)

@@ -30,6 +30,9 @@ DEFECTO: dict[str, Any] = {
     "por_herramienta": True,
     "circuitos": True,
     "crt": True,
+    # La voz (D-046): leer en voz alta tambien lo escrito, y arrancar escuchando.
+    "voz_siempre": False,
+    "manos_libres": False,
     "perfiles": [],
 }
 TEMAS = ("jarvis", "holograma", "neon", "matriz", "glaciar", "carmesi", "propio")
@@ -103,7 +106,7 @@ def limpiar(datos: Any) -> dict[str, Any]:
         # bool es int en Python: True no es un brillo valido.
         if isinstance(valor, int | float) and not isinstance(valor, bool):
             limpio[clave] = round(min(maximo, max(minimo, float(valor))), 3)
-    for clave in ("por_herramienta", "circuitos", "crt"):
+    for clave in ("por_herramienta", "circuitos", "crt", "voz_siempre", "manos_libres"):
         if isinstance(datos.get(clave), bool):
             limpio[clave] = datos[clave]
     # Con un perfil propio activo mandan sus colores: la ventana pinta c1 y c2,

@@ -198,6 +198,14 @@ orden. Llegan al prompt por `Agente.contexto`, que se calcula en cada orden y
 no se guarda en la conversación. Quien monta el agente decide si lleva
 memoria: la ventana, la consola y la orden `agente` de la voz la llevan.
 
+**El taller** (`agent/taller.py`, D-045) cambia las confirmaciones de `agent/sistema.py`: dentro de
+sus carpetas no se pregunta, y antes de tocar un proyecto se guarda su punto de control en un git
+en la sombra (`data_dir()/taller`). Lo pasa `montar(taller=...)`. Sin taller, todo pregunta como
+siempre. La personalidad (`agent/personalidad.py`, D-044) llega al prompt con la memoria.
+
+**La voz de la ventana** (`ventana/voz.py`, D-046) reutiliza las piezas de `voice/` y `tts/`. Lo
+que oye lo manda a `Puente.enviar`, igual que lo escrito.
+
 ## La aplicación
 
 `python -m doombot ventana` abre D.O.O.M como un programa: su propia ventana

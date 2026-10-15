@@ -14,6 +14,7 @@ Dos direcciones, ninguna sustituye a la memoria real:
   a mano en el vault, igual que si lo hubiera dicho por voz, y olvida lo borrado.
 - ``leer_perfil`` / ``guardar_perfil``   el perfil entero -datos y hechos-, que
   la ventana edita y el agente lee en cada orden (D-043).
+- ``leer_personalidad`` / ``guardar_personalidad``   como es D.O.O.M (D-044).
 - ``anotar_progreso``   D.O.O.M -> vault. Bitacora de sesion, separada por
   dia y por turno (manana/tarde).
 """
@@ -25,7 +26,9 @@ from doombot.obsidian.vault import (
     anotar_progreso,
     escribir_perfil,
     guardar_perfil,
+    guardar_personalidad,
     leer_perfil,
+    leer_personalidad,
     perfil_para_prompt,
     quitar_hecho,
     sincronizar_perfil,
@@ -38,7 +41,9 @@ __all__ = [
     "anotar_progreso",
     "escribir_perfil",
     "guardar_perfil",
+    "guardar_personalidad",
     "leer_perfil",
+    "leer_personalidad",
     "perfil_para_prompt",
     "quitar_hecho",
     "sincronizar_perfil",

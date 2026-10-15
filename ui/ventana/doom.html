@@ -289,6 +289,20 @@
   }
   textarea::placeholder { color: var(--muy-tenue); }
   #enviar { height: 42px; padding: 0 18px; }
+  /* la voz (D-046) */
+  #microfono { height: 42px; width: 46px; padding: 0; font-size: 17px; flex: none; }
+  #microfono:disabled { opacity: .35; cursor: not-allowed; }
+  #microfono.atento { box-shadow: 0 0 0 1px var(--c1-40), 0 0 calc(10px * var(--luz)) var(--c1-40); }
+  #microfono.escuchando { color: var(--mal); border-color: rgba(255,77,94,.7); animation: latir .9s ease-in-out infinite; }
+  #microfono.transcribiendo { color: var(--aviso); border-color: rgba(255,171,46,.7); }
+  @keyframes latir { 50% { box-shadow: 0 0 calc(16px * var(--luz)) rgba(255,77,94,.55); } }
+  .tu.por-voz::before { content: "◉ "; color: var(--mal); }
+  .fila-voz { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; font: 11px/1.3 var(--mono); color: var(--tenue); }
+  .fila-voz button { padding: 3px 8px; font-size: 10.5px; }
+  .fila-voz button.activo { color: var(--ok); border-color: rgba(61,255,160,.5); }
+  .estilos { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .estilos button { padding: 4px 10px; font-size: 11px; }
+  .estilos button.activo { color: var(--c1); border-color: var(--c1-60); box-shadow: 0 0 calc(8px * var(--luz)) var(--c1-40); }
   #enviar.parar { color: var(--mal); border-color: rgba(255,77,94,.6); }
   .pie-estrecho { padding: 0 12px 8px; gap: 12px; font: 10.5px/1.4 var(--mono); color: var(--muy-tenue); }
 
@@ -389,7 +403,7 @@
     color: #fcd58a; border-bottom: 1px solid #5a3a17;
     font: 600 11px/1.4 var(--mono); letter-spacing: .14em; text-align: center; padding: 6px 12px;
   }
-  @media (prefers-reduced-motion: reduce) { #registro { scroll-behavior: auto; } #ajustes { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { #registro { scroll-behavior: auto; } #ajustes { transition: none; } #microfono.escuchando { animation: none; } }
 </style>
 </head>
 <body class="crt">
@@ -431,6 +445,10 @@
         <div class="dato"><span class="etq">Repaso de respuestas</span><div class="valor" id="sys-repaso">—</div></div>
         <div class="dato"><span class="etq">Herramientas</span><div class="valor" id="sys-herr">—</div></div>
         <div class="dato"><span class="etq">Memoria</span><div class="valor" id="sys-memoria">—</div></div>
+        <div class="dato"><span class="etq">Taller</span><div class="valor" id="sys-taller">—</div></div>
+        <div class="dato"><span class="etq">Voz</span><div class="valor" id="sys-voz">preparando…</div>
+          <div class="fila-voz"><button id="voz-manos" disabled title="Escucha «Hey Jarvis» sin tocar nada">Manos libres</button>
+            <label><input type="checkbox" id="voz-siempre"> leer también lo escrito</label></div></div>
       </div>
     </aside>
 
@@ -455,7 +473,8 @@
         <button id="modo-boton" class="modo-boton" aria-haspopup="menu" title="Modo de conversación: qué experto te atiende">
           <span class="punto-modo"></span><span id="modo-nombre">Global</span> ▾</button>
         <span class="prompt" aria-hidden="true">›</span>
-        <textarea id="orden" rows="1" placeholder="Dime qué hago…  (Intro ejecuta · Mayús+Intro salto de línea)" aria-label="Orden para D.O.O.M"></textarea>
+        <textarea id="orden" rows="1" placeholder="Dime qué hago…  (Intro ejecuta · Mayús+Intro salto de línea · Ctrl+Espacio para hablar)" aria-label="Orden para D.O.O.M"></textarea>
+        <button id="microfono" disabled aria-label="Hablarle" title="Preparando la voz…">🎙</button>
         <button id="enviar">Ejecutar</button>
       </div>
       <div class="pie-estrecho solo-estrecho"><span id="pie-info">—</span></div>
@@ -525,7 +544,7 @@ const TEMAS = {
   carmesi:   { nombre: "Carmesí",   c1: "#ff3b4e", c2: "#ffb3ba" },
 };
 const DEFECTO = { tema: "jarvis", c1: "#29d3ff", c2: "#8ff3ff", luz: 1, fondo: 0.6, velocidad: 1,
-                  por_herramienta: true, circuitos: true, crt: true, perfiles: [] };
+                  por_herramienta: true, circuitos: true, crt: true, voz_siempre: false, manos_libres: false, perfiles: [] };
 const MAX_PERFILES = 24;  // el mismo tope que preferencias.py
 let prefs = Object.assign({}, DEFECTO);
 
@@ -560,6 +579,8 @@ const MODOS = {
   ficheros: { energia: 0.80, etiqueta: "ficheros" },
   terminal: { energia: 0.80, etiqueta: "terminal" },
   memoria:  { energia: 0.55, etiqueta: "recordando" },
+  escuchando: { energia: 0.75, etiqueta: "escuchando" },
+  transcribiendo: { energia: 0.6, etiqueta: "transcribiendo" },
   permiso:  { energia: 0.45, etiqueta: "esperando permiso" },
   hablando: { energia: 0.50, etiqueta: "respondiendo" },
   visual:   { energia: 0.45, etiqueta: "representando" },
@@ -572,7 +593,8 @@ const nucleo = { modo: "reposo", color: hexRgb(DEFECTO.c1), energia: 0.12, pulso
 function colorDeModo(m) {
   if (m === "permiso" || m === "error") return COLOR_MODO[m];
   if (prefs.por_herramienta && COLOR_MODO[m]) return COLOR_MODO[m];
-  if (m === "pensando" || m === "hablando" || m === "visual") return prefs.c2;
+  if (m === "pensando" || m === "hablando" || m === "visual" || m === "transcribiendo") return prefs.c2;
+  if (m === "escuchando") return COLOR_MODO.error;
   return prefs.c1;
 }
 function ponerModo(nombre, soloColor) {
@@ -1354,6 +1376,9 @@ const DOOM = window.DOOM = {
       case "error": quitarPensando(); registro.appendChild(linea("resultado fallo-l", "✗", e.texto)); alFondo(); break;
       case "aviso": registro.appendChild(linea("resultado aviso-l", "↻", e.texto)); alFondo(); break;
       case "memoria": registro.appendChild(linea("resultado memoria-l", "◈", e.texto)); alFondo(); break;
+      case "oido": registro.appendChild(el("div", "tu por-voz", e.texto)); alFondo(); break;
+      case "voz": ponerVoz(e); break;
+      case "voz_nivel": nucleo.pulso = Math.min(1.4, nucleo.pulso + (e.nivel || 0) * 0.25); break;
       case "abiertas": ponerAbiertas(e.lista || []); break;
       case "visual": {
         const v = { titulo: e.titulo, grafica: e.grafica, estadistica: e.estadistica };
@@ -1426,7 +1451,7 @@ function crecer() {
   orden.style.overflowY = orden.scrollHeight > 160 ? "auto" : "hidden";
 }
 async function mandar() {
-  if (ocupado) { api("parar"); return; }
+  if (ocupado) { api("parar"); api("callar"); return; }
   const texto = orden.value.trim();
   if (!texto) return;
   registro.appendChild(el("div", "tu", texto)); alFondo();
@@ -1439,6 +1464,53 @@ orden.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey
 orden.addEventListener("input", () => { crecer(); latido(0.05); });
 botonEnviar.addEventListener("click", mandar);
 document.getElementById("nueva").addEventListener("click", () => nuevaConversacion(""));
+
+/* La voz (D-046): pulsar para hablar, manos libres y responder hablando. */
+const botonMicro = document.getElementById("microfono"), botonManos = document.getElementById("voz-manos");
+const casillaSiempre = document.getElementById("voz-siempre");
+let vozEstado = null;
+function pintarVoz(v) {
+  vozEstado = v;
+  const sys = document.getElementById("sys-voz");
+  if (!v || v.cargando) { sys.textContent = "preparando…"; return; }
+  const m = v.motivos || {};
+  botonMicro.disabled = !v.entrada;
+  botonMicro.title = v.entrada ? `Háblale (Ctrl+Espacio)${v.stt ? ` · transcribe ${v.stt}` : ""}` : (m.entrada || "Sin entrada de voz");
+  botonManos.disabled = !v.manos_libres;
+  botonManos.title = v.manos_libres ? "Escucha «Hey Jarvis» sin tocar nada" : (m.manos_libres || "Sin manos libres");
+  botonManos.classList.toggle("activo", !!v.escuchando);
+  botonManos.textContent = v.escuchando ? "Manos libres: sí" : "Manos libres";
+  botonMicro.classList.toggle("atento", !!v.escuchando);
+  sys.textContent = [v.entrada ? "oye" : "no oye", v.salida ? "habla" : "no habla"].join(" · ");
+  sys.title = Object.values(m).join("\n");
+  casillaSiempre.checked = !!prefs.voz_siempre; casillaSiempre.disabled = !v.salida;
+}
+async function cargarVoz(intentos = 40) {
+  const v = await api("voz");
+  pintarVoz(v);
+  if (v && v.cargando && intentos > 0) setTimeout(() => cargarVoz(intentos - 1), 750);
+}
+function ponerVoz(e) {
+  botonMicro.classList.remove("escuchando", "transcribiendo");
+  if (e.estado === "escuchando" || e.estado === "transcribiendo") {
+    botonMicro.classList.add(e.estado); ponerModo(e.estado);
+  } else if (e.estado === "hablando") {
+    ponerModo("hablando");
+  } else if (!ocupado) ponerModo("reposo");
+  if (e.estado === "atento") botonMicro.classList.add("atento");
+  if (e.aviso) { registro.appendChild(linea("resultado aviso-l", "↻", e.aviso)); alFondo(); }
+}
+function hablarle() { if (!botonMicro.disabled) { api("callar"); api("hablar"); } }
+botonMicro.addEventListener("click", hablarle);
+document.addEventListener("keydown", ev => {
+  if (ev.ctrlKey && (ev.code === "Space" || ev.key === " ")) { ev.preventDefault(); hablarle(); }
+});
+botonManos.addEventListener("click", async () => {
+  const activar = !(vozEstado && vozEstado.escuchando);
+  pintarVoz(Object.assign({}, vozEstado, await api("manos_libres", activar)));
+  cambiar({ manos_libres: activar });
+});
+casillaSiempre.addEventListener("change", () => cambiar({ voz_siempre: casillaSiempre.checked }));
 
 /* ==========================================================================
    6b. CONVERSACIONES Y MODOS (D-038)
@@ -1601,6 +1673,7 @@ function reproducir(eventos) {
   for (const e of eventos) {
     switch (e.tipo) {
       case "tu": registro.appendChild(el("div", "tu", e.texto)); break;
+      case "oido": break;  // el "tu" de esa orden ya esta guardado
       case "comentario": registro.appendChild(linea("piensa", "◇", e.texto)); break;
       case "herramienta": familia = e.familia || ""; break;
       case "accion": {
@@ -1759,6 +1832,13 @@ const CAMPOS_PERFIL = [
   ["intereses", "Intereses", "Ej.: Realidad virtual, IA, videojuegos, ciclismo"],
   ["estilo", "Cómo quieres que te responda", "Ej.: Directo y breve. Con ejemplos de código cuando toque. Sin emojis.", true],
 ];
+function pintarTaller(t) {
+  const v = document.getElementById("sys-taller");
+  if (!t) { v.textContent = "—"; return; }
+  const n = t.proyectos.length;
+  v.textContent = `${t.raiz} · ${n} proyecto${n === 1 ? "" : "s"}${t.activo ? ` · ${t.activo}` : ""}`;
+  v.title = t.autonomo ? "Ahí trabaja sin pedir permiso, con deshacer" : "Sin git: pide permiso también ahí";
+}
 function pintarEstadoMemoria(m) {
   const v = document.getElementById("sys-memoria");
   if (!m) { v.textContent = "—"; return; }
@@ -1815,8 +1895,33 @@ async function mostrarPerfil() {
   nuevo.addEventListener("keydown", ev => { if (ev.key === "Enter") anadirDato(); });
   filaH.append(nuevo, anadir, resH); d.appendChild(filaH);
 
+  const per = p.personalidad;
+  if (per) {
+    d.appendChild(seccion("03", "Su personalidad", "cómo es y cómo te habla"));
+    d.appendChild(el("p", "intro", "Elige un estilo de partida y retócalo a tu gusto. Se nota desde la orden siguiente."));
+    const estilos = el("div", "estilos"), caja = el("textarea", "instrucciones"), filaP = el("div", "fila");
+    let base = per.base;
+    caja.value = per.texto; caja.setAttribute("aria-label", "Su personalidad");
+    for (const x of per.estilos) {
+      const b = el("button", x.id === base ? "activo" : "", x.titulo);
+      b.addEventListener("click", () => {
+        base = x.id; caja.value = x.texto;
+        estilos.querySelectorAll("button").forEach(y => y.classList.toggle("activo", y === b));
+      });
+      estilos.appendChild(b);
+    }
+    caja.addEventListener("input", () => { if (base !== "propia") { const e = per.estilos.find(x => x.id === base); if (e && caja.value !== e.texto) { base = "propia"; estilos.querySelectorAll("button").forEach(y => y.classList.remove("activo")); } } });
+    const guardarP = el("button", "", "Guardar"), resP = el("span", "prov-estado");
+    guardarP.addEventListener("click", async () => {
+      const r = await api("guardar_personalidad", base, caja.value);
+      resP.className = `prov-estado ${r && r.ok ? "ok" : "mal"}`;
+      resP.textContent = r && r.ok ? "✓ Guardada: así te hablará desde la próxima orden" : `✗ ${(r && r.error) || "No se ha podido guardar"}`;
+    });
+    filaP.append(guardarP, resP); d.append(estilos, caja, filaP);
+  }
+
   const m = p.memoria || {};
-  d.appendChild(seccion("03", "Recuerdos", m.activa ? `${m.recuerdos}` : "apagados"));
+  d.appendChild(seccion("04", "Recuerdos", m.activa ? `${m.recuerdos}` : "apagados"));
   if (!m.activa) {
     d.appendChild(el("p", "intro", "Los recuerdos (datos sueltos que te busca por significado cuando vienen a cuento) necesitan una librería más. El perfil de arriba funciona igual sin ella."));
     d.appendChild(comando('pip install -e ".[memoria]"'));
@@ -2103,6 +2208,8 @@ async function arrancar() {
     { auto: "automático", siempre: "siempre" }[info.repaso] || "desactivado";
   document.getElementById("sys-herr").textContent = `${info.herramientas} disponibles`;
   pintarEstadoMemoria(info.memoria);
+  pintarTaller(info.taller);
+  cargarVoz();
   document.getElementById("pie-info").textContent =
     `${info.modelos.length} modelo${info.modelos.length > 1 ? "s" : ""} · ${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión" : "");
   catalogoModos = info.modos || [];
@@ -2143,6 +2250,15 @@ const HIST_DEMO = { actual: null, carpetas: ["Estudios", "Proyecto D.O.O.M"], co
   { id: "3", titulo: "Paleta para el HUD", carpeta: "Proyecto D.O.O.M", modo: "diseno", actualizada: "2026-10-11T18:00:00" },
   { id: "4", titulo: "¿Qué tiempo hace en Madrid?", carpeta: "", modo: "investigacion", actualizada: "2026-10-10T09:30:00" },
 ] };
+const ESTILOS_DEMO = [
+  { id: "companero", titulo: "Compañero", texto: "Cercano y directo, como un buen compañero de equipo: le tuteas y te implicas en sus proyectos." },
+  { id: "jarvis", titulo: "J.A.R.V.I.S.", texto: "Elegante y formal, con ironía británica sutil; le llamas «señor»." },
+  { id: "mentor", titulo: "Mentor", texto: "Paciente y didáctico: explicas el porqué y le dejas pensar." },
+  { id: "gamer", titulo: "Colega gamer", texto: "Informal y entusiasta de los videojuegos." },
+  { id: "sobrio", titulo: "Sobrio", texto: "Profesional y conciso, sin adornos." },
+];
+const VOZ_DEMO = { entrada: true, salida: true, manos_libres: true, escuchando: false, stt: "groq/whisper-large-v3-turbo", motivos: {} };
+const TALLER_DEMO = { raiz: "~/taller", autonomo: true, proyectos: ["juego-naves", "app-recetas"], activo: "juego-naves" };
 const PERFIL_DEMO = { campos: { nombre: "Alejandro", llamame: "Alex", ubicacion: "Valencia", estilo: "Directo y breve." },
   hechos: ["Trabaja en dos equipos: un sobremesa con RTX 5060 Ti y un portátil", "Tiene unas Meta Quest 3S"] };
 const RECUERDOS_DEMO = [
@@ -2158,8 +2274,8 @@ if (location.hash === "#demo") {
   window.DEMO = {
     preferencias: () => Promise.resolve(prefsDemo),
     guardar_preferencias: (p) => { prefsDemo = Object.assign({}, p); return Promise.resolve(prefsDemo); },
-    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 25, revisor: true, repaso: "auto",
-      memoria: { activa: true, motivo: "", recuerdos: 2 }, actual: "global", modos: MODOS_DEMO }),
+    iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 31, revisor: true, repaso: "auto",
+      memoria: { activa: true, motivo: "", recuerdos: 2 }, taller: TALLER_DEMO, actual: "global", modos: MODOS_DEMO }),
     historial: () => Promise.resolve(HIST_DEMO),
     abrir_conversacion: (id) => { HIST_DEMO.actual = id; const c = HIST_DEMO.conversaciones.find(x => x.id === id);
       return Promise.resolve({ ok: true, id, titulo: c.titulo, modo: c.modo, registro: [
@@ -2175,10 +2291,27 @@ if (location.hash === "#demo") {
       chats: HIST_DEMO.conversaciones.filter(c => c.carpeta === n).map(c => ({ ...c, resumen: "Se decidió la estructura: inicio, recetas, mapa del tesoro." })) }),
     guardar_instrucciones: () => Promise.resolve({ ok: true }), borrar_nota_proyecto: () => Promise.resolve({ ok: true }),
     perfil: () => Promise.resolve({ campos: Object.assign({ nombre: "", llamame: "", dedicacion: "", ubicacion: "", idiomas: "", intereses: "", estilo: "" }, PERFIL_DEMO.campos),
-      hechos: PERFIL_DEMO.hechos, ruta: "/ruta/al/proyecto/obsidian/usuario.md", memoria: { activa: true, motivo: "", recuerdos: RECUERDOS_DEMO.length } }),
+      hechos: PERFIL_DEMO.hechos, ruta: "/ruta/al/proyecto/obsidian/usuario.md", memoria: { activa: true, motivo: "", recuerdos: RECUERDOS_DEMO.length },
+      personalidad: { base: "companero", texto: ESTILOS_DEMO[0].texto, estilos: ESTILOS_DEMO } }),
     guardar_perfil: (c) => { Object.assign(PERFIL_DEMO.campos, c); return Promise.resolve({ ok: true }); },
     anotar_perfil: (h) => { PERFIL_DEMO.hechos.push(h); return Promise.resolve({ ok: true }); },
     quitar_del_perfil: (i) => { PERFIL_DEMO.hechos.splice(i, 1); return Promise.resolve({ ok: true }); },
+    voz: () => Promise.resolve(VOZ_DEMO),
+    manos_libres: (a) => { VOZ_DEMO.escuchando = a; return Promise.resolve(VOZ_DEMO); },
+    callar: () => Promise.resolve(null), taller: () => Promise.resolve(TALLER_DEMO),
+    hablar: () => {
+      const E = e => DOOM.evento(e);
+      E({ tipo: "voz", estado: "escuchando" });
+      [0.2, 0.6, 0.9, 0.5, 0.3].forEach((n, i) => t(200 + i * 150, () => E({ tipo: "voz_nivel", nivel: n })));
+      t(1100, () => E({ tipo: "voz", estado: "transcribiendo" }));
+      t(1600, () => { E({ tipo: "voz", estado: "reposo" }); E({ tipo: "oido", texto: "abre steam" }); E({ tipo: "estado", estado: "pensando" }); });
+      t(2100, () => { E({ tipo: "herramienta", nombre: "abrir_aplicacion", familia: "apps" }); E({ tipo: "accion", texto: "Abro Steam" }); });
+      t(2600, () => E({ tipo: "resultado", texto: "Abierta Steam." }));
+      t(2900, () => { E({ tipo: "respuesta", texto: "(Simulación) Te he abierto Steam.", completo: true, abiertas: ["Steam"] }); E({ tipo: "voz", estado: "hablando" }); E({ tipo: "estado", estado: "reposo" }); });
+      t(4200, () => E({ tipo: "voz", estado: "reposo" }));
+      return Promise.resolve({ ok: true });
+    },
+    guardar_personalidad: () => Promise.resolve({ ok: true }),
     recuerdos: (q) => Promise.resolve({ lista: RECUERDOS_DEMO.filter(r => !q || r.texto.toLowerCase().includes(q.toLowerCase())), activa: true, motivo: "", recuerdos: RECUERDOS_DEMO.length }),
     olvidar_recuerdo: (id) => { const i = RECUERDOS_DEMO.findIndex(r => r.id === id); if (i >= 0) RECUERDOS_DEMO.splice(i, 1); return Promise.resolve({ ok: i >= 0 }); },
     renombrar_conversacion: () => Promise.resolve({ ok: true }), mover_conversacion: () => Promise.resolve({ ok: true }),

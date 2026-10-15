@@ -1755,3 +1755,62 @@ gafas no estaban conectadas: **nada de esto se ha ejecutado aún en unas gafas**
 
 **Sin verificar**: todo lo que ocurre en las gafas. Se prueba en el sobremesa con
 `quest-app/scripts/deploy.ps1`.
+
+---
+
+## D-042 — La Quest en 3D: burbuja de geometría propia, ventanas nativas y brazalete en la muñeca
+
+**Contexto.** 15/10/2026. El usuario instaló la app de D-041 en sus Quest 3S desde el sobremesa y
+funcionó, pero:
+- no se veía como la interfaz de D.O.O.M y todo parecía plano, en 2D, sobre todo la burbuja;
+- las ventanas no cambiaban de tamaño;
+- el «brazalete» era una ventana más, siempre a la vista, sin ajustes y sin estar en la muñeca.
+
+Esos cambios del sobremesa **no llegaron a GitHub** (ni commit ni push), así que se rehízo aquí a
+partir de la versión de D-041 y de su descripción.
+
+**Decisión.**
+1. **La burbuja es geometría 3D, no un panel** (`escena/Orbe3D.kt`). Piezas:
+   - núcleo, resplandor y halo: tres esferas translúcidas;
+   - el disco de 72 marcas, que mira siempre al usuario;
+   - tres arcos orbitales en planos inclinados;
+   - un aro fino.
+
+   Las mallas son propias (`registerMeshCreator`, `TriangleMesh`) y los materiales, sin luz y
+   translúcidos, se recolorean en cada fotograma con los parámetros de `hud.html` (`MotorOrbe`: los
+   5 estados, la interpolación y el ataque y la caída de la amplitud). Se coge con una mano y se
+   estira o encoge con las dos (`Sphere` como colisionador, `Grabbable` e `IsdkGrabConstraints` con
+   2 agarradores). Los subtítulos y los botones «Hablar» y «Para» van en un panel pequeño que la
+   sigue.
+2. **Las ventanas son como las de Horizon OS** (Sistema, Registro, Aplicaciones, Ajustes).
+   `IsdkPanelResize` en modo `Relayout`, con límites de tamaño por ventana, añade solo la barra para
+   agarrar y las esquinas para cambiar el tamaño; el contenido se recoloca en vez de estirarse.
+   `IsdkGrabbable(Billboard)` hace que, al moverlas, giren para seguir mirando al usuario.
+   «Tamaños de fábrica» las recrea.
+3. **Circuitos en 3D** (`escena/Circuitos.kt`): un hilo de luz de la burbuja a cada ventana
+   visible, que la sigue al moverla. Es el equivalente de los circuitos del HUD de escritorio
+   (D-036).
+4. **El brazalete va en la muñeca** (`escena/Brazalete.kt`).
+   - Sigue a la mano en cada fotograma (`AvatarBody`) y **solo aparece si miras hacia la mano y la
+     palma te mira**. Es la lógica del `WristAttachedSystem` del ejemplo Spatial Scanner de Meta,
+     con su mismo desplazamiento sobre la muñeca, más histéresis para que no parpadee.
+   - Se ajusta en Ajustes: encendido o apagado, mano izquierda o derecha (en espejo) y tamaño
+     (60-180 %).
+   - Lleva Hablar, Para, «Aquí» (recolocar), esconder o enseñar las ventanas, y Ajustes.
+
+**Descartado.**
+- **Shaders propios** para el brillo holográfico: piden el NDK (más de 1 GB) y Meta los marca como
+  experimentales. La geometría y la translucidez dan el efecto sin ellos.
+- **Rehacer la geometría en cada fotograma** para deformar el disco de marcas con la voz, como en
+  el HUD: ningún ejemplo de Meta lo hace y no se puede probar sin gafas. El disco reacciona
+  escalándose.
+- **Paneles curvos** (`CylinderShapeOptions`): no consta que se combinen con el redimensionado.
+
+**Verificado**: compila; 6 tests JVM (capa refleja, catálogo, color y amplitud del orbe). Cada API
+del SDK usada se ha comprobado con `javap` o con su documentación (paneles redimensionables,
+agarre de ISDK, objetos 3D).
+
+**Sin verificar, todo en las gafas**:
+- cómo se ven la translucidez sobre el passthrough y el tamaño de la burbuja;
+- el desplazamiento del brazalete en la mano derecha (el espejo es una suposición);
+- que el colisionador de esfera baste para cogerla con la mano y estirarla con las dos.

@@ -1,6 +1,7 @@
 # D.O.O.M para Meta Quest 3 / 3S
 
-El orbe de D.O.O.M en tu habitación (realidad mixta), con paneles que coges y mueves con las manos:
+La burbuja de D.O.O.M en 3D en tu habitación (realidad mixta), con ventanas que coges, mueves y
+cambias de tamaño con las manos, y un menú en la muñeca:
 **Sistema** (hora, tiempo, batería, modelos), **Registro** (la conversación), **Aplicaciones**
 (abrir apps y webs) y **Ajustes** (claves y modelos, desde las gafas o desde el móvil).
 
@@ -46,12 +47,18 @@ compilado en el portátil), basta con `adb install -r app-debug.apk`; solo hace 
 3. «Guardar todo». Las claves se guardan **cifradas en las gafas** y no salen de ellas.
 
 ## Uso
-- **Pellizco** (índice y pulgar) sobre un botón: pulsar. **Pellizcar y arrastrar** un panel o la
-  burbuja: moverlo por la habitación. Con mandos, el gatillo hace lo mismo.
-- **Hablar**: botón «Hablar» bajo la burbuja. Te escucha hasta que te callas, y responde con
-  subtítulos (y voz, si las gafas tienen voz en español).
+- **La burbuja** es un objeto 3D: cógela con la mano (pellizco o puño cerrado dentro de ella) para
+  moverla; con las dos manos, sepáralas o júntalas para hacerla más grande o más pequeña. Debajo
+  lleva los subtítulos y los botones «Hablar» y «Para».
+- **Las ventanas** se mueven con la barra que aparece debajo al acercar la mano, y cambian de
+  tamaño desde las esquinas, como las ventanas de las Quest. El contenido se recoloca al nuevo
+  tamaño.
+- **El brazalete**: gira la palma de la mano izquierda hacia la cara y mírala. Aparece un menú en
+  la muñeca con Hablar, Para, Aquí (lo trae todo delante), Ventanas (esconderlas o enseñarlas) y
+  Ajustes. En Ajustes se cambia de mano, de tamaño o se apaga.
+- **Hablar**: te escucha hasta que te callas y responde con subtítulos (y voz, si las gafas tienen
+  voz en español).
 - **«Para»**, **«ven aquí»**, **«ajustes»**, **«olvida todo»**: órdenes directas, sin modelo.
-- **«Recolocar»**: todo vuelve delante de ti. **«Seguirme»** (en Ajustes): la burbuja te acompaña.
 - Pídele cosas como «ábreme YouTube», «busca recetas de paella», «sube el volumen», «¿cuánta batería
   me queda?».
 

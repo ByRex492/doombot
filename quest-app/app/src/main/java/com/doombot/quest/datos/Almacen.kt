@@ -41,6 +41,10 @@ class Almacen(private val contexto: Context) {
       val lon: Double = -3.7038,
       /** Proveedores compatibles con OpenAI que el usuario ha anadido: id -> base_url. */
       val propios: Map<String, String> = emptyMap(),
+      /** El menu de la muñeca: si esta, en que mano ("izquierda"/"derecha") y su tamaño. */
+      val brazalete: Boolean = true,
+      val manoBrazalete: String = "izquierda",
+      val tamanoBrazalete: Float = 1f,
   )
 
   suspend fun config(): Config {
@@ -57,6 +61,9 @@ class Almacen(private val contexto: Context) {
           propios =
               j.optJSONObject("propios")?.let { p -> p.keys().asSequence().associateWith { p.getString(it) } }
                   ?: emptyMap(),
+          brazalete = j.optBoolean("brazalete", true),
+          manoBrazalete = j.optString("manoBrazalete", "izquierda"),
+          tamanoBrazalete = j.optDouble("tamanoBrazalete", 1.0).toFloat().coerceIn(0.6f, 1.8f),
       )
     }.getOrDefault(Config())
   }
@@ -71,6 +78,9 @@ class Almacen(private val contexto: Context) {
             .put("lat", c.lat)
             .put("lon", c.lon)
             .put("propios", JSONObject(c.propios))
+            .put("brazalete", c.brazalete)
+            .put("manoBrazalete", c.manoBrazalete)
+            .put("tamanoBrazalete", c.tamanoBrazalete.toDouble())
     contexto.ds.edit { it[CONFIG] = j.toString() }
   }
 

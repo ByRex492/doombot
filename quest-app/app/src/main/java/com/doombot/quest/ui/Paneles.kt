@@ -41,12 +41,14 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.doombot.quest.Controlador
 import com.doombot.quest.Doom
+import com.doombot.quest.EstadoOrbe
 import com.doombot.quest.TipoLinea
 import com.doombot.quest.ia.Catalogo
 import com.doombot.quest.sistema.App
@@ -58,6 +60,57 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+// -- VOZ: debajo de la burbuja, la sigue a donde la lleves ------------------------------------
+@Composable
+fun PanelVoz(ctl: Controlador) {
+  Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Text(
+        Doom.orbe.etiqueta.uppercase(),
+        modifier =
+            Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0x99030A12)).border(1.dp, Hud.borde, RoundedCornerShape(6.dp))
+                .padding(horizontal = 12.dp, vertical = 3.dp),
+        color = Hud.c2, fontFamily = Hud.mono, fontSize = 10.sp, letterSpacing = 4.sp, fontWeight = FontWeight.SemiBold)
+    if (Doom.subtituloQuien.isNotEmpty()) Text(Doom.subtituloQuien, color = Hud.c2, fontFamily = Hud.mono, fontSize = 9.sp, letterSpacing = 2.sp)
+    Text(
+        Doom.subtitulo.ifEmpty { Doom.avisoConfig },
+        color = if (Doom.subtitulo.isEmpty()) Hud.aviso else Color.White,
+        fontSize = 14.sp, lineHeight = 17.sp, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      Boton(if (Doom.orbe == EstadoOrbe.ESCUCHANDO) "Listo" else "Hablar", activo = Doom.orbe == EstadoOrbe.ESCUCHANDO) { ctl.microfono() }
+      Boton("Para") { ctl.callar() }
+    }
+  }
+}
+
+// -- BRAZALETE: el menu de la muñeca -----------------------------------------------------------
+@Composable
+fun PanelBrazalete(ctl: Controlador) {
+  Column(
+      Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(Hud.panel).border(1.dp, Hud.borde, RoundedCornerShape(12.dp)).padding(6.dp),
+      verticalArrangement = Arrangement.spacedBy(5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+      Mini(if (Doom.orbe == EstadoOrbe.ESCUCHANDO) "Listo" else "Hablar", Doom.orbe == EstadoOrbe.ESCUCHANDO) { ctl.microfono() }
+      Mini("Para") { ctl.callar() }
+      Mini("Aquí") { ctl.recolocar() }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+      Mini("Ventanas", Doom.ventanasVisibles) { ctl.alternarVentanas() }
+      Mini("Ajustes", Doom.ajustesVisibles) { if (Doom.ajustesVisibles) ctl.cerrarAjustes() else ctl.abrirAjustes() }
+    }
+  }
+}
+
+@Composable
+private fun Mini(texto: String, activo: Boolean = false, alPulsar: () -> Unit) =
+    Text(
+        texto.uppercase(),
+        modifier =
+            Modifier.clip(RoundedCornerShape(7.dp)).background(if (activo) Color(0x3329D3FF) else Color(0x1429D3FF))
+                .border(1.dp, if (activo) Hud.c1 else Hud.borde, RoundedCornerShape(7.dp)).clickable(onClick = alPulsar)
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+        color = if (activo) Color.White else Hud.c2, fontFamily = Hud.mono, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
 
 // -- SISTEMA ---------------------------------------------------------------------------------
 @Composable
@@ -211,12 +264,32 @@ fun PanelAjustes(ctl: Controlador) {
         Boton("Cambiar") { ctl.cambiarCiudad(ciudad) }
       }
 
-      // Controles de la app
-      Etiqueta("Controles")
+      // Brazalete
+      Etiqueta("Brazalete (menu de la muñeca: aparece al mirarte la palma)")
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Boton(if (cfg.brazalete) "Encendido" else "Apagado", activo = cfg.brazalete) { ctl.guardarConfig { it.copy(brazalete = !it.brazalete) } }
+        Boton("Izquierda", activo = cfg.manoBrazalete != "derecha") { ctl.guardarConfig { it.copy(manoBrazalete = "izquierda") } }
+        Boton("Derecha", activo = cfg.manoBrazalete == "derecha") { ctl.guardarConfig { it.copy(manoBrazalete = "derecha") } }
+      }
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Tamaño", color = Hud.tenue, fontSize = 12.sp)
+        Boton("−") { ctl.guardarConfig { it.copy(tamanoBrazalete = (it.tamanoBrazalete - 0.15f).coerceAtLeast(0.6f)) } }
+        Text("${(cfg.tamanoBrazalete * 100).toInt()} %", color = Hud.c2, fontFamily = Hud.mono, fontSize = 13.sp)
+        Boton("+") { ctl.guardarConfig { it.copy(tamanoBrazalete = (it.tamanoBrazalete + 0.15f).coerceAtMost(1.8f)) } }
+      }
+
+      // Ventanas y burbuja
+      Etiqueta("Ventanas y burbuja")
+      Text("Cada ventana se mueve con la barra de abajo y cambia de tamaño con sus esquinas. " +
+          "La burbuja se coge con una mano y se estira con las dos.", color = Hud.tenue, fontSize = 12.sp)
       Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Boton("Recolocar") { ctl.recolocar() }
+        Boton("Tamaños de fabrica") { ctl.restablecerVentanas() }
+      }
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Boton("Seguirme", activo = Doom.orbeSigue) { Doom.orbeSigue = !Doom.orbeSigue }
         Boton("Apps", activo = Doom.appsVisibles) { ctl.alternarApps() }
+        Boton("Ventanas", activo = Doom.ventanasVisibles) { ctl.alternarVentanas() }
       }
       Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Boton("Vol −") { ctl.volumen(false) }

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <resources>
-  <item type="id" name="panel_orbe" />
+  <item type="id" name="panel_voz" />
+  <item type="id" name="panel_brazalete" />
   <item type="id" name="panel_sistema" />
   <item type="id" name="panel_chat" />
   <item type="id" name="panel_apps" />

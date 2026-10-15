@@ -48,6 +48,7 @@ object Doom {
   var servidor by mutableStateOf<InfoServidor?>(null)
   var ajustesVisibles by mutableStateOf(false)
   var appsVisibles by mutableStateOf(true)
+  var ventanasVisibles by mutableStateOf(true)
   var orbeSigue by mutableStateOf(false)
   var ocupado by mutableStateOf(false)
   var bateria by mutableStateOf<Int?>(null)

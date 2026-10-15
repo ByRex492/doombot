@@ -4,7 +4,7 @@ App nativa de realidad mixta para Meta Quest 3/3S: el orbe de D.O.O.M en tu habi
 paneles que se cogen y se mueven con las manos. Es una app **independiente** de la de escritorio
 (Python): usa sus ideas como referencia de diseño, no su código. El encargo completo del usuario
 está en `docs/prompt-original.md`; la decisión de arquitectura, en `../docs/decisiones.md`
-(**D-041**).
+(**D-041**, y la versión 3D en **D-042**).
 
 ## Leer primero
 1. `docs/prompt-original.md`: qué se pidió, por fases, y las reglas de trabajo.
@@ -33,11 +33,14 @@ scripts\deploy.ps1        # Windows (sobremesa), lo mismo
 ## Estructura
 | Fichero | Qué |
 |---|---|
-| `DoomActivity.kt` | Escena: passthrough, registro de paneles, colocación respecto a la cabeza, "Seguirme" |
+| `DoomActivity.kt` | Escena: passthrough, ventanas redimensionables, colocación respecto a la cabeza, "Seguirme" |
+| `escena/Orbe3D.kt` | La burbuja en 3D: mallas propias, materiales animados, agarre con una o dos manos (D-042) |
+| `escena/Brazalete.kt` | El menú de la muñeca: sigue a la mano, aparece al mirarte la palma |
+| `escena/Circuitos.kt` | Hilos de luz de la burbuja a cada ventana |
+| `EstadosOrbe.kt` | Los 5 estados de `ui/prototipo/hud.html` y el motor (interpolación, ataque/caída) |
 | `Controlador.kt` | Une las piezas: lo que pulsa un panel llega aquí |
 | `Estado.kt` | Estado compartido de Compose (`Doom`): orbe, subtítulos, registro, tiempo... |
-| `ui/Orbe.kt` | El orbe, port de `ui/prototipo/hud.html` (mismos 5 estados y parámetros) |
-| `ui/Paneles.kt` | Sistema, Registro, Aplicaciones, Ajustes |
+| `ui/Paneles.kt` | Voz (bajo la burbuja), Brazalete, Sistema, Registro, Aplicaciones, Ajustes |
 | `ia/ClienteIA.kt` | Proveedores compatibles con OpenAI (catálogo de `backends/proveedores.py`) |
 | `ia/Agente.kt` | Bucle de herramientas con cadena de modelos (D-033/D-034) |
 | `sistema/Acciones.kt` | Abrir apps y enlaces, volumen, batería |

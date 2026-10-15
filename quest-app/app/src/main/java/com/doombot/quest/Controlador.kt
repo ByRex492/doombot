@@ -34,6 +34,8 @@ class Controlador(contexto: Context, private val escena: Escena) {
 
   interface Escena {
     fun recolocar()
+    fun restablecerVentanas()
+    fun mostrarVentanas(visibles: Boolean)
     fun mostrarAjustes(visible: Boolean)
     fun mostrarApps(visible: Boolean)
     fun pedirMicrofono(alConceder: () -> Unit)
@@ -265,6 +267,14 @@ class Controlador(contexto: Context, private val escena: Escena) {
   }
 
   fun recolocar() = escena.recolocar()
+
+  fun restablecerVentanas() = escena.restablecerVentanas()
+
+  /** Esconder o enseñar todas las ventanas a la vez (la burbuja y el brazalete se quedan). */
+  fun alternarVentanas() {
+    Doom.ventanasVisibles = !Doom.ventanasVisibles
+    escena.mostrarVentanas(Doom.ventanasVisibles)
+  }
 
   fun alternarApps() {
     Doom.appsVisibles = !Doom.appsVisibles

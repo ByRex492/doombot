@@ -29,6 +29,8 @@ from doombot.paths import PROJECT_ROOT, UI_DIR, data_dir
 
 NOMBRE = "doombot.desktop"
 ICONO = UI_DIR / "ventana" / "doom.svg"
+ICONO_WINDOWS = UI_DIR / "ventana" / "doom.ico"
+"""El mismo nucleo en ``.ico``: WinForms, el motor de pywebview en Windows, no carga SVG."""
 CLASE_VENTANA = "doombot"
 
 

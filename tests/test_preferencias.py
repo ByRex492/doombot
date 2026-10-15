@@ -17,6 +17,7 @@ def test_lo_valido_se_conserva():
         "por_herramienta": False,
         "circuitos": False,
         "crt": False,
+        "perfiles": [],
     }
     assert limpiar(datos) == {**datos, "c1": "#ffae2b"}
 
@@ -53,6 +54,61 @@ def test_sin_fichero_o_roto_da_el_defecto(tmp_path):
     roto = tmp_path / "roto.json"
     roto.write_text("{no es json", encoding="utf-8")
     assert leer(roto) == DEFECTO
+
+
+PERFIL = {"id": "perfil-abc123", "nombre": "Noche", "c1": "#FF00AA", "c2": "#112233"}
+
+
+def test_un_perfil_propio_se_guarda_y_puede_ser_el_tema():
+    limpio = limpiar({"tema": "perfil-abc123", "c1": "#000000", "perfiles": [PERFIL]})
+    assert limpio["perfiles"] == [{**PERFIL, "c1": "#ff00aa"}]
+    assert limpio["tema"] == "perfil-abc123"
+    # Con un perfil activo, se pintan sus colores aunque llegue otro c1.
+    assert (limpio["c1"], limpio["c2"]) == ("#ff00aa", "#112233")
+
+
+def test_un_tema_que_no_es_fijo_ni_un_perfil_guardado_no_vale():
+    limpio = limpiar({"tema": "perfil-borrado", "perfiles": [PERFIL]})
+    assert limpio["tema"] == "jarvis"
+
+
+def test_un_perfil_roto_se_descarta_entero():
+    rotos = [
+        {**PERFIL, "id": "otro"},  # sin el prefijo perfil-
+        {**PERFIL, "id": "perfil-x", "c1": "red;}"},  # no puede colarse CSS
+        {**PERFIL, "id": "perfil-y", "nombre": " \n\t "},
+        {**PERFIL, "id": "perfil-z", "nombre": 7},
+        "no es un perfil",
+    ]
+    assert limpiar({"perfiles": rotos})["perfiles"] == []
+    assert limpiar({"perfiles": "tampoco"})["perfiles"] == []
+
+
+def test_el_nombre_se_queda_en_una_linea_corta():
+    largo = {**PERFIL, "nombre": "  Mi\nperfil\x00 " + "x" * 50}
+    (perfil,) = limpiar({"perfiles": [largo]})["perfiles"]
+    assert perfil["nombre"].startswith("Mi perfil x")
+    assert len(perfil["nombre"]) == 32
+
+
+def test_sin_ids_repetidos_y_con_tope():
+    muchos = [{**PERFIL, "id": f"perfil-{n}"} for n in range(preferencias.MAX_PERFILES + 5)]
+    assert len(limpiar({"perfiles": muchos})["perfiles"]) == preferencias.MAX_PERFILES
+    assert len(limpiar({"perfiles": [PERFIL, PERFIL]})["perfiles"]) == 1
+
+
+def test_los_perfiles_sobreviven_a_guardar_y_leer(tmp_path):
+    ruta = tmp_path / "ventana.json"
+    guardar({"tema": "perfil-abc123", "perfiles": [PERFIL]}, ruta)
+    leido = leer(ruta)
+    assert leido["tema"] == "perfil-abc123"
+    assert leido["perfiles"][0]["nombre"] == "Noche"
+
+
+def test_el_defecto_no_se_comparte_entre_lecturas():
+    limpiar(None)["perfiles"].append(PERFIL)
+    assert DEFECTO["perfiles"] == []
+    assert limpiar(None)["perfiles"] == []
 
 
 def test_vive_fuera_del_repositorio():

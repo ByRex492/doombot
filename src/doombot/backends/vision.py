@@ -19,7 +19,7 @@ import httpx
 
 from doombot.backends.base import BackendError
 
-_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0)
+_TIMEOUT = httpx.Timeout(connect=5.0, read=40.0, write=30.0, pool=5.0)
 
 
 class ModeloVision:

@@ -120,6 +120,9 @@ class Puente:
         self._hilo = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agente")
         self._ocupado = threading.Event()
         self._ids = itertools.count(1)
+        self._cola_ui: queue.Queue[str | None] = queue.Queue()
+        self._hilo_ui: threading.Thread | None = None
+        self._lock_ui = threading.Lock()
         self._permisos: dict[int, queue.Queue[bool]] = {}
         self._cerrado = False
         self._desfasado = False
@@ -619,6 +622,7 @@ class Puente:
         # Sin ventana a la que pintar: si el hilo del agente intentara
         # evaluate_js ahora, esperaria a un bucle de GTK que ya no atiende.
         self._ventana = None
+        self._cola_ui.put(None)
         self.parar()
         if self._voz is not None:
             with contextlib.suppress(Exception):
@@ -764,11 +768,35 @@ class Puente:
             self._emitir("permiso_fin", id=id_, si=decision)
 
     def _emitir(self, tipo: str, **datos: Any) -> None:
+        """Cuenta algo a la ventana sin esperarla.
+
+        ``evaluate_js`` de pywebview espera, sin limite, a que la pagina confirme
+        que lo ha ejecutado. Si la ventana esta minimizada o atascada, quien
+        llamaba se quedaba parado con ella: el agente dejaba de trabajar a
+        mitad de una orden (se vio al mirar la pantalla, D-047). Ahora los
+        eventos van a una cola que vacia un hilo propio, en orden.
+        """
         if tipo in _PERSISTIBLES and self._conv is not None:
             self._conv["registro"].append({"tipo": tipo, **datos})
         if self._ventana is None:
             return
         carga = json.dumps({"tipo": tipo, **datos})
-        # Si la ventana se esta cerrando, no hay a quien contarselo.
-        with contextlib.suppress(Exception):
-            self._ventana.evaluate_js(f"window.DOOM && DOOM.evento({carga})")
+        self._cola_ui.put(f"window.DOOM && DOOM.evento({carga})")
+        with self._lock_ui:
+            if self._hilo_ui is None or not self._hilo_ui.is_alive():
+                self._hilo_ui = threading.Thread(
+                    target=self._repartir, name="ventana-eventos", daemon=True
+                )
+                self._hilo_ui.start()
+
+    def _repartir(self) -> None:
+        while True:
+            js = self._cola_ui.get()
+            if js is None:
+                return
+            ventana = self._ventana
+            if ventana is None:
+                continue
+            # Si la ventana se esta cerrando, no hay a quien contarselo.
+            with contextlib.suppress(Exception):
+                ventana.evaluate_js(js)

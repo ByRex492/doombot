@@ -23,6 +23,8 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,43 @@ _LADO_MAXIMO = 1568
 """Pixeles del lado mayor: mas no ayuda a leer un error y gasta cuota."""
 _EXTENSIONES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"})
 _MAX_BYTES = 25 * 1024 * 1024
+
+
+_ESPERA_CAPTURA = 15.0
+
+
+def _con_limite(funcion: Callable[[], Any], segundos: float) -> Any:
+    """Llama a ``funcion`` en otro hilo; ``TimeoutError`` si no vuelve a tiempo.
+
+    Una captura que se cuelga (un capturador de Wayland esperando un permiso que
+    nadie ve, un servidor grafico atascado) no debe dejar al agente parado.
+    """
+    resultado: dict[str, Any] = {}
+
+    def hacer() -> None:
+        try:
+            resultado["valor"] = funcion()
+        except Exception as e:  # noqa: BLE001 - se relanza en el hilo que espera
+            resultado["error"] = e
+
+    hilo = threading.Thread(target=hacer, name="captura", daemon=True)
+    hilo.start()
+    hilo.join(segundos)
+    if hilo.is_alive():
+        raise TimeoutError
+    if "error" in resultado:
+        raise resultado["error"]
+    return resultado["valor"]
+
+
+def _apuntar(texto_: str) -> None:
+    """Deja rastro de cada paso en ``logs/vision.log``: si algo se atasca, se ve donde."""
+    from datetime import datetime
+
+    from doombot.paths import log_dir
+
+    with contextlib.suppress(OSError), (log_dir() / "vision.log").open("a", encoding="utf-8") as f:
+        f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {texto_}\n")
 
 
 def preparar(imagen: Any) -> bytes:
@@ -76,19 +115,41 @@ class Ojos:
         self._ocultar = ocultar
         self.leido_fuera: Callable[[], bool] = lambda: False
         """Si en la orden en curso ya se ha leido algo de fuera. Lo conecta ``montar``."""
+        self.avisar: Callable[[str], None] = lambda _texto: None
+        """Para contar por donde va mientras mira. Lo conecta ``montar``."""
 
     @property
     def modelo(self) -> str:
         return getattr(self._modelo, "model_name", "")
 
     def mirar_pantalla(self, pregunta: str = "") -> str:
+        inicio = time.monotonic()
+        _apuntar("mirar_pantalla: empiezo")
         apartar = self._ocultar() if self._ocultar is not None else contextlib.nullcontext()
         try:
             with apartar:
-                captura = self._capturar()
+                captura = _con_limite(self._capturar, _ESPERA_CAPTURA)
+        except TimeoutError:
+            _apuntar(f"mirar_pantalla: la captura no termina en {_ESPERA_CAPTURA:.0f} s")
+            return (
+                f"Error: la captura de pantalla no ha terminado en {_ESPERA_CAPTURA:.0f} s. "
+                "Prueba a pegar una captura en el chat (Ctrl+V)."
+            )
         except Exception as e:  # noqa: BLE001 - cada sistema falla a su manera
+            _apuntar(f"mirar_pantalla: fallo al capturar: {e!r}")
             return f"Error: no he podido capturar la pantalla: {e}"
-        visto = self._modelo.mirar(preparar(captura), _encargo(pregunta, "su pantalla"))
+        ancho, alto = getattr(captura, "size", (0, 0))
+        _apuntar(f"mirar_pantalla: capturada {ancho}x{alto} en {time.monotonic() - inicio:.1f} s")
+        self.avisar(f"Captura hecha ({ancho}×{alto}); se la paso a {self.modelo} para que la mire")
+        datos = preparar(captura)
+        try:
+            visto = self._modelo.mirar(datos, _encargo(pregunta, "su pantalla"))
+        except Exception as e:
+            _apuntar(
+                f"mirar_pantalla: el modelo fallo tras {time.monotonic() - inicio:.1f} s: {e!r}"
+            )
+            raise
+        _apuntar(f"mirar_pantalla: respuesta en {time.monotonic() - inicio:.1f} s ({len(datos)} B)")
         return f"En su pantalla (segun {self.modelo}): {visto}"
 
     def mirar_imagen(self, ruta: str, pregunta: str = "") -> str:

@@ -446,6 +446,7 @@
         <div class="dato"><span class="etq">Herramientas</span><div class="valor" id="sys-herr">—</div></div>
         <div class="dato"><span class="etq">Memoria</span><div class="valor" id="sys-memoria">—</div></div>
         <div class="dato"><span class="etq">Taller</span><div class="valor" id="sys-taller">—</div></div>
+        <div class="dato"><span class="etq">Vista</span><div class="valor" id="sys-vista">—</div></div>
         <div class="dato"><span class="etq">Voz</span><div class="valor" id="sys-voz">preparando…</div>
           <div class="fila-voz"><button id="voz-manos" disabled title="Escucha «Hey Jarvis» sin tocar nada">Manos libres</button>
             <label><input type="checkbox" id="voz-siempre"> leer también lo escrito</label></div></div>
@@ -570,7 +571,7 @@ function aplicarTema() {
    ampliar), que no necesita WebGL ni filtros de canvas.
    ========================================================================== */
 const COLOR_MODO = { web: "#2bd9ff", apps: "#b48bff", ficheros: "#ffc23d", terminal: "#3dff9a",
-                     memoria: "#ff7ad9", permiso: "#ffab2e", error: "#ff4d5e" };
+                     memoria: "#ff7ad9", vision: "#7dffd4", permiso: "#ffab2e", error: "#ff4d5e" };
 const MODOS = {
   reposo:   { energia: 0.12, etiqueta: "en reposo" },
   pensando: { energia: 0.65, etiqueta: "pensando" },
@@ -579,6 +580,7 @@ const MODOS = {
   ficheros: { energia: 0.80, etiqueta: "ficheros" },
   terminal: { energia: 0.80, etiqueta: "terminal" },
   memoria:  { energia: 0.55, etiqueta: "recordando" },
+  vision:   { energia: 0.7, etiqueta: "mirando" },
   escuchando: { energia: 0.75, etiqueta: "escuchando" },
   transcribiendo: { energia: 0.6, etiqueta: "transcribiendo" },
   permiso:  { energia: 0.45, etiqueta: "esperando permiso" },
@@ -586,7 +588,7 @@ const MODOS = {
   visual:   { energia: 0.45, etiqueta: "representando" },
   error:    { energia: 0.35, etiqueta: "fallo" },
 };
-const FAMILIAS = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal", visual: "visual", memoria: "memoria" };
+const FAMILIAS = { web: "web", apps: "apps", ficheros: "ficheros", terminal: "terminal", visual: "visual", memoria: "memoria", vision: "vista" };
 
 const nucleo = { modo: "reposo", color: hexRgb(DEFECTO.c1), energia: 0.12, pulso: 0, t: 0, giro: 0, desde: 0 };
 
@@ -1462,6 +1464,25 @@ async function mandar() {
 }
 orden.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); mandar(); } });
 orden.addEventListener("input", () => { crecer(); latido(0.05); });
+// Imagenes pegadas o arrastradas (D-047): se guardan en el buzon y la orden lleva su ruta.
+async function adjuntar(ficheros) {
+  for (const f of ficheros) {
+    if (!f.type.startsWith("image/")) continue;
+    const datos = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.readAsDataURL(f); });
+    const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg");
+    const r = await api("adjuntar_imagen", f.name || `captura.${ext}`, datos);
+    if (r && r.ok) { orden.value = `${orden.value.trim()} [imagen: ${r.ruta}] `.trimStart(); crecer(); orden.focus(); latido(0.5); }
+    else if (r && r.error) { registro.appendChild(el("div", "fallo", r.error)); alFondo(); }
+  }
+}
+orden.addEventListener("paste", ev => {
+  const imgs = [...(ev.clipboardData ? ev.clipboardData.files : [])].filter(f => f.type.startsWith("image/"));
+  if (imgs.length) { ev.preventDefault(); adjuntar(imgs); }
+});
+for (const zona of [orden, document.getElementById("marco-registro")]) {
+  zona.addEventListener("dragover", ev => { if ([...ev.dataTransfer.types].includes("Files")) ev.preventDefault(); });
+  zona.addEventListener("drop", ev => { const fs = [...ev.dataTransfer.files]; if (fs.length) { ev.preventDefault(); adjuntar(fs); } });
+}
 botonEnviar.addEventListener("click", mandar);
 document.getElementById("nueva").addEventListener("click", () => nuevaConversacion(""));
 
@@ -2209,6 +2230,9 @@ async function arrancar() {
   document.getElementById("sys-herr").textContent = `${info.herramientas} disponibles`;
   pintarEstadoMemoria(info.memoria);
   pintarTaller(info.taller);
+  const vista = document.getElementById("sys-vista"), vi = info.vision || {};
+  vista.textContent = vi.activa ? vi.modelo : "no ve";
+  vista.title = vi.activa ? "Pídele «mira mi pantalla», o pega o arrastra una imagen al chat" : (vi.motivo || "");
   cargarVoz();
   document.getElementById("pie-info").textContent =
     `${info.modelos.length} modelo${info.modelos.length > 1 ? "s" : ""} · ${info.herramientas} herramientas` + (info.revisor ? " · segunda opinión" : "");
@@ -2275,7 +2299,7 @@ if (location.hash === "#demo") {
     preferencias: () => Promise.resolve(prefsDemo),
     guardar_preferencias: (p) => { prefsDemo = Object.assign({}, p); return Promise.resolve(prefsDemo); },
     iniciar: () => Promise.resolve({ ok: true, modelos: ["groq/openai/gpt-oss-120b", "gemini/gemini-3.8-flash"], avisos: ["'nvidia:…': falta DOOMBOT_NVIDIA_API_KEY"], herramientas: 31, revisor: true, repaso: "auto",
-      memoria: { activa: true, motivo: "", recuerdos: 2 }, taller: TALLER_DEMO, actual: "global", modos: MODOS_DEMO }),
+      memoria: { activa: true, motivo: "", recuerdos: 2 }, taller: TALLER_DEMO, vision: { activa: true, modelo: "gemini/gemini-3.8-flash", motivo: "" }, actual: "global", modos: MODOS_DEMO }),
     historial: () => Promise.resolve(HIST_DEMO),
     abrir_conversacion: (id) => { HIST_DEMO.actual = id; const c = HIST_DEMO.conversaciones.find(x => x.id === id);
       return Promise.resolve({ ok: true, id, titulo: c.titulo, modo: c.modo, registro: [
@@ -2297,6 +2321,7 @@ if (location.hash === "#demo") {
     anotar_perfil: (h) => { PERFIL_DEMO.hechos.push(h); return Promise.resolve({ ok: true }); },
     quitar_del_perfil: (i) => { PERFIL_DEMO.hechos.splice(i, 1); return Promise.resolve({ ok: true }); },
     voz: () => Promise.resolve(VOZ_DEMO),
+    adjuntar_imagen: (n) => Promise.resolve({ ok: true, ruta: `/ruta/datos/entrada/imagenes/${n}` }),
     manos_libres: (a) => { VOZ_DEMO.escuchando = a; return Promise.resolve(VOZ_DEMO); },
     callar: () => Promise.resolve(null), taller: () => Promise.resolve(TALLER_DEMO),
     hablar: () => {

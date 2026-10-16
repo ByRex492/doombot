@@ -79,6 +79,10 @@ agent-web = [
 memoria = [
     "fastembed>=0.8",
 ]
+# Que vea (D-047): capturar la pantalla y preparar las imagenes para el modelo.
+vision = [
+    "pillow>=10",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

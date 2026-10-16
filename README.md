@@ -373,6 +373,12 @@ hablando te lo contesta hablando (sin leer código ni enlaces); «para» le cort
 contestan con un «sí» o un «no» (D-046). Necesita los extras `voice` y `voice-tts`; sin Whisper
 local transcribe en Groq con tu clave (`DOOMBOT_STT`), y entonces el audio sale del equipo.
 
+**Que vea.** Pídele «mira mi pantalla» (o «mira mi juego, ¿por qué se sale el personaje?») y
+captura la pantalla, apartando su propia ventana, para que un modelo con visión la mire; o pega o
+arrastra una imagen al chat (D-047). Solo mira cuando se lo pides. Usa el primer Gemini de tu
+cadena (`DOOMBOT_VISION` elige otro) y necesita el extra `vision`; la imagen sale hacia ese
+proveedor.
+
 Antes de darte una respuesta que se apoya en páginas o ficheros, otro modelo
 de la lista la repasa: comprueba los datos contra lo consultado y las fuentes
 (D-039, `DOOMBOT_AGENT_REFINAR`). Para leer páginas usa Jina Reader, que no

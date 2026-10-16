@@ -370,3 +370,26 @@ def test_lo_que_recuerda_se_cuenta_y_se_guarda_con_la_conversacion(tmp_path):
         "registro"
     ]
     puente._cerrar()
+
+
+def test_una_ventana_atascada_no_para_al_agente():
+    """evaluate_js espera sin limite a la pagina: el agente no puede esperar con ella (D-047)."""
+    atascada = threading.Event()
+
+    class VentanaAtascada(VentanaFalsa):
+        def evaluate_js(self, js: str) -> None:
+            atascada.wait(10)
+            super().evaluate_js(js)
+
+    puente, _ = puente_con(PasoModelo("Hecho."))
+    ventana = VentanaAtascada()
+    puente._conectar(ventana)
+    puente.iniciar()
+    assert puente.enviar("hola")["ok"]
+    fin = time.monotonic() + 5
+    while puente._ocupado.is_set() and time.monotonic() < fin:
+        time.sleep(0.05)
+    assert not puente._ocupado.is_set()  # la orden acabo aunque la ventana no responda
+    atascada.set()
+    ventana.esperar("respuesta", texto="Hecho.")  # y los eventos llegan, en orden, al soltarse
+    puente._cerrar()

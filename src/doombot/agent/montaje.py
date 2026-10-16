@@ -305,6 +305,7 @@ def montar(
     _conectar_contexto(agente, memoria, taller)
     if ojos is not None:
         ojos.leido_fuera = lambda: _leido_fuera(agente)
+        ojos.avisar = lambda texto_: agente.narrar("comentario", texto_)
 
     from doombot.backends.varios import Cadena
 

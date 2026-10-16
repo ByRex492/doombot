@@ -255,3 +255,25 @@ def test_una_imagen_pegada_se_guarda_en_el_buzon(tmp_path):
     assert puente.adjuntar_imagen("virus.exe", datos)["ok"] is False
     assert puente.adjuntar_imagen("x.png", "no es base64!!")["ok"] is False
     assert puente.adjuntar_imagen("x.png", "")["ok"] is False
+
+
+def test_una_captura_que_se_cuelga_no_deja_al_agente_parado(monkeypatch):
+    import threading
+
+    monkeypatch.setattr("doombot.agent.vision._ESPERA_CAPTURA", 0.2)
+    colgada = threading.Event()
+    salida = Ojos(ModeloFalso(), capturar=lambda: colgada.wait(5)).mirar_pantalla()
+    colgada.set()
+    assert "no ha terminado" in salida and "Ctrl+V" in salida
+
+
+def test_cuenta_por_donde_va_y_deja_rastro():
+    from doombot.paths import log_dir
+
+    avisos: list[str] = []
+    ojos = Ojos(ModeloFalso(), capturar=pantallazo)
+    ojos.avisar = avisos.append
+    ojos.mirar_pantalla("que hay")
+    assert avisos == ["Captura hecha (3840×2160); se la paso a gemini/falso para que la mire"]
+    rastro = (log_dir() / "vision.log").read_text(encoding="utf-8")
+    assert "capturada 3840x2160" in rastro and "respuesta en" in rastro

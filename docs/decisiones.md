@@ -1932,3 +1932,56 @@ micrófono no se ha abierto con el usuario delante. Falta probar en el sobremesa
 - Kokoro hablando en la ventana;
 - «Hey Jarvis» con la voz de D.O.O.M sonando: la propia voz podría dispararla;
 - contestar un permiso hablando.
+
+## D-047 — Que vea: tu pantalla cuando se lo pides, y las imágenes que le das
+
+**Contexto.** 16/10/2026. Para construir juegos y aplicaciones con D.O.O.M hace falta poder
+enseñarle cosas: «mira mi pantalla, ¿qué falla en este error?», «mira mi juego, el personaje se
+sale». Hasta ahora solo leía texto.
+
+**Decisión** (`backends/vision.py`, `agent/vision.py`).
+1. **Un modelo que ve, aparte de la cadena** (D-034). No todos sus modelos ven, y mandar una
+   imagen a uno que no ve da un error o una respuesta inventada.
+   - Se usa el primer Gemini de `DOOMBOT_MODELOS`, que ve bien y tiene capa gratuita.
+     `DOOMBOT_VISION=proveedor:modelo` elige otro de groq, gemini, nvidia u openrouter.
+   - Habla el formato de imágenes de la API compatible con OpenAI: `image_url` con la imagen en
+     base64.
+2. **Dos herramientas**:
+   - `mirar_pantalla(pregunta)`: captura toda la pantalla con Pillow (nativo en Windows y X11; en
+     Wayland, con sus capturadores).
+   - `mirar_imagen(ruta, pregunta)`: abre una imagen guardada.
+
+   La imagen se reduce a 1.568 px por el lado mayor y se manda en JPEG. El modelo recibe la
+   pregunta del usuario y la orden de copiar literal el texto que importe (errores, código).
+   Con esa descripción, el agente sigue como con cualquier dato.
+3. **Solo mira cuando se lo piden.** Nada de capturas por iniciativa propia ni en segundo plano.
+   Si en la misma orden ya ha leído algo de fuera, pregunta antes de capturar: así una página no
+   puede pedirle que mande tu pantalla. Lo visto cuenta también como «de fuera» para la memoria
+   (D-043), y el texto de una captura no se obedece.
+4. **La ventana de D.O.O.M se minimiza** mientras captura, para que se vea lo de detrás y no el
+   chat.
+5. **Imágenes en el chat**: pegar (Ctrl+V) o arrastrar una imagen la guarda en el buzón
+   (`entrada/imagenes/`) y añade `[imagen: ruta]` a la orden. El agente la mira con
+   `mirar_imagen`.
+6. Pillow va en el extra nuevo `vision`, aunque ya llega con `voice` y `memoria`. Sin Pillow o sin
+   modelo, la ventana dice por qué no ve (Sistema > Vista).
+
+**Descartado.**
+- **Mirar la pantalla en segundo plano**, o cada cierto tiempo: mandaría a la nube lo que el
+  usuario no ha decidido enseñar.
+- **Capturar solo una ventana concreta**: depende de cada sistema y de Wayland. Queda para más
+  adelante si hace falta; por ahora, toda la pantalla con D.O.O.M apartado.
+
+**Verificado.**
+- Tests (`test_vision.py`, 20), sin capturas ni red:
+  - preparar la imagen y apartar la ventana;
+  - errores al capturar, y ficheros que no son imágenes;
+  - el formato de la petición y los errores del modelo;
+  - la elección de modelo;
+  - un agente que mira cuando se le pide, y que pregunta si una página se lo pide;
+  - las imágenes pegadas en la ventana.
+- **Con la clave real**, sobre una imagen generada con un error de Python, no sobre una captura:
+  `gemini-3.5-flash-lite` respondió en 3,3 s con el error literal y la línea 12.
+
+**Sin verificar**: la captura de pantalla real, y minimizar y restaurar la ventana. No se capturó
+la pantalla con el usuario delante.

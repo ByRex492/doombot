@@ -91,9 +91,14 @@ def run() -> int:
     try:
         from doombot.agent.memoria import crear_memoria
         from doombot.agent.taller import crear_taller
+        from doombot.agent.vision import crear_ojos
 
         m = montar(
-            narrar=narrar, confirmar=confirmar, memoria=crear_memoria(), taller=crear_taller()
+            narrar=narrar,
+            confirmar=confirmar,
+            memoria=crear_memoria(),
+            taller=crear_taller(),
+            ojos=crear_ojos()[0],
         )
     except ValueError as e:
         print(e, file=sys.stderr)

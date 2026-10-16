@@ -29,6 +29,7 @@ import queue
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 from doombot.backends.base import BackendError
@@ -91,12 +92,16 @@ class Puente:
         memoria: Any = None,
         taller: Any = None,
         voz: Any = None,
+        ojos: Any = None,
     ) -> None:
         self._montar = montar
         # El perfil y los recuerdos (D-043): los usa el agente en cada orden y
         # los edita la ventana, tambien antes de que haya agente (sin claves).
         self._memoria_inyectada = memoria
         self._taller_inyectado = taller
+        # Los ojos (D-047): None hasta montar; (ojos, motivo) despues.
+        self._ojos_inyectados = ojos
+        self._motivo_ojos = ""
         # La voz (D-046): se monta aparte, en su hilo, porque cargar Kokoro tarda.
         self._voz: Any = voz
         self._voz_preparada = threading.Event()
@@ -373,6 +378,58 @@ class Puente:
     def taller(self) -> dict[str, Any]:
         return self._taller.info()
 
+    # -- vision (D-047) -----------------------------------------------------------
+    def _ojos(self) -> Any:
+        if self._ojos_inyectados is None:
+            from doombot.agent.vision import crear_ojos
+
+            ojos, self._motivo_ojos = crear_ojos(ocultar=self._apartar_ventana)
+            self._ojos_inyectados = ojos or False  # False: ya se miro y no hay
+        return self._ojos_inyectados or None
+
+    @contextlib.contextmanager
+    def _apartar_ventana(self) -> Any:
+        """Minimiza la ventana mientras se captura la pantalla: que se vea lo de detras."""
+        import time
+
+        ventana = self._ventana
+        if ventana is None:
+            yield
+            return
+        with contextlib.suppress(Exception):
+            ventana.minimize()
+        time.sleep(0.6)  # lo que tarda el escritorio en redibujar lo de detras
+        try:
+            yield
+        finally:
+            with contextlib.suppress(Exception):
+                ventana.restore()
+
+    def adjuntar_imagen(self, nombre: str, datos: str) -> dict[str, Any]:
+        """Una imagen pegada o arrastrada al chat: se guarda en el buzon y se dice su ruta."""
+        import base64
+        import binascii
+        import re
+        from datetime import datetime
+
+        from doombot.paths import inbox_dir
+
+        extension = Path(str(nombre or "")).suffix.lower() or ".png"
+        if extension not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+            return {"ok": False, "error": "Solo imágenes (png, jpg, webp, gif o bmp)."}
+        try:
+            contenido = base64.b64decode(str(datos or ""), validate=True)
+        except (binascii.Error, ValueError):
+            return {"ok": False, "error": "No he podido leer la imagen."}
+        if not contenido or len(contenido) > 15 * 1024 * 1024:
+            return {"ok": False, "error": "La imagen está vacía o pesa más de 15 MB."}
+        base = re.sub(r"[^\w.-]+", "-", Path(str(nombre)).stem)[:40] or "imagen"
+        carpeta = inbox_dir() / "imagenes"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        ruta = carpeta / f"{datetime.now():%Y%m%d-%H%M%S}-{base}{extension}"
+        ruta.write_bytes(contenido)
+        return {"ok": True, "ruta": str(ruta)}
+
     def perfil(self) -> dict[str, Any]:
         return {
             **self._memoria.perfil(),
@@ -596,6 +653,7 @@ class Puente:
                     pantalla=lambda datos: self._emitir("visual", **datos),
                     memoria=self._memoria,
                     taller=self._taller,
+                    ojos=self._ojos(),
                 )
             except ValueError as e:
                 return {"ok": False, "error": str(e)}
@@ -618,6 +676,11 @@ class Puente:
             "repaso": getattr(self._montaje.agente.repasar, "modo", "no"),
             "memoria": self._memoria.estado(),
             "taller": self._taller.info(),
+            "vision": {
+                "activa": self._ojos() is not None,
+                "modelo": self._ojos().modelo if self._ojos() is not None else "",
+                "motivo": self._motivo_ojos,
+            },
             **self.modos(),
         }
 

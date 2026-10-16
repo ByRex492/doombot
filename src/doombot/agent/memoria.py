@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from doombot.backends.base import Embedder
     from doombot.memory import Recollection
 
-FUERA = frozenset({"web", "ficheros", "terminal"})
+FUERA = frozenset({"web", "ficheros", "terminal", "vision"})
 """Las familias de herramientas que traen texto de fuera (ver ``Herramienta.familia``)."""
 
 _SECRETO = re.compile(

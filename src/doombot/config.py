@@ -145,6 +145,8 @@ class Settings:
     largo; una respuesta como "he abierto la calculadora" no gasta peticion.
     """
 
+    vision: str = ""
+    """Modelo que ve (D-047), ``proveedor:modelo``. Vacio = el primer Gemini de la cadena."""
     stt: str = "auto"
     """Quien transcribe la voz en la ventana (D-046): ``auto`` (Whisper local si esta, si no
     Groq), ``local`` o ``nube``."""
@@ -251,6 +253,7 @@ def settings() -> Settings:
         not in ("no", "0", "false", "off"),
         agent_refinar=_modo_refinar(os.environ.get("DOOMBOT_AGENT_REFINAR", "auto")),
         stt=_modo_stt(os.environ.get("DOOMBOT_STT", "auto")),
+        vision=os.environ.get("DOOMBOT_VISION", "").strip(),
         taller=tuple(
             t.strip() for t in os.environ.get("DOOMBOT_TALLER", "").split(",") if t.strip()
         ),

@@ -54,3 +54,11 @@ def _sin_voz(monkeypatch):
     monkeypatch.setattr(
         voz, "crear_voz", lambda emitir, al_oir: voz.VozVentana(emitir=emitir, al_oir=al_oir)
     )
+
+
+@pytest.fixture(autouse=True)
+def _sin_ojos(monkeypatch):
+    """La ventana de los tests no captura la pantalla ni llama a un modelo con vision (D-047)."""
+    from doombot.agent import vision
+
+    monkeypatch.setattr(vision, "crear_ojos", lambda cfg=None, **kw: (None, "sin vision en tests"))

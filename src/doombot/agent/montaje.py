@@ -26,6 +26,7 @@ from doombot.agent.memoria import FUERA, Memoria
 from doombot.agent.sistema import herramientas as herramientas_sistema
 from doombot.agent.skills import GLOBAL, Modos
 from doombot.agent.taller import Taller
+from doombot.agent.vision import Ojos
 from doombot.agent.web import Web
 from doombot.backends.base import ToolCaller
 from doombot.config import Settings, settings
@@ -86,6 +87,7 @@ def system_prompt(
     con_perfil: bool = False,
     con_recuerdos: bool = False,
     taller: str = "",
+    con_ojos: bool = False,
 ) -> str:
     """Quien es y como trabaja el agente. Corto: con los limites gratuitos, cada token cuenta.
 
@@ -130,6 +132,16 @@ def system_prompt(
             "darlo por terminado; lo que se queda abierto (un juego, un servidor) va con "
             "proceso. Instala dependencias dentro del proyecto (.venv, npm sin -g).",
         ]
+    # La vision (D-047): solo cuando se la piden.
+    ojos = (
+        [
+            "- Si te pide mirar su pantalla o algo que tiene delante (un error, su juego), usa "
+            "mirar_pantalla; si la orden trae [imagen: ruta], mirala con mirar_imagen. No mires "
+            "la pantalla si no te lo pide."
+        ]
+        if con_ojos
+        else []
+    )
     return "\n".join([
         f"Eres {NOMBRE}, el asistente personal del usuario y su companero de proyectos: vives "
         "en su ordenador y lo manejas por el, con sus herramientas.",
@@ -160,9 +172,18 @@ def system_prompt(
         "- Si el usuario no autoriza una accion, no la repitas.",
         *codigo,
         *pantalla,
+        *ojos,
         *memoria,
         "- Al acabar una tarea, cuentale en una o dos frases que has hecho.",
     ])  # fmt: skip
+
+
+def _leido_fuera(agente: Agente) -> bool:
+    """Si en la orden en curso ya ha entrado texto de fuera (paginas, ficheros, pantalla)."""
+    return any(
+        (h := agente.herramientas.get(n)) is not None and h.familia in FUERA
+        for n in agente.usadas()
+    )
 
 
 def _conectar_contexto(agente: Agente, memoria: Memoria | None, taller: Taller | None) -> None:
@@ -175,12 +196,6 @@ def _conectar_contexto(agente: Agente, memoria: Memoria | None, taller: Taller |
     fuentes: list[Callable[[str], str]] = []
     if memoria is not None:
 
-        def leido_fuera() -> bool:
-            return any(
-                (h := agente.herramientas.get(n)) is not None and h.familia in FUERA
-                for n in agente.usadas()
-            )
-
         def de_memoria(tarea: str) -> str:
             c = memoria.contexto(tarea)
             if c.aviso:
@@ -189,7 +204,7 @@ def _conectar_contexto(agente: Agente, memoria: Memoria | None, taller: Taller |
                 agente.narrar("memoria", " · ".join(recortar(t, 90) for t in c.recordados))
             return c.texto
 
-        memoria.leido_fuera = leido_fuera
+        memoria.leido_fuera = lambda: _leido_fuera(agente)
         memoria.precargar()
         fuentes.append(de_memoria)
     if taller is not None:
@@ -247,6 +262,7 @@ def montar(
     pantalla: Callable[[dict], None] | None = None,
     memoria: Memoria | None = None,
     taller: Taller | None = None,
+    ojos: Ojos | None = None,
 ) -> Montaje:
     """Monta el agente. ``ValueError`` si el cerebro elegido no se puede usar.
 
@@ -270,15 +286,19 @@ def montar(
         *herramientas_calculo(),
         *graficas,
         *(taller.herramientas() if taller is not None else []),
+        *(ojos.herramientas() if ojos is not None else []),
     ]
     system_base = system_prompt(
         con_pantalla=pantalla is not None,
         con_perfil=memoria is not None,
         con_recuerdos=memoria is not None and memoria.activa,
         taller=str(taller.raiz) if taller is not None and taller.autonomo else "",
+        con_ojos=ojos is not None,
     )
     agente = Agente(cerebro_, todas, narrar=narrar, confirmar=confirmar, system=system_base)
     _conectar_contexto(agente, memoria, taller)
+    if ojos is not None:
+        ojos.leido_fuera = lambda: _leido_fuera(agente)
 
     from doombot.backends.varios import Cadena
 

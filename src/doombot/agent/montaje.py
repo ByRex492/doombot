@@ -132,6 +132,12 @@ def system_prompt(
             "darlo por terminado; lo que se queda abierto (un juego, un servidor) va con "
             "proceso. Instala dependencias dentro del proyecto (.venv, npm sin -g).",
         ]
+        if sys.platform == "win32":
+            codigo.append(
+                "- En Windows los comandos van por cmd.exe (para PowerShell: powershell "
+                '-NoProfile -Command "..."); el interprete es python o py, no python3, y el del '
+                "venv es .venv\\Scripts\\python."
+            )
     # La vision (D-047): solo cuando se la piden.
     ojos = (
         [

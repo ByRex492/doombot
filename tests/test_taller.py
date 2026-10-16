@@ -310,3 +310,58 @@ def test_el_agente_programa_en_el_taller_sin_preguntar_y_lo_apunta(taller, proye
 def test_sin_taller_el_prompt_no_lo_menciona():
     m = montar(narrar=lambda *a: None, confirmar=lambda p: True, cerebro_=Guion())
     assert "Tu taller es" not in m.agente.system and "proceso" not in m.agente.herramientas
+
+
+# -- Windows (D-045): las mismas reglas con rutas C:\ y cmd.exe, probadas desde aqui ----------
+@pytest.fixture
+def taller_windows(monkeypatch) -> Taller:
+    monkeypatch.setenv("USERPROFILE", "C:\\Users\\alex")
+    return Taller(["C:\\Users\\alex\\taller"], git="git", plataforma="win32")
+
+
+JUEGO = "C:\\Users\\alex\\taller\\juego"
+
+
+@pytest.mark.parametrize(
+    ("comando", "libre"),
+    [
+        ("python main.py", True),
+        ("py main.py", True),
+        ("rmdir /s /q build", True),  # /s y /q son opciones de cmd, no rutas
+        ("del /f /q *.pyc", True),
+        ("dir /b", True),
+        (".venv\\Scripts\\pip install pygame", True),
+        ("type C:\\Users\\alex\\taller\\otro\\README.md", True),
+        ("copy main.py c:\\users\\ALEX\\taller\\juego\\b.py", True),  # sin mayusculas
+        ("py -m pip install pygame", False),
+        ("python -m pip install pygame", False),
+        ("rmdir /s /q C:\\Users\\alex\\Documents", False),
+        ("copy main.py %USERPROFILE%\\Desktop", False),
+        ("del ..\\..\\secreto.txt", False),
+        ('powershell -NoProfile -Command "Remove-Item -Recurse C:\\Windows\\Temp\\x"', False),
+        ("powershell Start-Process cmd -Verb RunAs", False),
+        ("setx PATH C:\\algo", False),
+        ("winget install Godot", False),
+        ("icacls main.py /grant Todos:F", False),
+        ("git push", False),
+    ],
+)
+def test_reglas_del_taller_en_windows(taller_windows, comando, libre):
+    assert taller_windows.comando_libre(comando, JUEGO) is libre
+
+
+def test_proyecto_y_dentro_con_rutas_de_windows(taller_windows):
+    assert taller_windows.dentro("C:\\Users\\alex\\taller")
+    assert taller_windows.dentro("~\\taller\\juego\\main.py")
+    assert not taller_windows.dentro("C:\\Users\\alex\\Documents\\x.txt")
+    proyecto = taller_windows.proyecto_de("C:\\Users\\alex\\taller\\juego\\src\\a.py")
+    assert proyecto is not None and proyecto.name == "juego"
+    assert taller_windows.proyecto_de("C:\\Users\\alex\\taller") is None
+
+
+def test_en_windows_el_prompt_explica_cmd_y_python(monkeypatch, tmp_path):
+    from doombot.agent import montaje
+
+    monkeypatch.setattr(montaje.sys, "platform", "win32")
+    prompt = montaje.system_prompt(taller=str(tmp_path))
+    assert "cmd.exe" in prompt and "no python3" in prompt

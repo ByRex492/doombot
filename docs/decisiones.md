@@ -1879,6 +1879,18 @@ GPU y ventanas.
 
 **Sin verificar**: un proyecto grande (Godot, Unity) y lo que tarda su primer punto de control.
 
+**Windows (16/10).** Las reglas de rutas siguen al sistema donde corre D.O.O.M, no al tipo `Path`.
+Así las de Windows se prueban desde Linux (`Taller(plataforma="win32")`):
+- rutas `C:\` sin distinguir mayúsculas, `%USERPROFILE%` y `..\`;
+- las opciones de cmd.exe (`rmdir /s /q`) no cuentan como rutas;
+- `py -m pip install` fuera de un venv se pregunta, y `.venv\Scripts\pip` no;
+- se preguntan también: `-Verb RunAs`, `takeown`, `icacls`, `setx`, `bcdedit`, `vssadmin`,
+  `wmic`, `net user` y `format c:`;
+- en Windows, el prompt le dice que los comandos van por cmd.exe y que el intérprete es `python`
+  o `py`.
+
+Hay 21 casos de Windows en `test_taller.py`. Sin probar en un Windows de verdad.
+
 ## D-046 — La voz en la ventana: se le habla al agente, no a un menú de palabras clave
 
 **Contexto.** 15/10/2026. La voz (D-021 a D-031) vivía solo en `python -m doombot chat`, con

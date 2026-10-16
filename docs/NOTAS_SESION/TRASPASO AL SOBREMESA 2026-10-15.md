@@ -129,10 +129,12 @@ El portátil no tiene instalado el stack de voz, y el micrófono no se abrió co
 
 ## 6. Puntos débiles probables en Windows (escrito pensando en Linux)
 
-- **`comando_libre` del taller** (`agent/taller.py`) reconoce rutas y comandos peligrosos con
-  expresiones regulares. Están probadas en Linux; con `cmd.exe` y rutas `C:\…` puede preguntar de
-  más o de menos. Hay tests en `tests/test_taller.py` para añadir casos de Windows.
-- `python3` no existe en Windows: el agente debería usar `python` o `py`.
+- **Actualización del 16/10:** `comando_libre` del taller ya tiene reglas de Windows (rutas `C:\`,
+  opciones de cmd, `py -m pip` y comandos de administración), probadas desde Linux con 21 casos
+  (D-045). El prompt le dice que use `python` o `py` y cmd.exe. Falta verlo en este Windows de
+  verdad.
+- **Novedad del 16/10: ve (D-047).** «Mira mi pantalla» o pegar una imagen en el chat. Probar que
+  la ventana se minimiza, captura y vuelve. Nunca se ha capturado una pantalla de verdad.
 - **Los procesos del taller** se matan con `taskkill /T /F`, sin probar.
 - **El git en la sombra** con rutas de Windows y `core.autocrlf=false`, sin probar.
 - **Transcribir en Groq** a través de Norton: debería ir con `truststore`, sin probar.

@@ -29,14 +29,17 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import ntpath
 import os
+import posixpath
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from doombot.agent.herramientas import Herramienta, recortar, texto
@@ -60,11 +63,16 @@ _SALE = re.compile(
     r"|\b(curl|wget|iwr|irm)\b[^|\n]*\|\s*(sh|bash|zsh|iex|python3?|pwsh|powershell)\b"
     r"|\b(reg|regedit)\s+(add|delete|import)\b|Set-ExecutionPolicy|\bcrontab\b|\bschtasks\b"
     r"|\b(npm|pnpm|yarn)\s+(i|install|add)\b[^\n]*\s(-g|--global)\b|\byarn\s+global\b"
-    r"|\$\(|`|\$\{",
+    r"|\$\(|`|\$\{"
+    # Windows: elevar, permisos, usuarios, arranque y variables de entorno permanentes.
+    r"|-Verb\s+RunAs|\b(takeown|icacls|setx|bcdedit|vssadmin|wmic)\b|\bnet\s+(user|localgroup)\b"
+    r"|\bformat\s+[a-z]:",
     re.IGNORECASE,
 )
 # pip fuera de un entorno virtual instala en el Python del sistema (o en el de D.O.O.M).
-_PIP = re.compile(r"\b(pip3?|python3?\s+-m\s+pip)\s+install\b", re.IGNORECASE)
+_PIP = re.compile(
+    r"\b(pip3?|python3?\s+-m\s+pip|py(\s+-3(\.\d+)?)?\s+-m\s+pip)\s+install\b", re.IGNORECASE
+)
 _VENV = re.compile(
     r"(\.venv|venv|env)[/\\](bin|Scripts)[/\\]|\b(uv|poetry|pipenv)\s", re.IGNORECASE
 )
@@ -74,6 +82,8 @@ _RUTA = re.compile(
     r"""|\$HOME[^\s'";|&)]*|%[A-Za-z_]+%[^\s'";|&)]*|\.\.[\\/][^\s'";|&)]*|\.\.(?=[\s'";|&)]|$))"""
 )
 _INOFENSIVAS = {"/dev/null", "/dev/stdout", "/dev/stderr", "nul"}
+# En cmd.exe, "/s" o "/q" son opciones, no rutas: "rmdir /s /q build" no sale del taller.
+_OPCION_CMD = re.compile(r"^/[A-Za-z?]{1,4}(:\S*)?$")
 
 
 def _expandir(ruta: str) -> Path:
@@ -95,8 +105,17 @@ class Taller:
         datos: Path | None = None,
         git: str | None = "git",
         run: Callable[..., Any] = subprocess.run,
+        plataforma: str = sys.platform,
     ) -> None:
         self.raices = [_expandir(str(r)) for r in raices] or [Path.home() / "taller"]
+        # Las reglas de rutas siguen al sistema donde corre, no a Path: asi se prueban las
+        # de Windows desde Linux (D-045). Las operaciones de disco usan Path, como siempre.
+        self._windows = plataforma == "win32"
+        self._sep = ntpath if self._windows else posixpath
+        self._pura = PureWindowsPath if self._windows else PurePosixPath
+        self._raices = [self._absoluta(str(r)) for r in raices] or [
+            self._absoluta(str(self.raices[0]))
+        ]
         self._datos = datos
         self._git = git
         self._run = run
@@ -119,22 +138,22 @@ class Taller:
     # -- donde esta cada cosa ---------------------------------------------------
     def dentro(self, ruta: str | Path) -> bool:
         p = self._absoluta(ruta)
-        return any(p == r or p.is_relative_to(r) for r in self.raices)
+        return any(p == r or p.is_relative_to(r) for r in self._raices)
 
     def proyecto_de(self, ruta: str | Path) -> Path | None:
         """El proyecto al que pertenece una ruta: la carpeta de primer nivel del taller."""
         p = self._absoluta(ruta)
-        for r in self.raices:
-            if p != r and p.is_relative_to(r):
-                return r / p.relative_to(r).parts[0]
+        for pura, r in zip(self._raices, self.raices, strict=False):
+            if p != pura and p.is_relative_to(pura):
+                return r / p.relative_to(pura).parts[0]
         return None
 
-    @staticmethod
-    def _absoluta(ruta: str | Path, base: Path | None = None) -> Path:
-        p = _expandir(str(ruta))
-        if not p.is_absolute():
-            p = (base or Path.cwd()) / p
-        return Path(os.path.normpath(p))
+    def _absoluta(self, ruta: str | Path, base: PurePath | None = None) -> PurePath:
+        """La ruta absoluta y normalizada, con las reglas del sistema donde corre."""
+        texto_ = self._sep.expanduser(self._sep.expandvars(str(ruta) or "~"))
+        if not self._sep.isabs(texto_):
+            texto_ = self._sep.join(str(base) if base is not None else str(Path.cwd()), texto_)
+        return self._pura(self._sep.normpath(texto_))
 
     # -- autonomia ----------------------------------------------------------------
     def ruta_libre(self, ruta: str) -> bool:
@@ -148,10 +167,10 @@ class Taller:
         if _SALE.search(comando) or (_PIP.search(comando) and not _VENV.search(comando)):
             return False
         base = self._absoluta(carpeta)
-        temporal = Path(tempfile.gettempdir()).resolve()
+        temporal = self._absoluta(tempfile.gettempdir())
         for m in _RUTA.finditer(comando):
             crudo = m.group(1).rstrip(".,:")
-            if crudo.lower() in _INOFENSIVAS:
+            if crudo.lower() in _INOFENSIVAS or (self._windows and _OPCION_CMD.match(crudo)):
                 continue
             p = self._absoluta(crudo, base)
             if p.is_relative_to(temporal) or self.dentro(p):

@@ -27,6 +27,10 @@ dependencies = [
 # necesita descargar el stack de audio entero.
 voice = [
     "faster-whisper>=1.2",
+    # faster-whisper (hasta 1.2.1) abre el audio con av.open(..., metadata_errors=...), y
+    # PyAV 19 quito ese parametro: cada transcripcion fallaba con TypeError. Visto en el
+    # sobremesa el 20/10/2026. Se quita el tope cuando faster-whisper lo arregle.
+    "av>=11,<19",
     "openwakeword>=0.6",
     "fastembed>=0.8",
     "sounddevice>=0.4",

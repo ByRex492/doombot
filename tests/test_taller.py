@@ -215,7 +215,7 @@ def test_buscar_texto_dentro_de_ficheros(tmp_path):
 
 # -- proyectos, diario y contexto --------------------------------------------------------
 def test_crear_proyecto_y_el_diario_llega_al_contexto(taller, proyecto):
-    assert (proyecto / "README.md").read_text().startswith("# Juego Naves")
+    assert (proyecto / "README.md").read_text(encoding="utf-8").startswith("# Juego Naves")
     assert (proyecto / ".git").is_dir()  # un git propio para el usuario
     assert "Error" in taller.crear("Juego Naves")
 
@@ -224,7 +224,7 @@ def test_crear_proyecto_y_el_diario_llega_al_contexto(taller, proyecto):
     (proyecto / "enemigos.py").write_text("class Enemigo: ...\n")
     taller.terminar_orden("añade enemigos", "He añadido la clase Enemigo.")
 
-    diario = (proyecto / ".doom" / "diario.md").read_text()
+    diario = (proyecto / ".doom" / "diario.md").read_text(encoding="utf-8")
     assert "**Pedido:** añade enemigos" in diario and "enemigos.py" in diario
     contexto = taller.contexto()
     assert "Juego-Naves: Shooter 2D en Pygame" in contexto
@@ -299,7 +299,7 @@ def test_el_agente_programa_en_el_taller_sin_preguntar_y_lo_apunta(taller, proye
     assert preguntas == []  # dentro del taller no se pregunta
     assert (proyecto / "main.py").exists()
     assert "Tu taller es" in cerebro.prompts[0] and "Juego-Naves" in cerebro.prompts[0]
-    assert "He creado main.py" in (proyecto / ".doom" / "diario.md").read_text()
+    assert "He creado main.py" in (proyecto / ".doom" / "diario.md").read_text(encoding="utf-8")
 
     m.agente.ejecutar("deshazlo")
     assert len(preguntas) == 1 and "Juego-Naves" in preguntas[0]  # deshacer si se confirma
@@ -344,6 +344,15 @@ JUEGO = "C:\\Users\\alex\\taller\\juego"
         ("winget install Godot", False),
         ("icacls main.py /grant Todos:F", False),
         ("git push", False),
+        # Con forma de opcion de cmd, pero entre comillas: es la raiz de la unidad (C:\home).
+        ("python -c \"import shutil; shutil.rmtree('/home')\"", False),
+        ("type \\Windows\\win.ini", False),
+        ("python -c \"print('\\n'.join(sys.argv))\"", True),  # un escape, no una ruta
+        # Sin variable HOME en Windows, pero PowerShell y bash la expanden a la carpeta del usuario.
+        ('powershell -Command "Remove-Item -Recurse $HOME\\Documents"', False),
+        ("bash -c 'rm -rf ${HOME}/Documentos'", False),
+        # La raiz de la unidad, pero dentro del taller: sigue siendo libre.
+        ("type \\Users\\alex\\taller\\juego\\main.py", True),
     ],
 )
 def test_reglas_del_taller_en_windows(taller_windows, comando, libre):

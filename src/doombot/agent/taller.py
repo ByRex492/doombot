@@ -76,14 +76,21 @@ _PIP = re.compile(
 _VENV = re.compile(
     r"(\.venv|venv|env)[/\\](bin|Scripts)[/\\]|\b(uv|poetry|pipenv)\s", re.IGNORECASE
 )
-# Rutas escritas en el comando (tambien dentro de comillas o de "python -c").
+# Rutas escritas en el comando (tambien dentro de comillas o de "python -c"). El primer grupo
+# es lo que va justo antes: hace falta para distinguir una opcion de cmd de una ruta.
 _RUTA = re.compile(
-    r"""(?:^|[\s'"=(,])(~[^\s'";|&)]*|/(?!/)[^\s'";|&)]*|[A-Za-z]:[\\/][^\s'";|&)]*"""
-    r"""|\$HOME[^\s'";|&)]*|%[A-Za-z_]+%[^\s'";|&)]*|\.\.[\\/][^\s'";|&)]*|\.\.(?=[\s'";|&)]|$))"""
+    r"""(^|[\s'"=(,])(~[^\s'";|&)]*|/(?!/)[^\s'";|&)]*|[A-Za-z]:[\\/][^\s'";|&)]*"""
+    r"""|\$\{?HOME\}?[^\s'";|&)]*|%[A-Za-z_]+%[^\s'";|&)]*|\.\.[\\/][^\s'";|&)]*"""
+    r"""|\.\.(?=[\s'";|&)]|$)|\\(?![\\\s])[^\s'";|&)]{2,})"""
 )
 _INOFENSIVAS = {"/dev/null", "/dev/stdout", "/dev/stderr", "nul"}
 # En cmd.exe, "/s" o "/q" son opciones, no rutas: "rmdir /s /q build" no sale del taller.
+# Solo como palabra suelta: entre comillas o tras "=", "(" o "," -"shutil.rmtree('/home')"-
+# es una ruta aunque tenga la misma forma.
 _OPCION_CMD = re.compile(r"^/[A-Za-z?]{1,4}(:\S*)?$")
+# $HOME es la carpeta del usuario aunque el sistema no tenga esa variable: en Windows no la
+# hay, pero PowerShell y bash la entienden si el comando pasa por ellos.
+_HOME = re.compile(r"^\$\{?HOME\}?(?=[\\/]|$)")
 
 
 def _expandir(ruta: str) -> Path:
@@ -150,9 +157,17 @@ class Taller:
 
     def _absoluta(self, ruta: str | Path, base: PurePath | None = None) -> PurePath:
         """La ruta absoluta y normalizada, con las reglas del sistema donde corre."""
-        texto_ = self._sep.expanduser(self._sep.expandvars(str(ruta) or "~"))
+        crudo = _HOME.sub("~", str(ruta) or "~")
+        texto_ = self._sep.expanduser(self._sep.expandvars(crudo))
+        desde = str(base) if base is not None else str(Path.cwd())
+        if self._windows:
+            unidad, resto = self._sep.splitdrive(texto_)
+            if not unidad and resto[:1] in ("/", "\\") and resto[1:2] not in ("/", "\\"):
+                # "\home" o "/home" en Windows es la raiz de la unidad en la que se esta:
+                # C:\home, fuera del taller. Sin unidad, no se compararia con nada.
+                texto_ = self._sep.splitdrive(desde)[0] + resto
         if not self._sep.isabs(texto_):
-            texto_ = self._sep.join(str(base) if base is not None else str(Path.cwd()), texto_)
+            texto_ = self._sep.join(desde, texto_)
         return self._pura(self._sep.normpath(texto_))
 
     # -- autonomia ----------------------------------------------------------------
@@ -169,8 +184,12 @@ class Taller:
         base = self._absoluta(carpeta)
         temporal = self._absoluta(tempfile.gettempdir())
         for m in _RUTA.finditer(comando):
-            crudo = m.group(1).rstrip(".,:")
-            if crudo.lower() in _INOFENSIVAS or (self._windows and _OPCION_CMD.match(crudo)):
+            antes, crudo = m.group(1), m.group(2).rstrip(".,:")
+            opcion = self._windows and not antes.strip() and _OPCION_CMD.match(crudo)
+            # "\Windows\x" es la raiz de la unidad en Windows; fuera de el, una barra invertida
+            # es un escape ("\n", "\ "), no una ruta.
+            escape = crudo.startswith("\\") and not self._windows
+            if crudo.lower() in _INOFENSIVAS or opcion or escape:
                 continue
             p = self._absoluta(crudo, base)
             if p.is_relative_to(temporal) or self.dentro(p):

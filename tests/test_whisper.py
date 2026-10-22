@@ -16,6 +16,25 @@ from doombot.backends.whisper import Transcription, WhisperTranscriber
 from doombot.profiles import Profile
 
 
+def test_faster_whisper_lee_un_wav_con_el_pyav_instalado(tmp_path):
+    """faster-whisper y PyAV, de verdad: una version de PyAV que no casa rompe toda transcripcion.
+
+    Pasaba con PyAV 19 y faster-whisper 1.2.1 (TypeError en av.open). Sin modelo ni GPU: solo
+    leer el audio, que es donde fallaba.
+    """
+    audio = pytest.importorskip("faster_whisper.audio")
+    import wave
+
+    ruta = tmp_path / "silencio.wav"
+    with wave.open(str(ruta), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x00" * 8000)  # medio segundo
+    muestras = audio.decode_audio(str(ruta), sampling_rate=16000)
+    assert len(muestras) == 8000
+
+
 class SegmentoFalso:
     def __init__(self, text: str) -> None:
         self.text = text
